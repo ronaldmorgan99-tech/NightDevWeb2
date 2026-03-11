@@ -1,0 +1,372 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Orbitron:wght@400;700;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-orbitron: "Orbitron", sans-serif;
+  
+  --color-neon-cyan: #00f3ff;
+  --color-neon-pink: #ff00ff;
+  --color-neon-magenta: #ff00ff;
+  --color-neon-purple: #bc13fe;
+  --color-neon-green: #39ff14;
+  --color-cyber-black: #050505;
+  --color-cyber-dark: #0d0d0f;
+  --color-cyber-gray: #1a1a1d;
+  --color-cyber-bg: #0a0a1a;
+}
+
+@layer base {
+  html {
+    cursor: none;
+    scroll-behavior: smooth;
+  }
+  
+  body {
+    @apply bg-cyber-bg text-zinc-300 font-sans selection:bg-neon-cyan/30 selection:text-neon-cyan;
+    background-color: #0a0a1f; /* Slightly brighter, more blue base */
+    background-image: 
+      /* Moving Light Sweep */
+      linear-gradient(45deg, transparent 45%, rgba(0, 243, 255, 0.1) 50%, transparent 55%),
+      /* Data Streams */
+      repeating-linear-gradient(0deg, transparent, transparent 100px, rgba(0, 243, 255, 0.05) 100px, rgba(0, 243, 255, 0.05) 101px),
+      /* Primary Grid */
+      linear-gradient(rgba(0, 243, 255, 0.2) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 243, 255, 0.2) 1px, transparent 1px),
+      /* Secondary Finer Grid */
+      linear-gradient(rgba(0, 243, 255, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 243, 255, 0.08) 1px, transparent 1px),
+      /* Intense Dynamic Glows */
+      radial-gradient(circle at 50% 0%, rgba(188, 19, 254, 0.3) 0%, transparent 60%),
+      radial-gradient(circle at 100% 100%, rgba(0, 243, 255, 0.25) 0%, transparent 60%),
+      radial-gradient(circle at 0% 50%, rgba(255, 0, 255, 0.2) 0%, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(0, 243, 255, 0.2) 0%, transparent 40%);
+    background-size: 200% 200%, 100% 200px, 100px 100px, 100px 100px, 20px 20px, 20px 20px, 100% 100%, 100% 100%, 100% 100%, 100% 100%;
+    background-attachment: fixed;
+    cursor: none;
+    position: relative;
+    animation: background-pulse 15s linear infinite, screen-flicker 10s infinite;
+  }
+
+  @keyframes screen-flicker {
+    0%, 100% { opacity: 1; }
+    92% { opacity: 1; }
+    93% { opacity: 0.98; }
+    94% { opacity: 1; }
+    95% { opacity: 0.99; }
+    96% { opacity: 1; }
+  }
+
+  @keyframes background-pulse {
+    0% { background-position: 0% 0%, 0px 0px, 0px 0px, 0px 0px, 0px 0px, 0px 0px, center, center, center, center; }
+    100% { background-position: 200% 200%, 0px 200px, 100px 100px, 100px 100px, 20px 20px, 20px 20px, center, center, center, center; }
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: url("https://grainy-gradients.vercel.app/noise.svg");
+    opacity: 0.15;
+    pointer-events: none;
+    z-index: -1;
+    filter: contrast(120%) brightness(120%);
+  }
+
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: 
+      /* Central Light Source */
+      radial-gradient(circle at center, rgba(0, 243, 255, 0.1) 0%, transparent 70%),
+      /* Holographic Shimmer */
+      linear-gradient(135deg, rgba(255, 0, 255, 0.05) 0%, transparent 25%, rgba(0, 243, 255, 0.05) 50%, transparent 75%, rgba(255, 0, 255, 0.05) 100%);
+    pointer-events: none;
+    z-index: -1;
+    animation: atmospheric-drift 10s ease-in-out infinite alternate;
+  }
+
+  @keyframes atmospheric-drift {
+    0% { transform: translate(-5%, -5%) scale(1); }
+    100% { transform: translate(5%, 5%) scale(1.1); }
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold tracking-tight text-white uppercase;
+  }
+}
+
+@layer components {
+  .cyber-card {
+    @apply bg-cyber-dark/40 backdrop-blur-xl border border-white/5 rounded-2xl relative overflow-hidden;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+  }
+
+  .cyber-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: url("https://grainy-gradients.vercel.app/noise.svg");
+    opacity: 0.05;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .cyber-card::before {
+    content: '';
+    @apply absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-neon-cyan/50 to-transparent opacity-0 transition-opacity duration-500;
+  }
+
+  .cyber-card:hover::before {
+    @apply opacity-100;
+  }
+
+  .neon-glow-cyan {
+    text-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
+  }
+
+  .neon-glow-pink {
+    text-shadow: 0 0 10px rgba(255, 0, 255, 0.5);
+  }
+
+  .neon-glow-magenta {
+    text-shadow: 0 0 15px rgba(255, 0, 255, 0.7);
+  }
+
+  .text-gradient-pink-blue {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-neon-pink to-neon-cyan;
+    filter: drop-shadow(0 0 8px rgba(255, 0, 255, 0.5));
+  }
+
+  .neon-border-cyan {
+    @apply border-neon-cyan/30 shadow-[0_0_15px_rgba(0,243,255,0.1)];
+  }
+
+  .cyber-button {
+    @apply relative px-6 py-3 font-bold uppercase tracking-widest text-sm transition-all duration-300 overflow-hidden;
+    clip-path: polygon(10% 0%, 100% 0%, 100% 70%, 90% 100%, 0% 100%, 0% 30%);
+  }
+
+  .cyber-button-primary {
+    @apply bg-neon-cyan text-cyber-black hover:bg-white hover:shadow-[0_0_20px_rgba(255,255,255,0.5)];
+  }
+
+  .cyber-button-secondary {
+    @apply bg-white/5 text-white border border-white/10 hover:bg-white/10;
+  }
+
+  /* Neon Glow Button Style */
+  .btn-neon-cyan {
+    @apply relative bg-neon-cyan/10 text-neon-cyan border-2 border-neon-cyan font-black uppercase tracking-[0.2em] transition-all duration-300;
+    box-shadow: 0 0 10px rgba(0, 243, 255, 0.3), inset 0 0 10px rgba(0, 243, 255, 0.2);
+  }
+
+  .btn-neon-cyan:hover {
+    @apply bg-neon-cyan text-cyber-black scale-105 -translate-y-1;
+    box-shadow: 0 0 30px rgba(0, 243, 255, 0.6), 0 0 60px rgba(0, 243, 255, 0.2), inset 0 0 20px rgba(255, 255, 255, 0.4);
+  }
+
+  .btn-neon-magenta {
+    @apply relative bg-neon-magenta/10 text-neon-magenta border-2 border-neon-magenta font-black uppercase tracking-[0.2em] transition-all duration-300;
+    box-shadow: 0 0 10px rgba(255, 0, 255, 0.3), inset 0 0 10px rgba(255, 0, 255, 0.2);
+  }
+
+  .btn-neon-magenta:hover {
+    @apply bg-neon-magenta text-white scale-105 -translate-y-1;
+    box-shadow: 0 0 30px rgba(255, 0, 255, 0.6), 0 0 60px rgba(255, 0, 255, 0.2), inset 0 0 20px rgba(255, 255, 255, 0.4);
+  }
+
+  /* Holographic Glass Button */
+  .btn-holographic {
+    @apply relative bg-white/5 backdrop-blur-md border border-white/20 text-white font-black uppercase tracking-[0.2em] transition-all duration-300 overflow-hidden;
+  }
+
+  .btn-holographic::before {
+    content: '';
+    @apply absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full transition-transform duration-1000;
+  }
+
+  .btn-holographic:hover::before {
+    @apply translate-x-full;
+  }
+
+  .btn-holographic:hover {
+    @apply border-neon-cyan/50 bg-white/10 scale-105 shadow-[0_0_20px_rgba(0,243,255,0.2)];
+  }
+  /* Admin Animated Tab */
+  .btn-admin-animated {
+    @apply relative overflow-hidden transition-all duration-300 border border-neon-green/20;
+    background: linear-gradient(90deg, rgba(57, 255, 20, 0.05) 0%, rgba(57, 255, 20, 0.15) 50%, rgba(57, 255, 20, 0.05) 100%);
+    background-size: 200% 100%;
+    animation: admin-bg-slide 4s linear infinite;
+  }
+
+  .btn-admin-animated::after {
+    content: '';
+    @apply absolute inset-0 opacity-30 pointer-events-none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 4px,
+      rgba(57, 255, 20, 0.1) 4px,
+      rgba(57, 255, 20, 0.1) 5px
+    );
+    animation: admin-scan 6s linear infinite;
+  }
+
+  @keyframes admin-bg-slide {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  @keyframes admin-scan {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(100%); }
+  }
+
+  .btn-admin-animated:hover {
+    @apply border-neon-green/50 bg-neon-green/20 shadow-[0_0_15px_rgba(57,255,20,0.2)];
+  }
+}
+
+.scanline {
+  width: 100%;
+  height: 100px;
+  z-index: 99;
+  background: linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(0, 243, 255, 0.08) 50%,
+    rgba(0, 0, 0, 0) 100%
+  );
+  opacity: 0.2;
+  position: fixed;
+  bottom: 100%;
+  left: 0;
+  pointer-events: none;
+  animation: scanline 10s linear infinite;
+}
+
+@keyframes scanline {
+  0% { bottom: 100%; }
+  100% { bottom: -100px; }
+}
+
+/* Cyberpunk Glitch Animations */
+@keyframes glitch-anim {
+  0% { clip: rect(10px, 9999px, 30px, 0); transform: skew(0.5deg); }
+  10% { clip: rect(50px, 9999px, 70px, 0); transform: skew(0.2deg); }
+  20% { clip: rect(20px, 9999px, 60px, 0); transform: skew(0.8deg); }
+  100% { clip: rect(80px, 9999px, 100px, 0); transform: skew(0.1deg); }
+}
+
+@keyframes glitch-anim-2 {
+  0% { clip: rect(60px, 9999px, 80px, 0); transform: skew(0.6deg); }
+  10% { clip: rect(10px, 9999px, 30px, 0); transform: skew(0.3deg); }
+  100% { clip: rect(90px, 9999px, 100px, 0); transform: skew(0.1deg); }
+}
+
+.glitch-text::before,
+.glitch-text::after {
+  content: attr(data-text);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+.glitch-text::before {
+  left: 2px;
+  text-shadow: -1px 0 #ff0055;
+  clip: rect(24px, 550px, 90px, 0);
+  animation: glitch-anim-2 3s infinite linear alternate-reverse;
+}
+
+.glitch-text::after {
+  left: -2px;
+  text-shadow: -1px 0 #00f3ff;
+  clip: rect(85px, 550px, 140px, 0);
+  animation: glitch-anim 2.5s infinite linear alternate-reverse;
+}
+
+.cyber-clip {
+  /* Removed clip-path to prevent border cut-off */
+}
+
+/* Custom Cursor */
+.custom-cursor {
+  position: fixed;
+  width: 24px;
+  height: 24px;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none"><path d="M6 6L26 13.5L16.5 16.5L6 6Z" fill="white"/><path d="M6 6L16.5 16.5L13.5 26L6 6Z" fill="white"/><path d="M6 6L26 13.5L16.5 16.5L13.5 26L6 6Z" stroke="%2300ffff" stroke-width="1.5" stroke-linejoin="round"/></svg>');
+  background-size: contain;
+  background-repeat: no-repeat;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.cursor-glow {
+  filter: drop-shadow(0 0 2px #00ffff) drop-shadow(0 0 5px #00ffff);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #020205;
+  border-left: 1px solid rgba(0, 243, 255, 0.1);
+}
+
+@keyframes scrollbar-gradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(-45deg, 
+    #00f3ff, 
+    #ff00ff, 
+    #39ff14, 
+    #ffffff, 
+    #00f3ff
+  );
+  background-size: 400% 400%;
+  animation: scrollbar-gradient 2s linear infinite;
+  border-radius: 5px;
+  box-shadow: 
+    0 0 10px rgba(0, 243, 255, 0.8),
+    inset 0 0 5px rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(-45deg, 
+    #ffffff, 
+    #00f3ff, 
+    #ff00ff, 
+    #39ff14, 
+    #ffffff
+  );
+  background-size: 400% 400%;
+  animation: scrollbar-gradient 1s linear infinite;
+  box-shadow: 
+    0 0 20px rgba(255, 0, 255, 1),
+    0 0 40px rgba(0, 243, 255, 0.6),
+    inset 0 0 10px rgba(255, 255, 255, 0.8);
+}
+
+/* Hide default cursor on all interactive elements to prevent the 'hand icon' from appearing */
+a, button, input, select, textarea, label, [role="button"], .cursor-pointer {
+  cursor: none !important;
+}
