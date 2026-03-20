@@ -1,4 +1,5 @@
 import express from 'express';
+import type { CookieOptions } from 'express';
 import { createServer as createViteServer } from 'vite';
 import { Server } from 'socket.io';
 import http from 'http';
@@ -8,7 +9,17 @@ import bcrypt from 'bcryptjs';
 import db, { initDb } from './src/lib/db';
 import { seedDb } from './src/lib/seed';
 
+
 const JWT_SECRET = process.env.JWT_SECRET || 'cyber-secret-key';
+const AUTH_COOKIE_NAME = 'token';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+const AUTH_COOKIE_OPTIONS: CookieOptions = {
+  httpOnly: true,
+  secure: IS_PRODUCTION,
+  sameSite: IS_PRODUCTION ? 'none' : 'lax',
+  path: '/'
+};
 
 async function start() {
   console.log('--- STARTING NIGHTRESPAWN SERVER ---');
@@ -40,7 +51,7 @@ async function start() {
     const cookie = socket.handshake.headers.cookie;
     if (!cookie) return next(new Error('Authentication error'));
     
-    const token = cookie.split('; ').find(row => row.startsWith('token='))?.split('=')[1];
+    const token = cookie.split('; ').find(row => row.startsWith(`${AUTH_COOKIE_NAME}=`))?.split('=')[1];
     if (!token) return next(new Error('Authentication error'));
 
     try {
@@ -68,7 +79,7 @@ async function start() {
 
   // --- AUTH MIDDLEWARE ---
   const authenticate = (req: any, res: any, next: any) => {
-    const token = req.cookies.token;
+    const token = req.cookies[AUTH_COOKIE_NAME];
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
@@ -84,6 +95,21 @@ async function start() {
     next();
   };
 
+  const isStaffRole = (role?: string) => role === 'admin' || role === 'moderator';
+
+  const createModerationAction = async (
+    moderatorId: number,
+    actionType: string,
+    targetType: 'post' | 'thread' | 'user',
+    targetId: number,
+    reason?: string
+  ) => {
+    await db.execute(
+      'INSERT INTO moderation_actions (moderator_id, action_type, target_type, target_id, reason) VALUES (?, ?, ?, ?, ?)',
+      [moderatorId, actionType, targetType, targetId, reason ?? null]
+    );
+  };
+
   // --- API ROUTES ---
 
   // Auth
@@ -92,7 +118,24 @@ async function start() {
     try {
       const hashedPassword = bcrypt.hashSync(password, 10);
       await db.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)', [username, email, hashedPassword]);
-      res.json({ message: 'User registered' });
+
+      const user = await db.queryOne<any>(
+        'SELECT id, username, email, role FROM users WHERE username = ?',
+        [username]
+      );
+
+      if (!user) {
+        return res.status(500).json({ error: 'Failed to load registered user' });
+      }
+
+      const token = jwt.sign(
+        { id: user.id, username: user.username, role: user.role },
+        JWT_SECRET,
+        { expiresIn: '24h' }
+      );
+
+      res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'none' });
+      res.json({ user: { id: user.id, username: user.username, email: user.email, role: user.role } });
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }
@@ -106,7 +149,7 @@ async function start() {
         return res.status(401).json({ error: 'Invalid credentials' });
       }
       const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
-      res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'none' });
+      res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
       res.json({ user: { id: user.id, username: user.username, email: user.email, role: user.role } });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -154,7 +197,7 @@ async function start() {
   });
 
   app.post('/api/auth/logout', (req, res) => {
-    res.clearCookie('token');
+    res.clearCookie(AUTH_COOKIE_NAME, AUTH_COOKIE_OPTIONS);
     res.json({ message: 'Logged out' });
   });
 
@@ -267,10 +310,15 @@ async function start() {
     try {
       const forum = await db.queryOne<any>('SELECT * FROM forums WHERE id = ?', [req.params.id]);
       const threads = await db.query<any>(`
-        SELECT t.*, u.username as author_name 
+        SELECT
+          t.*,
+          u.username as author_name,
+          COUNT(p.id) as post_count
         FROM threads t 
         JOIN users u ON t.author_id = u.id 
+        LEFT JOIN posts p ON p.thread_id = t.id
         WHERE t.forum_id = ? 
+        GROUP BY t.id, u.username
         ORDER BY t.is_pinned DESC, t.created_at DESC
       `, [req.params.id]);
       res.json({ forum, threads });
@@ -285,7 +333,7 @@ async function start() {
       const result = await db.execute('INSERT INTO threads (forum_id, author_id, title) VALUES (?, ?, ?)', [forum_id, req.user.id, title]);
       const threadId = result.lastInsertRowid || result.insertId;
       await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [threadId, req.user.id, content]);
-      res.json({ threadId });
+      res.json({ id: threadId });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -360,6 +408,20 @@ async function start() {
 
       const updates: string[] = [];
       const params: any[] = [];
+      const isStaff = isStaffRole(req.user.role);
+      const isOwner = post.author_id === req.user.id;
+      if (!isOwner && !isStaff) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      if ((is_hidden !== undefined || is_deleted !== undefined) && !isStaff) {
+        return res.status(403).json({ error: 'Only moderators can hide/delete posts' });
+      }
+
+      const updates: string[] = [];
+      const params: any[] = [];
+      const moderationEvents: Array<{ action: string; reason: string }> = [];
+
       if (content !== undefined) {
         updates.push('content = ?');
         params.push(content);
@@ -376,6 +438,45 @@ async function start() {
 
       params.push(req.params.id);
       await db.execute(`UPDATE posts SET ${updates.join(', ')} WHERE id = ?`, params);
+
+      if (is_hidden !== undefined) {
+        updates.push('is_hidden = ?');
+        params.push(is_hidden ? 1 : 0);
+        if ((post.is_hidden ?? 0) !== (is_hidden ? 1 : 0)) {
+          moderationEvents.push({
+            action: is_hidden ? 'hide_post' : 'unhide_post',
+            reason: `Post ${is_hidden ? 'hidden' : 'unhidden'} via /api/posts/:id PATCH`
+          });
+        }
+      }
+
+      if (is_deleted !== undefined) {
+        updates.push('is_deleted = ?');
+        params.push(is_deleted ? 1 : 0);
+        if ((post.is_deleted ?? 0) !== (is_deleted ? 1 : 0)) {
+          moderationEvents.push({
+            action: is_deleted ? 'delete_post' : 'restore_post',
+            reason: `Post ${is_deleted ? 'deleted' : 'restored'} via /api/posts/:id PATCH`
+          });
+        }
+      }
+
+      if (updates.length === 0) {
+        return res.status(400).json({ error: 'No updates provided' });
+      }
+
+      updates.push('updated_at = CURRENT_TIMESTAMP');
+      params.push(req.params.id);
+      await db.execute(`UPDATE posts SET ${updates.join(', ')} WHERE id = ?`, params);
+
+      await db.execute('UPDATE threads SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [post.thread_id]);
+
+      if (isStaff && moderationEvents.length > 0) {
+        for (const event of moderationEvents) {
+          await createModerationAction(req.user.id, event.action, 'post', Number(req.params.id), event.reason);
+        }
+      }
+
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -398,6 +499,85 @@ async function start() {
       updates.push('updated_at = CURRENT_TIMESTAMP');
       params.push(req.params.id);
       await db.execute(`UPDATE threads SET ${updates.join(', ')} WHERE id = ?`, params);
+    try {
+      const thread = await db.queryOne<any>('SELECT * FROM threads WHERE id = ?', [req.params.id]);
+      if (!thread) return res.status(404).json({ error: 'Thread not found' });
+
+      const isStaff = isStaffRole(req.user.role);
+      const isOwner = thread.author_id === req.user.id;
+
+      if (is_pinned !== undefined && !isStaff) {
+        return res.status(403).json({ error: 'Only moderators can pin/unpin threads' });
+      }
+      if (is_hidden !== undefined && !isStaff) {
+        return res.status(403).json({ error: 'Only moderators can hide/unhide threads' });
+      }
+      if ((is_locked !== undefined || is_solved !== undefined) && !isStaff && !isOwner) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      if (!isStaff && !isOwner) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      const updates: string[] = [];
+      const params: any[] = [];
+      const moderationEvents: Array<{ action: string; reason: string }> = [];
+
+      if (is_pinned !== undefined) {
+        updates.push('is_pinned = ?');
+        params.push(is_pinned ? 1 : 0);
+        if ((thread.is_pinned ?? 0) !== (is_pinned ? 1 : 0)) {
+          moderationEvents.push({
+            action: is_pinned ? 'pin_thread' : 'unpin_thread',
+            reason: `Thread ${is_pinned ? 'pinned' : 'unpinned'} via /api/threads/:id PATCH`
+          });
+        }
+      }
+      if (is_locked !== undefined) {
+        updates.push('is_locked = ?');
+        params.push(is_locked ? 1 : 0);
+        if (isStaff && (thread.is_locked ?? 0) !== (is_locked ? 1 : 0)) {
+          moderationEvents.push({
+            action: is_locked ? 'lock_thread' : 'unlock_thread',
+            reason: `Thread ${is_locked ? 'locked' : 'unlocked'} via /api/threads/:id PATCH`
+          });
+        }
+      }
+      if (is_solved !== undefined) {
+        updates.push('is_solved = ?');
+        params.push(is_solved ? 1 : 0);
+        if (isStaff && (thread.is_solved ?? 0) !== (is_solved ? 1 : 0)) {
+          moderationEvents.push({
+            action: is_solved ? 'solve_thread' : 'unsolve_thread',
+            reason: `Thread ${is_solved ? 'solved' : 'unsolved'} via /api/threads/:id PATCH`
+          });
+        }
+      }
+      if (is_hidden !== undefined) {
+        updates.push('is_hidden = ?');
+        params.push(is_hidden ? 1 : 0);
+        if ((thread.is_hidden ?? 0) !== (is_hidden ? 1 : 0)) {
+          moderationEvents.push({
+            action: is_hidden ? 'hide_thread' : 'unhide_thread',
+            reason: `Thread ${is_hidden ? 'hidden' : 'unhidden'} via /api/threads/:id PATCH`
+          });
+        }
+      }
+
+      if (updates.length === 0) {
+        return res.status(400).json({ error: 'No updates provided' });
+      }
+
+      updates.push('updated_at = CURRENT_TIMESTAMP');
+      params.push(req.params.id);
+      await db.execute(`UPDATE threads SET ${updates.join(', ')} WHERE id = ?`, params);
+
+      if (isStaff && moderationEvents.length > 0) {
+        for (const event of moderationEvents) {
+          await createModerationAction(req.user.id, event.action, 'thread', Number(req.params.id), event.reason);
+        }
+      }
+
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -411,7 +591,48 @@ async function start() {
       const canDelete = thread.author_id === req.user.id || ['admin', 'moderator'].includes(req.user.role);
       if (!canDelete) return res.status(403).json({ error: 'Forbidden' });
       await db.execute('DELETE FROM threads WHERE id = ?', [req.params.id]);
+
+      const isStaff = isStaffRole(req.user.role);
+      const isOwner = thread.author_id === req.user.id;
+      if (!isStaff && !isOwner) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      await db.execute('DELETE FROM threads WHERE id = ?', [req.params.id]);
+
+      if (isStaff) {
+        await createModerationAction(
+          req.user.id,
+          'delete_thread',
+          'thread',
+          Number(req.params.id),
+          'Thread deleted via /api/threads/:id DELETE'
+        );
+      }
+
       res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/reports', authenticate, async (req: any, res) => {
+    const { target_type, target_id, reason } = req.body;
+    try {
+      if (!target_type || !target_id || !reason) {
+        return res.status(400).json({ error: 'target_type, target_id, and reason are required' });
+      }
+
+      if (!['post', 'thread', 'user'].includes(target_type)) {
+        return res.status(400).json({ error: 'Invalid target_type' });
+      }
+
+      await db.execute(
+        'INSERT INTO reports (reporter_id, target_type, target_id, reason) VALUES (?, ?, ?, ?)',
+        [req.user.id, target_type, target_id, reason]
+      );
+
+      res.status(201).json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

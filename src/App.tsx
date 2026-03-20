@@ -36,6 +36,7 @@ import MessagesPage from './pages/MessagesPage';
 import DiscordPage from './pages/DiscordPage';
 import ServersPage from './pages/ServersPage';
 import VeoStudioPage from './pages/VeoStudioPage';
+import ComingSoonPage from './pages/ComingSoonPage';
 
 const queryClient = new QueryClient();
 
@@ -89,6 +90,8 @@ const CustomCursor = () => {
 };
 
 export default function App() {
+  const isStudioEnabled = import.meta.env.VITE_ENABLE_STUDIO === 'true';
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
@@ -113,7 +116,7 @@ export default function App() {
                 <Route path="servers" element={<ServersPage />} />
                 <Route path="login" element={<LoginPage />} />
                 <Route path="register" element={<RegisterPage />} />
-                <Route path="studio" element={<VeoStudioPage />} />
+                <Route path="studio" element={isStudioEnabled ? <VeoStudioPage /> : <ComingSoonPage />} />
               </Route>
               <Route path="/admin" element={<AdminLayout />}>
                 <Route index element={<AdminDashboard />} />

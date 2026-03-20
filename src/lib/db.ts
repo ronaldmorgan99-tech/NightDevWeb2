@@ -119,10 +119,31 @@ export async function initDb() {
       description TEXT,
       display_order INTEGER DEFAULT 0,
       min_role_to_thread TEXT DEFAULT 'member',
+      is_hidden INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (category_id) REFERENCES forum_categories(id) ON DELETE CASCADE
     )
   `);
+
+  // Migration-safe schema updates for forums
+  if (db instanceof SQLiteWrapper) {
+    const forumColumns = await db.query<any>('PRAGMA table_info(forums)');
+    const hasIsHidden = forumColumns.some((column) => column.name === 'is_hidden');
+    if (!hasIsHidden) {
+      await db.execute('ALTER TABLE forums ADD COLUMN is_hidden INTEGER DEFAULT 0');
+    }
+  } else {
+    const isHiddenColumn = await db.queryOne<any>(`
+      SELECT COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'forums'
+        AND COLUMN_NAME = 'is_hidden'
+    `);
+    if (!isHiddenColumn) {
+      await db.execute('ALTER TABLE forums ADD COLUMN is_hidden INT DEFAULT 0');
+    }
+  }
 
   // Threads
   await run(`
