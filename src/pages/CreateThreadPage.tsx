@@ -5,6 +5,20 @@ import { MessageSquare, ArrowLeft, Send, AlertCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 
+interface ForumResponse {
+  forum: {
+    id: number;
+    name: string;
+    description: string | null;
+    min_role_to_thread: 'member' | 'moderator' | 'admin';
+    is_hidden: number;
+  } | null;
+}
+
+interface CreateThreadResponse {
+  id: number;
+}
+
 export default function CreateThreadPage() {
   const { id: forumId } = useParams();
   const navigate = useNavigate();
@@ -13,7 +27,7 @@ export default function CreateThreadPage() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
 
-  const { data: forumData, isLoading: forumLoading } = useQuery({
+  const { data: forumData, isLoading: forumLoading } = useQuery<ForumResponse>({
     queryKey: ['forum', forumId],
     queryFn: () => fetch(`/api/forums/${forumId}`).then(res => res.json()),
     enabled: !!forumId
@@ -25,7 +39,7 @@ export default function CreateThreadPage() {
   const canPost = userRoleIndex >= requiredRoleIndex;
 
   const mutation = useMutation({
-    mutationFn: async (newThread: { forum_id: string; title: string; content: string }) => {
+    mutationFn: async (newThread: { forum_id: string; title: string; content: string }): Promise<CreateThreadResponse> => {
       const res = await fetch('/api/threads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

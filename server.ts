@@ -266,10 +266,15 @@ async function start() {
     try {
       const forum = await db.queryOne<any>('SELECT * FROM forums WHERE id = ?', [req.params.id]);
       const threads = await db.query<any>(`
-        SELECT t.*, u.username as author_name 
+        SELECT
+          t.*,
+          u.username as author_name,
+          COUNT(p.id) as post_count
         FROM threads t 
         JOIN users u ON t.author_id = u.id 
+        LEFT JOIN posts p ON p.thread_id = t.id
         WHERE t.forum_id = ? 
+        GROUP BY t.id, u.username
         ORDER BY t.is_pinned DESC, t.created_at DESC
       `, [req.params.id]);
       res.json({ forum, threads });
@@ -284,7 +289,7 @@ async function start() {
       const result = await db.execute('INSERT INTO threads (forum_id, author_id, title) VALUES (?, ?, ?)', [forum_id, req.user.id, title]);
       const threadId = result.lastInsertRowid || result.insertId;
       await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [threadId, req.user.id, content]);
-      res.json({ threadId });
+      res.json({ id: threadId });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
