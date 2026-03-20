@@ -91,7 +91,24 @@ async function start() {
     try {
       const hashedPassword = bcrypt.hashSync(password, 10);
       await db.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)', [username, email, hashedPassword]);
-      res.json({ message: 'User registered' });
+
+      const user = await db.queryOne<any>(
+        'SELECT id, username, email, role FROM users WHERE username = ?',
+        [username]
+      );
+
+      if (!user) {
+        return res.status(500).json({ error: 'Failed to load registered user' });
+      }
+
+      const token = jwt.sign(
+        { id: user.id, username: user.username, role: user.role },
+        JWT_SECRET,
+        { expiresIn: '24h' }
+      );
+
+      res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'none' });
+      res.json({ user: { id: user.id, username: user.username, email: user.email, role: user.role } });
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }
