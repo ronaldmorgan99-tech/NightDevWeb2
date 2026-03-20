@@ -1,4 +1,5 @@
 import express from 'express';
+import type { CookieOptions } from 'express';
 import { createServer as createViteServer } from 'vite';
 import { Server } from 'socket.io';
 import http from 'http';
@@ -8,7 +9,17 @@ import bcrypt from 'bcryptjs';
 import db, { initDb } from './src/lib/db';
 import { seedDb } from './src/lib/seed';
 
+
 const JWT_SECRET = process.env.JWT_SECRET || 'cyber-secret-key';
+const AUTH_COOKIE_NAME = 'token';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+const AUTH_COOKIE_OPTIONS: CookieOptions = {
+  httpOnly: true,
+  secure: IS_PRODUCTION,
+  sameSite: IS_PRODUCTION ? 'none' : 'lax',
+  path: '/'
+};
 
 async function start() {
   console.log('--- STARTING NIGHTRESPAWN SERVER ---');
@@ -40,7 +51,7 @@ async function start() {
     const cookie = socket.handshake.headers.cookie;
     if (!cookie) return next(new Error('Authentication error'));
     
-    const token = cookie.split('; ').find(row => row.startsWith('token='))?.split('=')[1];
+    const token = cookie.split('; ').find(row => row.startsWith(`${AUTH_COOKIE_NAME}=`))?.split('=')[1];
     if (!token) return next(new Error('Authentication error'));
 
     try {
@@ -67,7 +78,7 @@ async function start() {
 
   // --- AUTH MIDDLEWARE ---
   const authenticate = (req: any, res: any, next: any) => {
-    const token = req.cookies.token;
+    const token = req.cookies[AUTH_COOKIE_NAME];
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
@@ -105,7 +116,7 @@ async function start() {
         return res.status(401).json({ error: 'Invalid credentials' });
       }
       const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
-      res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'none' });
+      res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
       res.json({ user: { id: user.id, username: user.username, email: user.email, role: user.role } });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -153,7 +164,7 @@ async function start() {
   });
 
   app.post('/api/auth/logout', (req, res) => {
-    res.clearCookie('token');
+    res.clearCookie(AUTH_COOKIE_NAME, AUTH_COOKIE_OPTIONS);
     res.json({ message: 'Logged out' });
   });
 
