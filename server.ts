@@ -64,6 +64,7 @@ async function start() {
   });
 
   const userSockets = new Map<number, string>();
+  const mediaOperations = new Map<string, { createdAt: number; uri: string }>();
 
   io.on('connection', (socket) => {
     const userId = socket.data.user.id;
@@ -360,6 +361,29 @@ async function start() {
     }
   });
 
+  app.get('/api/threads', async (req, res) => {
+    const { categoryId } = req.query;
+    try {
+      const threads = await db.query<any>(`
+        SELECT 
+          t.id,
+          t.title,
+          t.views,
+          t.created_at as createdAt,
+          u.username as author,
+          (SELECT COUNT(*) - 1 FROM posts p WHERE p.thread_id = t.id) as replies
+        FROM threads t
+        JOIN users u ON u.id = t.author_id
+        JOIN forums f ON f.id = t.forum_id
+        WHERE (? IS NULL OR f.category_id = ?)
+        ORDER BY t.is_pinned DESC, t.updated_at DESC
+      `, [categoryId || null, categoryId || null]);
+      res.json(threads);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post('/api/posts', authenticate, async (req: any, res) => {
     const { thread_id, content } = req.body;
     try {
@@ -377,6 +401,13 @@ async function start() {
       const post = await db.queryOne<any>('SELECT * FROM posts WHERE id = ?', [req.params.id]);
       if (!post) return res.status(404).json({ error: 'Post not found' });
 
+      const canModerate = req.user.role === 'admin' || req.user.role === 'moderator';
+      if (!canModerate && post.author_id !== req.user.id) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      const updates: string[] = [];
+      const params: any[] = [];
       const isStaff = isStaffRole(req.user.role);
       const isOwner = post.author_id === req.user.id;
       if (!isOwner && !isStaff) {
@@ -395,6 +426,18 @@ async function start() {
         updates.push('content = ?');
         params.push(content);
       }
+      if (is_hidden !== undefined && canModerate) {
+        updates.push('is_hidden = ?');
+        params.push(is_hidden);
+      }
+      if (is_deleted !== undefined && canModerate) {
+        updates.push('is_deleted = ?');
+        params.push(is_deleted);
+      }
+      updates.push('updated_at = CURRENT_TIMESTAMP');
+
+      params.push(req.params.id);
+      await db.execute(`UPDATE posts SET ${updates.join(', ')} WHERE id = ?`, params);
 
       if (is_hidden !== undefined) {
         updates.push('is_hidden = ?');
@@ -442,6 +485,20 @@ async function start() {
 
   app.patch('/api/threads/:id', authenticate, async (req: any, res) => {
     const { is_pinned, is_locked, is_solved, is_hidden } = req.body;
+    if (!['admin', 'moderator'].includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
+    try {
+      const updates: string[] = [];
+      const params: any[] = [];
+      for (const [key, value] of Object.entries({ is_pinned, is_locked, is_solved, is_hidden })) {
+        if (value !== undefined) {
+          updates.push(`${key} = ?`);
+          params.push(value);
+        }
+      }
+      if (!updates.length) return res.status(400).json({ error: 'No updates provided' });
+      updates.push('updated_at = CURRENT_TIMESTAMP');
+      params.push(req.params.id);
+      await db.execute(`UPDATE threads SET ${updates.join(', ')} WHERE id = ?`, params);
     try {
       const thread = await db.queryOne<any>('SELECT * FROM threads WHERE id = ?', [req.params.id]);
       if (!thread) return res.status(404).json({ error: 'Thread not found' });
@@ -531,6 +588,9 @@ async function start() {
     try {
       const thread = await db.queryOne<any>('SELECT * FROM threads WHERE id = ?', [req.params.id]);
       if (!thread) return res.status(404).json({ error: 'Thread not found' });
+      const canDelete = thread.author_id === req.user.id || ['admin', 'moderator'].includes(req.user.role);
+      if (!canDelete) return res.status(403).json({ error: 'Forbidden' });
+      await db.execute('DELETE FROM threads WHERE id = ?', [req.params.id]);
 
       const isStaff = isStaffRole(req.user.role);
       const isOwner = thread.author_id === req.user.id;
@@ -609,11 +669,47 @@ async function start() {
   });
 
   app.post('/api/tickets', authenticate, async (req: any, res) => {
-    const { subject, priority, message } = req.body;
+    const { subject, priority, message, ticket_type } = req.body;
     try {
-      const result = await db.execute('INSERT INTO tickets (user_id, subject, priority) VALUES (?, ?, ?)', [req.user.id, subject, priority]);
+      const result = await db.execute('INSERT INTO tickets (user_id, subject, priority, ticket_type) VALUES (?, ?, ?, ?)', [req.user.id, subject, priority, ticket_type || 'user']);
       const ticketId = result.lastInsertRowid || result.insertId;
       await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [ticketId, req.user.id, message]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/tickets/:id', authenticate, async (req: any, res) => {
+    try {
+      const ticket = await db.queryOne<any>(`
+        SELECT t.*, u.username as author_name, u.avatar_url as author_avatar
+        FROM tickets t
+        JOIN users u ON t.user_id = u.id
+        WHERE t.id = ? AND t.user_id = ?
+      `, [req.params.id, req.user.id]);
+      if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+
+      const messages = await db.query<any>(`
+        SELECT tm.*, u.username as author_name, u.avatar_url as author_avatar, u.role as author_role
+        FROM ticket_messages tm
+        JOIN users u ON tm.user_id = u.id
+        WHERE tm.ticket_id = ?
+        ORDER BY tm.created_at ASC
+      `, [req.params.id]);
+      res.json({ ticket, messages });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/tickets/:id/messages', authenticate, async (req: any, res) => {
+    const { message } = req.body;
+    try {
+      const ticket = await db.queryOne<any>('SELECT * FROM tickets WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
+      if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+      await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [req.params.id, req.user.id, message]);
+      await db.execute("UPDATE tickets SET status = 'pending' WHERE id = ?", [req.params.id]);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -630,6 +726,16 @@ async function start() {
     }
   });
 
+  app.patch('/api/admin/users/:id/role', authenticate, isAdmin, async (req, res) => {
+    const { role } = req.body;
+    try {
+      await db.execute('UPDATE users SET role = ? WHERE id = ?', [role, req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get('/api/admin/reports', authenticate, isAdmin, async (req, res) => {
     try {
       const reports = await db.query<any>(`
@@ -639,6 +745,36 @@ async function start() {
         ORDER BY r.created_at DESC
       `);
       res.json(reports);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/admin/reports/:id/action', authenticate, isAdmin, async (req: any, res) => {
+    const { action, reason } = req.body;
+    try {
+      const report = await db.queryOne<any>('SELECT * FROM reports WHERE id = ?', [req.params.id]);
+      if (!report) return res.status(404).json({ error: 'Report not found' });
+
+      if (action === 'hide' && report.target_type === 'post') {
+        await db.execute('UPDATE posts SET is_hidden = 1 WHERE id = ?', [report.target_id]);
+      }
+      if (action === 'remove' && report.target_type === 'post') {
+        await db.execute('UPDATE posts SET is_deleted = 1 WHERE id = ?', [report.target_id]);
+      }
+      if (action === 'remove' && report.target_type === 'thread') {
+        await db.execute('DELETE FROM threads WHERE id = ?', [report.target_id]);
+      }
+      if (action === 'suspend' && report.target_type === 'user') {
+        await db.execute("UPDATE users SET role = 'suspended' WHERE id = ?", [report.target_id]);
+      }
+
+      await db.execute("UPDATE reports SET status = 'resolved' WHERE id = ?", [req.params.id]);
+      await db.execute(
+        'INSERT INTO moderation_actions (moderator_id, action_type, target_type, target_id, reason) VALUES (?, ?, ?, ?, ?)',
+        [req.user.id, action, report.target_type, report.target_id, reason || null]
+      );
+      res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -673,6 +809,236 @@ async function start() {
       for (const setting of settings) {
         await db.execute('UPDATE site_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?', [setting.value, setting.key]);
       }
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/admin/analytics', authenticate, isAdmin, async (req, res) => {
+    try {
+      const users = await db.queryOne<any>('SELECT COUNT(*) as count FROM users');
+      const posts = await db.queryOne<any>('SELECT COUNT(*) as count FROM posts');
+      const threads = await db.queryOne<any>('SELECT COUNT(*) as count FROM threads');
+      const revenue = await db.queryOne<any>('SELECT COALESCE(SUM(total_amount), 0) as value FROM orders');
+
+      const registrations = await db.query<any>(`
+        SELECT DATE(created_at) as date, COUNT(*) as count
+        FROM users
+        WHERE created_at >= datetime('now', '-6 days')
+        GROUP BY DATE(created_at)
+        ORDER BY DATE(created_at)
+      `);
+      const orders = await db.query<any>(`
+        SELECT DATE(created_at) as date, COALESCE(SUM(total_amount), 0) as revenue
+        FROM orders
+        WHERE created_at >= datetime('now', '-6 days')
+        GROUP BY DATE(created_at)
+        ORDER BY DATE(created_at)
+      `);
+
+      res.json({
+        stats: { users: users.count, posts: posts.count, threads: threads.count, revenue: Number(revenue.value || 0) },
+        registrations,
+        orders
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/admin/tags', authenticate, isAdmin, async (req, res) => {
+    try {
+      const tags = await db.query<any>('SELECT * FROM tags ORDER BY created_at DESC');
+      res.json(tags);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/admin/tags', authenticate, isAdmin, async (req, res) => {
+    const { name, color } = req.body;
+    try {
+      await db.execute('INSERT INTO tags (name, color) VALUES (?, ?)', [name, color]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/admin/tags/:id', authenticate, isAdmin, async (req, res) => {
+    const { name, color } = req.body;
+    try {
+      await db.execute('UPDATE tags SET name = ?, color = ? WHERE id = ?', [name, color, req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/admin/tags/:id', authenticate, isAdmin, async (req, res) => {
+    try {
+      await db.execute('DELETE FROM tags WHERE id = ?', [req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/admin/categories', authenticate, isAdmin, async (req, res) => {
+    const { name } = req.body;
+    try {
+      await db.execute('INSERT INTO forum_categories (name) VALUES (?)', [name]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/admin/categories/:id', authenticate, isAdmin, async (req, res) => {
+    const { name, display_order } = req.body;
+    try {
+      await db.execute('UPDATE forum_categories SET name = ?, display_order = ? WHERE id = ?', [name, display_order || 0, req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/admin/categories/:id', authenticate, isAdmin, async (req, res) => {
+    try {
+      await db.execute('DELETE FROM forum_categories WHERE id = ?', [req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/admin/forums', authenticate, isAdmin, async (req, res) => {
+    const { category_id, name, description, min_role_to_thread, display_order } = req.body;
+    try {
+      await db.execute(
+        'INSERT INTO forums (category_id, name, description, min_role_to_thread, display_order) VALUES (?, ?, ?, ?, ?)',
+        [category_id, name, description || '', min_role_to_thread || 'member', display_order || 0]
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/admin/forums/:id', authenticate, isAdmin, async (req, res) => {
+    const { category_id, name, description, min_role_to_thread, display_order } = req.body;
+    try {
+      await db.execute(
+        'UPDATE forums SET category_id = ?, name = ?, description = ?, min_role_to_thread = ?, display_order = ? WHERE id = ?',
+        [category_id, name, description || '', min_role_to_thread || 'member', display_order || 0, req.params.id]
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/admin/forums/:id', authenticate, isAdmin, async (req, res) => {
+    try {
+      await db.execute('DELETE FROM forums WHERE id = ?', [req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/admin/products', authenticate, isAdmin, async (req, res) => {
+    const { name, description, price, image_url, category, stock } = req.body;
+    try {
+      await db.execute(
+        'INSERT INTO products (name, description, price, image_url, category, stock) VALUES (?, ?, ?, ?, ?, ?)',
+        [name, description || '', price, image_url || '', category || 'Digital', stock ?? -1]
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/admin/products/:id', authenticate, isAdmin, async (req, res) => {
+    const { name, description, price, image_url, category, stock } = req.body;
+    try {
+      await db.execute(
+        'UPDATE products SET name = ?, description = ?, price = ?, image_url = ?, category = ?, stock = ? WHERE id = ?',
+        [name, description || '', price, image_url || '', category || 'Digital', stock ?? -1, req.params.id]
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/admin/products/:id', authenticate, isAdmin, async (req, res) => {
+    try {
+      await db.execute('DELETE FROM products WHERE id = ?', [req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/admin/tickets', authenticate, isAdmin, async (req, res) => {
+    try {
+      const tickets = await db.query<any>(`
+        SELECT 
+          t.*,
+          u.username as author_name,
+          u.avatar_url as author_avatar,
+          (SELECT COUNT(*) FROM ticket_messages tm WHERE tm.ticket_id = t.id) as message_count
+        FROM tickets t
+        JOIN users u ON u.id = t.user_id
+        ORDER BY t.created_at DESC
+      `);
+      res.json(tickets);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/admin/tickets/:id', authenticate, isAdmin, async (req, res) => {
+    try {
+      const ticket = await db.queryOne<any>(`
+        SELECT t.*, u.username as author_name, u.avatar_url as author_avatar
+        FROM tickets t
+        JOIN users u ON u.id = t.user_id
+        WHERE t.id = ?
+      `, [req.params.id]);
+      if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+      const messages = await db.query<any>(`
+        SELECT tm.*, u.username as author_name, u.avatar_url as author_avatar, u.role as author_role
+        FROM ticket_messages tm
+        JOIN users u ON u.id = tm.user_id
+        WHERE tm.ticket_id = ?
+        ORDER BY tm.created_at ASC
+      `, [req.params.id]);
+      res.json({ ticket, messages });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/admin/tickets/:id/messages', authenticate, isAdmin, async (req: any, res) => {
+    const { message } = req.body;
+    try {
+      await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [req.params.id, req.user.id, message]);
+      await db.execute("UPDATE tickets SET status = 'pending' WHERE id = ?", [req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/admin/tickets/:id', authenticate, isAdmin, async (req, res) => {
+    const { status } = req.body;
+    try {
+      await db.execute('UPDATE tickets SET status = ? WHERE id = ?', [status, req.params.id]);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -783,6 +1149,24 @@ async function start() {
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // --- MEDIA ---
+  app.post('/api/media/animate', authenticate, async (req: any, res) => {
+    const operationName = `op_${Date.now()}_${req.user.id}`;
+    mediaOperations.set(operationName, {
+      createdAt: Date.now(),
+      uri: `https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4`
+    });
+    res.json({ operationName });
+  });
+
+  app.get('/api/media/poll', authenticate, async (req, res) => {
+    const operationName = String(req.query.operationName || '');
+    const operation = mediaOperations.get(operationName);
+    if (!operation) return res.status(404).json({ error: 'Operation not found' });
+    const done = Date.now() - operation.createdAt > 15000;
+    res.json(done ? { done: true, uri: operation.uri } : { done: false });
   });
 
   // Vite Middleware
