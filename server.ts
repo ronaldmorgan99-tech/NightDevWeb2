@@ -83,6 +83,21 @@ async function start() {
     next();
   };
 
+  const isStaffRole = (role?: string) => role === 'admin' || role === 'moderator';
+
+  const createModerationAction = async (
+    moderatorId: number,
+    actionType: string,
+    targetType: 'post' | 'thread' | 'user',
+    targetId: number,
+    reason?: string
+  ) => {
+    await db.execute(
+      'INSERT INTO moderation_actions (moderator_id, action_type, target_type, target_id, reason) VALUES (?, ?, ?, ?, ?)',
+      [moderatorId, actionType, targetType, targetId, reason ?? null]
+    );
+  };
+
   // --- API ROUTES ---
 
   // Auth
@@ -318,6 +333,213 @@ async function start() {
       await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [thread_id, req.user.id, content]);
       await db.execute('UPDATE threads SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [thread_id]);
       res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/posts/:id', authenticate, async (req: any, res) => {
+    const { content, is_hidden, is_deleted } = req.body;
+    try {
+      const post = await db.queryOne<any>('SELECT * FROM posts WHERE id = ?', [req.params.id]);
+      if (!post) return res.status(404).json({ error: 'Post not found' });
+
+      const isStaff = isStaffRole(req.user.role);
+      const isOwner = post.author_id === req.user.id;
+      if (!isOwner && !isStaff) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      if ((is_hidden !== undefined || is_deleted !== undefined) && !isStaff) {
+        return res.status(403).json({ error: 'Only moderators can hide/delete posts' });
+      }
+
+      const updates: string[] = [];
+      const params: any[] = [];
+      const moderationEvents: Array<{ action: string; reason: string }> = [];
+
+      if (content !== undefined) {
+        updates.push('content = ?');
+        params.push(content);
+      }
+
+      if (is_hidden !== undefined) {
+        updates.push('is_hidden = ?');
+        params.push(is_hidden ? 1 : 0);
+        if ((post.is_hidden ?? 0) !== (is_hidden ? 1 : 0)) {
+          moderationEvents.push({
+            action: is_hidden ? 'hide_post' : 'unhide_post',
+            reason: `Post ${is_hidden ? 'hidden' : 'unhidden'} via /api/posts/:id PATCH`
+          });
+        }
+      }
+
+      if (is_deleted !== undefined) {
+        updates.push('is_deleted = ?');
+        params.push(is_deleted ? 1 : 0);
+        if ((post.is_deleted ?? 0) !== (is_deleted ? 1 : 0)) {
+          moderationEvents.push({
+            action: is_deleted ? 'delete_post' : 'restore_post',
+            reason: `Post ${is_deleted ? 'deleted' : 'restored'} via /api/posts/:id PATCH`
+          });
+        }
+      }
+
+      if (updates.length === 0) {
+        return res.status(400).json({ error: 'No updates provided' });
+      }
+
+      updates.push('updated_at = CURRENT_TIMESTAMP');
+      params.push(req.params.id);
+      await db.execute(`UPDATE posts SET ${updates.join(', ')} WHERE id = ?`, params);
+
+      await db.execute('UPDATE threads SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [post.thread_id]);
+
+      if (isStaff && moderationEvents.length > 0) {
+        for (const event of moderationEvents) {
+          await createModerationAction(req.user.id, event.action, 'post', Number(req.params.id), event.reason);
+        }
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/threads/:id', authenticate, async (req: any, res) => {
+    const { is_pinned, is_locked, is_solved, is_hidden } = req.body;
+    try {
+      const thread = await db.queryOne<any>('SELECT * FROM threads WHERE id = ?', [req.params.id]);
+      if (!thread) return res.status(404).json({ error: 'Thread not found' });
+
+      const isStaff = isStaffRole(req.user.role);
+      const isOwner = thread.author_id === req.user.id;
+
+      if (is_pinned !== undefined && !isStaff) {
+        return res.status(403).json({ error: 'Only moderators can pin/unpin threads' });
+      }
+      if (is_hidden !== undefined && !isStaff) {
+        return res.status(403).json({ error: 'Only moderators can hide/unhide threads' });
+      }
+      if ((is_locked !== undefined || is_solved !== undefined) && !isStaff && !isOwner) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      if (!isStaff && !isOwner) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      const updates: string[] = [];
+      const params: any[] = [];
+      const moderationEvents: Array<{ action: string; reason: string }> = [];
+
+      if (is_pinned !== undefined) {
+        updates.push('is_pinned = ?');
+        params.push(is_pinned ? 1 : 0);
+        if ((thread.is_pinned ?? 0) !== (is_pinned ? 1 : 0)) {
+          moderationEvents.push({
+            action: is_pinned ? 'pin_thread' : 'unpin_thread',
+            reason: `Thread ${is_pinned ? 'pinned' : 'unpinned'} via /api/threads/:id PATCH`
+          });
+        }
+      }
+      if (is_locked !== undefined) {
+        updates.push('is_locked = ?');
+        params.push(is_locked ? 1 : 0);
+        if (isStaff && (thread.is_locked ?? 0) !== (is_locked ? 1 : 0)) {
+          moderationEvents.push({
+            action: is_locked ? 'lock_thread' : 'unlock_thread',
+            reason: `Thread ${is_locked ? 'locked' : 'unlocked'} via /api/threads/:id PATCH`
+          });
+        }
+      }
+      if (is_solved !== undefined) {
+        updates.push('is_solved = ?');
+        params.push(is_solved ? 1 : 0);
+        if (isStaff && (thread.is_solved ?? 0) !== (is_solved ? 1 : 0)) {
+          moderationEvents.push({
+            action: is_solved ? 'solve_thread' : 'unsolve_thread',
+            reason: `Thread ${is_solved ? 'solved' : 'unsolved'} via /api/threads/:id PATCH`
+          });
+        }
+      }
+      if (is_hidden !== undefined) {
+        updates.push('is_hidden = ?');
+        params.push(is_hidden ? 1 : 0);
+        if ((thread.is_hidden ?? 0) !== (is_hidden ? 1 : 0)) {
+          moderationEvents.push({
+            action: is_hidden ? 'hide_thread' : 'unhide_thread',
+            reason: `Thread ${is_hidden ? 'hidden' : 'unhidden'} via /api/threads/:id PATCH`
+          });
+        }
+      }
+
+      if (updates.length === 0) {
+        return res.status(400).json({ error: 'No updates provided' });
+      }
+
+      updates.push('updated_at = CURRENT_TIMESTAMP');
+      params.push(req.params.id);
+      await db.execute(`UPDATE threads SET ${updates.join(', ')} WHERE id = ?`, params);
+
+      if (isStaff && moderationEvents.length > 0) {
+        for (const event of moderationEvents) {
+          await createModerationAction(req.user.id, event.action, 'thread', Number(req.params.id), event.reason);
+        }
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/threads/:id', authenticate, async (req: any, res) => {
+    try {
+      const thread = await db.queryOne<any>('SELECT * FROM threads WHERE id = ?', [req.params.id]);
+      if (!thread) return res.status(404).json({ error: 'Thread not found' });
+
+      const isStaff = isStaffRole(req.user.role);
+      const isOwner = thread.author_id === req.user.id;
+      if (!isStaff && !isOwner) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      await db.execute('DELETE FROM threads WHERE id = ?', [req.params.id]);
+
+      if (isStaff) {
+        await createModerationAction(
+          req.user.id,
+          'delete_thread',
+          'thread',
+          Number(req.params.id),
+          'Thread deleted via /api/threads/:id DELETE'
+        );
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/reports', authenticate, async (req: any, res) => {
+    const { target_type, target_id, reason } = req.body;
+    try {
+      if (!target_type || !target_id || !reason) {
+        return res.status(400).json({ error: 'target_type, target_id, and reason are required' });
+      }
+
+      if (!['post', 'thread', 'user'].includes(target_type)) {
+        return res.status(400).json({ error: 'Invalid target_type' });
+      }
+
+      await db.execute(
+        'INSERT INTO reports (reporter_id, target_type, target_id, reason) VALUES (?, ?, ?, ?)',
+        [req.user.id, target_type, target_id, reason]
+      );
+
+      res.status(201).json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
