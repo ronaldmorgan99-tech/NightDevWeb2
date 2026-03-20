@@ -25,8 +25,9 @@ interface ForumData {
   forum: {
     id: number;
     name: string;
-    description: string;
+    description: string | null;
     min_role_to_thread: string;
+    is_hidden: number;
   };
   threads: Thread[];
 }

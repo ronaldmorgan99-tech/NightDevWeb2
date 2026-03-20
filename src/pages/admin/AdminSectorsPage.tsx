@@ -21,16 +21,19 @@ interface Forum {
   id: number;
   category_id: number;
   name: string;
-  description: string;
+  description: string | null;
   display_order: number;
-  min_role_to_thread: string;
+  min_role_to_thread: 'member' | 'moderator' | 'admin';
   is_hidden: number;
+  created_at?: string;
 }
 
 interface Category {
   id: number;
   name: string;
   display_order: number;
+  description?: string | null;
+  created_at?: string;
   forums: Forum[];
 }
 
