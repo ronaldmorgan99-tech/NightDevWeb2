@@ -401,13 +401,6 @@ async function start() {
       const post = await db.queryOne<any>('SELECT * FROM posts WHERE id = ?', [req.params.id]);
       if (!post) return res.status(404).json({ error: 'Post not found' });
 
-      const canModerate = req.user.role === 'admin' || req.user.role === 'moderator';
-      if (!canModerate && post.author_id !== req.user.id) {
-        return res.status(403).json({ error: 'Forbidden' });
-      }
-
-      const updates: string[] = [];
-      const params: any[] = [];
       const isStaff = isStaffRole(req.user.role);
       const isOwner = post.author_id === req.user.id;
       if (!isOwner && !isStaff) {
@@ -426,18 +419,6 @@ async function start() {
         updates.push('content = ?');
         params.push(content);
       }
-      if (is_hidden !== undefined && canModerate) {
-        updates.push('is_hidden = ?');
-        params.push(is_hidden);
-      }
-      if (is_deleted !== undefined && canModerate) {
-        updates.push('is_deleted = ?');
-        params.push(is_deleted);
-      }
-      updates.push('updated_at = CURRENT_TIMESTAMP');
-
-      params.push(req.params.id);
-      await db.execute(`UPDATE posts SET ${updates.join(', ')} WHERE id = ?`, params);
 
       if (is_hidden !== undefined) {
         updates.push('is_hidden = ?');
@@ -469,8 +450,6 @@ async function start() {
       params.push(req.params.id);
       await db.execute(`UPDATE posts SET ${updates.join(', ')} WHERE id = ?`, params);
 
-      await db.execute('UPDATE threads SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [post.thread_id]);
-
       if (isStaff && moderationEvents.length > 0) {
         for (const event of moderationEvents) {
           await createModerationAction(req.user.id, event.action, 'post', Number(req.params.id), event.reason);
@@ -485,20 +464,6 @@ async function start() {
 
   app.patch('/api/threads/:id', authenticate, async (req: any, res) => {
     const { is_pinned, is_locked, is_solved, is_hidden } = req.body;
-    if (!['admin', 'moderator'].includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
-    try {
-      const updates: string[] = [];
-      const params: any[] = [];
-      for (const [key, value] of Object.entries({ is_pinned, is_locked, is_solved, is_hidden })) {
-        if (value !== undefined) {
-          updates.push(`${key} = ?`);
-          params.push(value);
-        }
-      }
-      if (!updates.length) return res.status(400).json({ error: 'No updates provided' });
-      updates.push('updated_at = CURRENT_TIMESTAMP');
-      params.push(req.params.id);
-      await db.execute(`UPDATE threads SET ${updates.join(', ')} WHERE id = ?`, params);
     try {
       const thread = await db.queryOne<any>('SELECT * FROM threads WHERE id = ?', [req.params.id]);
       if (!thread) return res.status(404).json({ error: 'Thread not found' });
