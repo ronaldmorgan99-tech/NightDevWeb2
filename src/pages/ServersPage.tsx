@@ -87,14 +87,7 @@ export default function ServersPage() {
     status: 'online' | 'offline';
     color: string;
     game: string;
-  }[] = [
-    { name: "CS2: Global Elite", ip: "45.123.45.67:27015", players: "18/20", map: "de_dust2", status: 'online', color: "neon-cyan", game: "Counter-Strike 2" },
-    { name: "Rust: Brutal Survival", ip: "rust.nightrespawn.com:28015", players: "142/200", map: "Procedural", status: 'online', color: "neon-magenta", game: "Rust" },
-    { name: "Unturned: Gritty Run", ip: "unturned.nightrespawn.com:25444", players: "24/32", map: "Washington", status: 'online', color: "neon-cyan", game: "Unturned" },
-    { name: "Arma 3: Milsim Ops", ip: "arma.nightrespawn.com:2302", players: "45/64", map: "Altis", status: 'online', color: "neon-magenta", game: "Arma 3" },
-    { name: "GMod: Chaos Madness", ip: "gmod.nightrespawn.com:27015", players: "12/24", map: "gm_construct", status: 'online', color: "neon-cyan", game: "Garry's Mod" },
-    { name: "Minecraft: Empires", ip: "mc.nightrespawn.com", players: "8/50", map: "Survival", status: 'offline', color: "neon-magenta", game: "Minecraft" },
-  ];
+  }[] = [];
 
   return (
     <div className="max-w-6xl mx-auto space-y-12 py-8">
@@ -124,7 +117,7 @@ export default function ServersPage() {
       {/* Stats Overview */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { icon: Users, label: "Active Players", value: "249", color: "text-neon-cyan" },
+          { icon: Users, label: "Active Players", value: "0", color: "text-neon-cyan" },
           { icon: Zap, label: "Avg Latency", value: "24ms", color: "text-neon-magenta" },
           { icon: Shield, label: "Uptime", value: "99.9%", color: "text-neon-green" },
           { icon: Activity, label: "Total Nodes", value: "12", color: "text-neon-purple" }
@@ -138,20 +131,29 @@ export default function ServersPage() {
       </div>
 
       {/* Server Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {servers.map((server, i) => (
-          <ServerCard 
-            key={i} 
-            name={server.name}
-            ip={server.ip}
-            players={server.players}
-            map={server.map}
-            status={server.status}
-            color={server.color}
-            game={server.game}
-          />
-        ))}
-      </div>
+      {servers.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {servers.map((server, i) => (
+            <ServerCard 
+              key={i} 
+              name={server.name}
+              ip={server.ip}
+              players={server.players}
+              map={server.map}
+              status={server.status}
+              color={server.color}
+              game={server.game}
+            />
+          ))}
+        </div>
+      ) : (
+        <section className="cyber-card p-12 border-white/5 bg-white/[0.01] text-center">
+          <h2 className="text-2xl font-black text-white italic tracking-tighter uppercase mb-3">No Servers Connected</h2>
+          <p className="text-zinc-500 text-sm max-w-xl mx-auto">
+            Server telemetry is empty right now. Once a node is connected, live player counts and map status will appear here automatically.
+          </p>
+        </section>
+      )}
 
       {/* Connection Guide */}
       <section className="cyber-card p-10 border-white/5 bg-white/[0.01]">

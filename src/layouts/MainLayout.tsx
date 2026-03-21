@@ -556,12 +556,10 @@ const MainLayout: React.FC = () => {
               </div>
 
               <div className="space-y-3">
-                <ServerStatus name="CS2: Global Elite" players="18/20" map="de_dust2" status="online" color="neon-cyan" />
-                <ServerStatus name="Rust: Brutal Survival" players="142/200" map="Procedural" status="online" color="neon-magenta" />
-                <ServerStatus name="Unturned: Gritty Run" players="24/32" map="Washington" status="online" color="neon-cyan" />
-                <ServerStatus name="Arma 3: Milsim Ops" players="45/64" map="Altis" status="online" color="neon-magenta" />
-                <ServerStatus name="GMod: Chaos Madness" players="12/24" map="gm_construct" status="online" color="neon-cyan" />
-                <ServerStatus name="Minecraft: Empires" players="8/50" map="Survival" status="offline" color="neon-magenta" />
+                <div className="rounded-xl border border-dashed border-white/10 bg-cyber-black/40 px-4 py-5 text-center">
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">No Servers Connected</p>
+                  <p className="mt-2 text-[10px] text-zinc-600">Connect a game server to display live network status.</p>
+                </div>
               </div>
 
               <button className="w-full mt-6 btn-holographic py-2 text-[8px]">
