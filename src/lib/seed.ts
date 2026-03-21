@@ -1,8 +1,9 @@
-import db, { initDb } from './db';
+import db from './db';
 import bcrypt from 'bcryptjs';
 
 export async function seedDb() {
-  await initDb();
+  // Schema setup is owned by server startup (`start()` in server.ts).
+  // This function only performs deterministic seed/reset checks and writes.
 
   // Check if already seeded
   const userCount = await db.queryOne<{ count: number }>('SELECT COUNT(*) as count FROM users');
@@ -12,7 +13,7 @@ export async function seedDb() {
   
   if (userCount && userCount.count > 0 && catCount && catCount.count > 0 && statsCount && statsCount.count > 0 && duplicateCats.length === 0) return;
 
-  console.log('Seeding database (or re-seeding due to duplicates)...');
+  console.log('Running seed/reset logic (schema already initialized)...');
 
   // Clear existing data to prevent duplicates
   await db.execute('DELETE FROM forum_categories');
