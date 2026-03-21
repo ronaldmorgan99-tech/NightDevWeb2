@@ -8,6 +8,34 @@ This contains everything you need to run your app locally.
 
 View your app in AI Studio: https://ai.studio/apps/760e6625-d344-4b21-a27e-ffbef0bdf8e6
 
+## Tech Stack Overview
+
+### Framework: React 19 + TypeScript + Vite
+The frontend is built with **React 19** for modern component-based UI development, **TypeScript** for static typing and safer refactors, and **Vite** for fast local development and optimized production builds.
+
+### Backend: Express.js + Node.js (via `server.ts`)
+The server runs on **Node.js** and uses **Express.js** to handle API routes, middleware, and server-side logic. The main backend entry point is `server.ts`, which centralizes server configuration and startup behavior.
+
+### Database: Dual-support architecture (SQLite for local, MySQL for production)
+The data layer supports two environments:
+- **SQLite** for local development (simple setup, file-based storage, ideal for quick iteration).
+- **MySQL** for production (robust, scalable, and better suited for deployed workloads).
+
+This allows developers to get started quickly while keeping production infrastructure reliable.
+
+### Real-time: Socket.IO integration
+The app includes **Socket.IO** for real-time, bidirectional communication between client and server. This is useful for features like live updates, notifications, presence, or collaborative interactions.
+
+### Styling: Tailwind CSS with custom cyberpunk theme
+UI styling is built with **Tailwind CSS**, enabling utility-first styling and rapid UI implementation. A **custom cyberpunk theme** is layered on top to provide a distinct visual identity and consistent design language across the app.
+
+### State Management: React Context API + TanStack React Query
+State is managed using a combination of:
+- **React Context API** for shared app-level/client state (such as UI state and global settings).
+- **TanStack React Query** for async server state (fetching, caching, background refetching, and synchronization).
+
+Together, they keep local UI state and remote API data organized, performant, and maintainable.
+
 ## Run Locally
 
 **Prerequisites:** Node.js
