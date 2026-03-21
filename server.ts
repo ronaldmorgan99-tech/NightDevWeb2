@@ -8,6 +8,8 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import db, { initDb } from './src/lib/db';
 import { seedDb } from './src/lib/seed';
+import { GoogleGenAI, type GenerateVideosOperation } from '@google/genai';
+import { z } from 'zod';
 
 
 const JWT_SECRET = process.env.JWT_SECRET || 'cyber-secret-key';
@@ -64,7 +66,39 @@ async function start() {
   });
 
   const userSockets = new Map<number, string>();
-  const mediaOperations = new Map<string, { createdAt: number; uri: string }>();
+
+  const MEDIA_OPERATION_TTL_MS = 30 * 60 * 1000;
+  const MEDIA_MODEL = 'veo-2.0-generate-001';
+  const dataUriRegex = /^data:(?<mime>[^;]+);base64,(?<data>.+)$/;
+  const mediaAnimatePayloadSchema = z.object({
+    imageBase64: z.string().min(1, 'imageBase64 is required'),
+    prompt: z.string().max(2000, 'prompt is too long').optional().default('')
+  });
+
+  type MediaOperationStatus = 'in_progress' | 'done' | 'error';
+  type MediaOperationRecord = {
+    ownerId: number;
+    createdAt: number;
+    expiresAt: number;
+    status: MediaOperationStatus;
+    providerOperation: GenerateVideosOperation;
+    uri?: string;
+    error?: string;
+  };
+
+  const mediaOperations = new Map<string, MediaOperationRecord>();
+  const mediaClient = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
+
+  const pruneExpiredMediaOperations = () => {
+    const now = Date.now();
+    for (const [operationName, operation] of mediaOperations.entries()) {
+      if (operation.expiresAt <= now) {
+        mediaOperations.delete(operationName);
+      }
+    }
+  };
+
+  setInterval(pruneExpiredMediaOperations, 60_000).unref();
 
   io.on('connection', (socket) => {
     const userId = socket.data.user.id;
@@ -485,20 +519,6 @@ async function start() {
 
   app.patch('/api/threads/:id', authenticate, async (req: any, res) => {
     const { is_pinned, is_locked, is_solved, is_hidden } = req.body;
-    if (!['admin', 'moderator'].includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
-    try {
-      const updates: string[] = [];
-      const params: any[] = [];
-      for (const [key, value] of Object.entries({ is_pinned, is_locked, is_solved, is_hidden })) {
-        if (value !== undefined) {
-          updates.push(`${key} = ?`);
-          params.push(value);
-        }
-      }
-      if (!updates.length) return res.status(400).json({ error: 'No updates provided' });
-      updates.push('updated_at = CURRENT_TIMESTAMP');
-      params.push(req.params.id);
-      await db.execute(`UPDATE threads SET ${updates.join(', ')} WHERE id = ?`, params);
     try {
       const thread = await db.queryOne<any>('SELECT * FROM threads WHERE id = ?', [req.params.id]);
       if (!thread) return res.status(404).json({ error: 'Thread not found' });
@@ -1153,20 +1173,130 @@ async function start() {
 
   // --- MEDIA ---
   app.post('/api/media/animate', authenticate, async (req: any, res) => {
-    const operationName = `op_${Date.now()}_${req.user.id}`;
-    mediaOperations.set(operationName, {
-      createdAt: Date.now(),
-      uri: `https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4`
-    });
-    res.json({ operationName });
+    if (!mediaClient) {
+      return res.status(503).json({ error: 'Media provider is not configured. Missing GEMINI_API_KEY.' });
+    }
+
+    const parsedPayload = mediaAnimatePayloadSchema.safeParse(req.body);
+    if (!parsedPayload.success) {
+      return res.status(400).json({
+        error: 'Invalid media generation payload.',
+        details: parsedPayload.error.issues.map(issue => issue.message)
+      });
+    }
+
+    const { imageBase64, prompt } = parsedPayload.data;
+    const imageMatch = dataUriRegex.exec(imageBase64);
+    const mimeType = imageMatch?.groups?.mime;
+    const inlineData = imageMatch?.groups?.data;
+
+    if (!mimeType || !inlineData || !/^image\/(png|jpeg|jpg|webp)$/i.test(mimeType)) {
+      return res.status(400).json({ error: 'imageBase64 must be a valid data URI (PNG/JPEG/WEBP).' });
+    }
+
+    if (!prompt.trim()) {
+      return res.status(400).json({ error: 'prompt is required for animation.' });
+    }
+
+    try {
+      const providerOperation = await mediaClient.models.generateVideos({
+        model: MEDIA_MODEL,
+        source: {
+          prompt: prompt.trim(),
+          image: {
+            imageBytes: inlineData,
+            mimeType
+          }
+        },
+        config: {
+          numberOfVideos: 1,
+          aspectRatio: '16:9'
+        }
+      });
+
+      const operationName = providerOperation.name || `op_${Date.now()}_${req.user.id}`;
+
+      mediaOperations.set(operationName, {
+        ownerId: req.user.id,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + MEDIA_OPERATION_TTL_MS,
+        status: providerOperation.done ? 'done' : 'in_progress',
+        providerOperation,
+        uri: providerOperation.response?.generatedVideos?.[0]?.video?.uri
+      });
+
+      res.json({ operationName });
+    } catch (err: any) {
+      console.error('Media provider animate error:', err);
+      const providerMessage = err?.message || 'Unknown media provider error';
+      res.status(502).json({ error: `Media provider failed to start generation: ${providerMessage}` });
+    }
   });
 
-  app.get('/api/media/poll', authenticate, async (req, res) => {
+  app.get('/api/media/poll', authenticate, async (req: any, res) => {
+    pruneExpiredMediaOperations();
+
     const operationName = String(req.query.operationName || '');
+    if (!operationName) {
+      return res.status(400).json({ error: 'operationName query parameter is required.' });
+    }
+
     const operation = mediaOperations.get(operationName);
-    if (!operation) return res.status(404).json({ error: 'Operation not found' });
-    const done = Date.now() - operation.createdAt > 15000;
-    res.json(done ? { done: true, uri: operation.uri } : { done: false });
+    if (!operation) return res.status(410).json({ error: 'Operation not found or expired.' });
+    if (operation.ownerId !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+
+    if (operation.status === 'error') {
+      return res.json({ done: true, error: operation.error || 'Generation failed.' });
+    }
+
+    if (operation.status === 'done') {
+      if (!operation.uri) {
+        return res.json({ done: true, error: 'Generation completed without a video URI.' });
+      }
+      return res.json({ done: true, uri: operation.uri });
+    }
+
+    if (!mediaClient) {
+      operation.status = 'error';
+      operation.error = 'Media provider is not configured. Missing GEMINI_API_KEY.';
+      return res.status(503).json({ error: operation.error });
+    }
+
+    try {
+      const latestOperation = await mediaClient.operations.getVideosOperation({
+        operation: operation.providerOperation
+      });
+
+      operation.providerOperation = latestOperation;
+      operation.expiresAt = Date.now() + MEDIA_OPERATION_TTL_MS;
+
+      if (!latestOperation.done) {
+        return res.json({ done: false });
+      }
+
+      const providerError = latestOperation.error?.message ? String(latestOperation.error.message) : '';
+      if (providerError) {
+        operation.status = 'error';
+        operation.error = providerError;
+        return res.json({ done: true, error: providerError });
+      }
+
+      const uri = latestOperation.response?.generatedVideos?.[0]?.video?.uri;
+      if (!uri) {
+        operation.status = 'error';
+        operation.error = 'Provider returned no video URI.';
+        return res.json({ done: true, error: operation.error });
+      }
+
+      operation.status = 'done';
+      operation.uri = uri;
+      return res.json({ done: true, uri });
+    } catch (err: any) {
+      console.error('Media provider poll error:', err);
+      operation.status = 'error';
+      operation.error = err?.message || 'Failed to poll media provider.';
+      return res.status(502).json({ done: true, error: operation.error });
+    }
   });
 
   // Vite Middleware
