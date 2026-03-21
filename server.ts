@@ -3,6 +3,7 @@ import type { CookieOptions } from 'express';
 import { createServer as createViteServer } from 'vite';
 import { Server } from 'socket.io';
 import http from 'http';
+import path from 'path';
 import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
@@ -1180,8 +1181,11 @@ async function start() {
     console.log('Vite middleware initialized.');
   } else {
     console.log('Running in production mode, serving static files...');
-    // In production, you would serve from dist
-    app.use(express.static('dist'));
+    const distPath = path.resolve(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get(/^\/(?!api(?:\/|$)).*/, (_req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
   }
 
   server.listen(PORT, '0.0.0.0', () => {
