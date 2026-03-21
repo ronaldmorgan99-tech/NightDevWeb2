@@ -134,7 +134,7 @@ async function start() {
         { expiresIn: '24h' }
       );
 
-      res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'none' });
+      res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
       res.json({ user: { id: user.id, username: user.username, email: user.email, role: user.role } });
     } catch (err: any) {
       res.status(400).json({ error: err.message });
