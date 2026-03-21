@@ -436,13 +436,6 @@ async function start() {
       const post = await db.queryOne<any>('SELECT * FROM posts WHERE id = ?', [req.params.id]);
       if (!post) return res.status(404).json({ error: 'Post not found' });
 
-      const canModerate = req.user.role === 'admin' || req.user.role === 'moderator';
-      if (!canModerate && post.author_id !== req.user.id) {
-        return res.status(403).json({ error: 'Forbidden' });
-      }
-
-      const updates: string[] = [];
-      const params: any[] = [];
       const isStaff = isStaffRole(req.user.role);
       const isOwner = post.author_id === req.user.id;
       if (!isOwner && !isStaff) {
@@ -461,18 +454,6 @@ async function start() {
         updates.push('content = ?');
         params.push(content);
       }
-      if (is_hidden !== undefined && canModerate) {
-        updates.push('is_hidden = ?');
-        params.push(is_hidden);
-      }
-      if (is_deleted !== undefined && canModerate) {
-        updates.push('is_deleted = ?');
-        params.push(is_deleted);
-      }
-      updates.push('updated_at = CURRENT_TIMESTAMP');
-
-      params.push(req.params.id);
-      await db.execute(`UPDATE posts SET ${updates.join(', ')} WHERE id = ?`, params);
 
       if (is_hidden !== undefined) {
         updates.push('is_hidden = ?');
@@ -503,8 +484,6 @@ async function start() {
       updates.push('updated_at = CURRENT_TIMESTAMP');
       params.push(req.params.id);
       await db.execute(`UPDATE posts SET ${updates.join(', ')} WHERE id = ?`, params);
-
-      await db.execute('UPDATE threads SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [post.thread_id]);
 
       if (isStaff && moderationEvents.length > 0) {
         for (const event of moderationEvents) {
