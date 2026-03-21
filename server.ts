@@ -641,7 +641,15 @@ async function start() {
   // Members
   app.get('/api/members', async (req, res) => {
     try {
-      const members = await db.query<any>('SELECT id, username, role, avatar_url, created_at FROM users ORDER BY created_at DESC');
+      const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+
+      const members = search
+        ? await db.query<any>(
+            'SELECT id, username, role, avatar_url, created_at FROM users WHERE username LIKE ? COLLATE NOCASE ORDER BY created_at DESC',
+            [`%${search}%`]
+          )
+        : await db.query<any>('SELECT id, username, role, avatar_url, created_at FROM users ORDER BY created_at DESC');
+
       res.json(members);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
