@@ -24,13 +24,15 @@ const AUTH_COOKIE_OPTIONS: CookieOptions = {
 async function start() {
   console.log('--- STARTING NIGHTRESPAWN SERVER ---');
   
-  // Initialize Database
+  // Startup order is deterministic: create/validate schema first, then seed/reset data.
   try {
+    console.log('Initializing database schema...');
     await initDb();
+    console.log('Database schema is ready. Running seed/reset checks...');
     await seedDb();
-    console.log('Database initialized and seeded.');
+    console.log('Database startup tasks completed.');
   } catch (err) {
-    console.error('Database initialization failed:', err);
+    console.error('Database startup failed:', err);
   }
 
   const app = express();
