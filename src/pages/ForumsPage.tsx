@@ -34,13 +34,30 @@ const ForumsPage: React.FC = () => {
     queryKey: ['forum-categories'],
     queryFn: () => fetch('/api/forums/categories').then(res => res.json())
   });
-  const { data: communityStats } = useQuery<CommunityStats>({
+  const { data: communityStats, isLoading: isStatsLoading, isError: isStatsError } = useQuery<CommunityStats>({
     queryKey: ['community-stats'],
-    queryFn: () => fetch('/api/community/stats').then(res => res.json())
+    queryFn: async () => {
+      const res = await fetch('/api/community/stats');
+
+      if (!res.ok) {
+        throw new Error(`Failed to load community stats (${res.status})`);
+      }
+
+      return res.json();
+    },
+    staleTime: 60_000,
+    retry: 1
   });
 
   const formatCompact = (value: number) =>
     new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+
+  const statsUnavailable = isStatsLoading || isStatsError;
+  const activePlayersLabel = statsUnavailable ? 'Stats unavailable' : `${communityStats?.active_players ?? 0} ONLINE`;
+  const totalServersLabel = statsUnavailable ? 'Stats unavailable' : `${communityStats?.total_servers ?? 0} NODES`;
+  const usersLabel = statsUnavailable ? 'Stats unavailable' : (communityStats?.users ?? 0).toLocaleString('en-US');
+  const postsLabel = statsUnavailable ? 'Stats unavailable' : (communityStats?.posts ?? 0).toLocaleString('en-US');
+  const onlineServersLabel = statsUnavailable ? 'Stats unavailable' : (communityStats?.online_servers ?? 0).toLocaleString('en-US');
 
   if (isLoading) {
     return (
@@ -143,12 +160,12 @@ const ForumsPage: React.FC = () => {
             <div className="flex items-center gap-8">
                 <div className="hidden lg:flex items-center gap-4">
                   <div className="text-right">
-                  <p className="text-xs font-black text-neon-green uppercase tracking-widest">{communityStats?.active_players ?? 0} ONLINE</p>
+                  <p className="text-xs font-black text-neon-green uppercase tracking-widest">{activePlayersLabel}</p>
                   <p className="text-[8px] text-zinc-600 uppercase font-bold">Active Operatives</p>
                 </div>
                 <div className="w-[1px] h-8 bg-white/10" />
                 <div className="text-right">
-                  <p className="text-xs font-black text-neon-cyan uppercase tracking-widest">{communityStats?.total_servers ?? 0} NODES</p>
+                  <p className="text-xs font-black text-neon-cyan uppercase tracking-widest">{totalServersLabel}</p>
                   <p className="text-[8px] text-zinc-600 uppercase font-bold">Global Network</p>
                 </div>
               </div>
@@ -231,7 +248,7 @@ const ForumsPage: React.FC = () => {
             <div className="w-16 h-16 bg-neon-cyan/10 rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
               <Users className="w-8 h-8 text-neon-cyan" />
             </div>
-            <h4 className="text-4xl font-black text-white italic tracking-tighter">{(communityStats?.users ?? 0).toLocaleString('en-US')}</h4>
+            <h4 className="text-4xl font-black text-white italic tracking-tighter">{usersLabel}</h4>
             <p className="text-zinc-500 text-[10px] uppercase tracking-[0.3em] font-black mt-2">Active Operatives</p>
           </div>
         </div>
@@ -241,7 +258,7 @@ const ForumsPage: React.FC = () => {
             <div className="w-16 h-16 bg-neon-pink/10 rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
               <MessageSquare className="w-8 h-8 text-neon-pink" />
             </div>
-            <h4 className="text-4xl font-black text-white italic tracking-tighter">{(communityStats?.posts ?? 0).toLocaleString('en-US')}</h4>
+            <h4 className="text-4xl font-black text-white italic tracking-tighter">{postsLabel}</h4>
             <p className="text-zinc-500 text-[10px] uppercase tracking-[0.3em] font-black mt-2">Data Transmissions</p>
           </div>
         </div>
@@ -251,7 +268,7 @@ const ForumsPage: React.FC = () => {
             <div className="w-16 h-16 bg-neon-green/10 rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
               <Gamepad2 className="w-8 h-8 text-neon-green" />
             </div>
-            <h4 className="text-4xl font-black text-white italic tracking-tighter">{(communityStats?.online_servers ?? 0).toLocaleString('en-US')}</h4>
+            <h4 className="text-4xl font-black text-white italic tracking-tighter">{onlineServersLabel}</h4>
             <p className="text-zinc-500 text-[10px] uppercase tracking-[0.3em] font-black mt-2">Uplinks Active</p>
           </div>
         </div>
