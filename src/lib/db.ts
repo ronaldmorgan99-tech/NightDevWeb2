@@ -305,6 +305,7 @@ export async function initDb() {
       game TEXT DEFAULT 'Rust',
       map TEXT DEFAULT 'Unknown',
       players_current INTEGER DEFAULT 0,
+      players INTEGER DEFAULT 0,
       status TEXT DEFAULT 'offline',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP

@@ -34,6 +34,7 @@ type SidebarServer = {
   id: number;
   name: string;
   players_current: number;
+  players: number;
   status: 'online' | 'offline';
   map: string;
 };
@@ -100,6 +101,7 @@ const MainLayout: React.FC = () => {
   });
 
   const activeUplinkPlayers = sidebarServers.reduce((sum, server) => sum + (server.players_current || 0), 0);
+  const activeUplinkPlayers = sidebarServers.reduce((sum, server) => sum + (server.players || 0), 0);
   const onlineNodes = sidebarServers.filter(server => server.status === 'online').length;
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -601,6 +603,7 @@ const MainLayout: React.FC = () => {
                       key={server.id}
                       name={server.name}
                       players={`${server.players_current || 0} PLAYERS`}
+                      players={`${server.players} PLAYERS`}
                       map={server.map || 'UNKNOWN'}
                       status={server.status}
                       color="neon-cyan"
@@ -609,6 +612,7 @@ const MainLayout: React.FC = () => {
                 ) : (
                   <div className="rounded-xl border border-dashed border-white/10 bg-cyber-black/40 px-4 py-5 text-center">
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">No active nodes detected</p>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">No Servers Connected</p>
                     <p className="mt-2 text-[10px] text-zinc-600">Connect a game server to display live network status.</p>
                   </div>
                 )}
