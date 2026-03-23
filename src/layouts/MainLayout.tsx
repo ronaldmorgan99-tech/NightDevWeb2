@@ -155,7 +155,7 @@ const MainLayout: React.FC = () => {
     cardRef.current.style.transition = 'none';
   };
 
-  const discordLink = "https://discord.gg/3axtkUBN";
+  const discordLink = "https://discord.gg/NZbmQNxX";
 
   const navItems = [
     { label: 'Forums', path: '/', icon: MessageSquare },
