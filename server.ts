@@ -46,7 +46,7 @@ async function start() {
       methods: ['GET', 'POST']
     }
   });
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   app.use(express.json({ limit: '50mb' }));
   app.use(cookieParser());
@@ -1398,9 +1398,24 @@ async function start() {
     });
   }
 
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server listening on http://0.0.0.0:${PORT}`);
-  });
+  const tryListen = (port: number, maxAttempts: number = 5) => {
+    server.listen(port, '0.0.0.0', () => {
+      console.log(`Server listening on http://0.0.0.0:${port}`);
+    });
+
+    server.on('error', (err: any) => {
+      if (err.code === 'EADDRINUSE' && maxAttempts > 1) {
+        const nextPort = port + 1;
+        console.log(`Port ${port} is in use, trying ${nextPort}...`);
+        server.close();
+        tryListen(nextPort, maxAttempts - 1);
+      } else {
+        throw err;
+      }
+    });
+  };
+
+  tryListen(PORT);
 }
 
 start().catch(err => {
