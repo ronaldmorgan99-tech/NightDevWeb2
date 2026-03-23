@@ -11,10 +11,25 @@ const DiscordIcon = ({ className }: { className?: string }) => (
 
 export default function DiscordPage() {
   const discordLink = "https://discord.gg/3axtkUBN";
-  const { data: communityStats } = useQuery<{ users: number }>({
+  const { data: communityStats, isLoading, isError } = useQuery<{ users: number }>({
     queryKey: ['community-stats'],
-    queryFn: () => fetch('/api/community/stats').then(res => res.json())
+    queryFn: async () => {
+      const res = await fetch('/api/community/stats');
+
+      if (!res.ok) {
+        throw new Error(`Failed to load community stats (${res.status})`);
+      }
+
+      return res.json();
+    },
+    staleTime: 60_000,
+    retry: 1
   });
+
+  const communityDescription =
+    isLoading || isError
+      ? 'Stats unavailable'
+      : `${(communityStats?.users ?? 0).toLocaleString('en-US')} Active Operatives`;
 
   return (
     <div className="max-w-4xl mx-auto py-12 px-4">
@@ -42,7 +57,7 @@ export default function DiscordPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full mb-12">
             {[
-              { icon: Users, title: "COMMUNITY", desc: `${(communityStats?.users ?? 0).toLocaleString('en-US')} Active Operatives` },
+              { icon: Users, title: "COMMUNITY", desc: communityDescription },
               { icon: Zap, title: "REAL-TIME", desc: "Instant Mission Briefs" },
               { icon: Shield, title: "SECURE", desc: "Encrypted Comms" }
             ].map((feature, i) => (
