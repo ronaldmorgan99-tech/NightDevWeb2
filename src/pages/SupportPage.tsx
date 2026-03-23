@@ -176,7 +176,7 @@ const SupportPage: React.FC = () => {
             </div>
           </div>
           <a 
-            href="https://discord.gg/nightrespawn" 
+            href="https://discord.gg/NZbmQNxX" 
             target="_blank"
             rel="noopener noreferrer"
             className="w-full py-4 bg-white/5 border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-white hover:border-neon-purple/50 hover:bg-neon-purple/5 transition-all flex items-center justify-center gap-3"

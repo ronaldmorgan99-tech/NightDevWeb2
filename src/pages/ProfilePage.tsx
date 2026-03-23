@@ -632,7 +632,7 @@ export default function ProfilePage() {
                 { icon: Youtube, color: 'hover:text-[#FF0000]', label: 'YouTube' },
                 { icon: KickIcon, color: 'hover:text-[#53FC18]', label: 'Kick' },
                 { icon: Twitch, color: 'hover:text-[#9146FF]', label: 'Twitch' },
-                { icon: DiscordIcon, color: 'hover:text-[#5865F2]', label: 'Discord', link: 'https://discord.gg/3axtkUBN' },
+                { icon: DiscordIcon, color: 'hover:text-[#5865F2]', label: 'Discord', link: 'https://discord.gg/NZbmQNxX' },
               ].map((social, i) => (
                 <button 
                   key={i}

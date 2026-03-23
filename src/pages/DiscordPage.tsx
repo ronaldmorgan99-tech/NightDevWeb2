@@ -10,6 +10,7 @@ const DiscordIcon = ({ className }: { className?: string }) => (
 );
 
 export default function DiscordPage() {
+  const discordLink = "https://discord.gg/NZbmQNxX";
   const discordLink = "https://discord.gg/3axtkUBN";
   const { data: communityStats } = useQuery<{ users: number }>({
     queryKey: ['community-stats'],
