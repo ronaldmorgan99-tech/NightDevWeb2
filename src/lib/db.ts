@@ -295,6 +295,58 @@ export async function initDb() {
     )
   `);
 
+  // Game Server Nodes
+  await run(`
+    CREATE TABLE IF NOT EXISTS server_nodes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      ip TEXT NOT NULL,
+      region TEXT,
+      game TEXT DEFAULT 'Rust',
+      map TEXT DEFAULT 'Unknown',
+      players_current INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'offline',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Migration-safe schema updates for server_nodes
+  if (db instanceof SQLiteWrapper) {
+    const serverColumns = await db.query<any>('PRAGMA table_info(server_nodes)');
+    const hasPlayersCurrent = serverColumns.some((column) => column.name === 'players_current');
+    if (!hasPlayersCurrent) {
+      await db.execute('ALTER TABLE server_nodes ADD COLUMN players_current INTEGER DEFAULT 0');
+      const hasPlayersLegacy = serverColumns.some((column) => column.name === 'players');
+      if (hasPlayersLegacy) {
+        await db.execute('UPDATE server_nodes SET players_current = COALESCE(players, 0)');
+      }
+    }
+  } else {
+    const playersCurrentColumn = await db.queryOne<any>(`
+      SELECT COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'server_nodes'
+        AND COLUMN_NAME = 'players_current'
+    `);
+    if (!playersCurrentColumn) {
+      await db.execute('ALTER TABLE server_nodes ADD COLUMN players_current INT DEFAULT 0');
+      const playersLegacyColumn = await db.queryOne<any>(`
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'server_nodes'
+          AND COLUMN_NAME = 'players'
+      `);
+      if (playersLegacyColumn) {
+        await db.execute('UPDATE server_nodes SET players_current = COALESCE(players, 0)');
+      }
+    }
+  }
+
+  await db.execute("UPDATE server_nodes SET players_current = COALESCE(players_current, 0), status = COALESCE(NULLIF(status, ''), 'offline')");
+
   // Site Settings
   await run(`
     CREATE TABLE IF NOT EXISTS site_settings (
@@ -392,7 +444,8 @@ export async function initDb() {
     { key: 'twitch_client_id', value: '' },
     { key: 'site_name', value: 'NightRespawn' },
     { key: 'site_description', value: 'Digital Underground' },
-    { key: 'x_account_url', value: 'https://x.com/NightRespawn' }
+    { key: 'x_account_url', value: 'https://x.com/NightRespawn' },
+    { key: 'network_servers', value: '[]' }
   ];
 
   for (const setting of defaultSettings) {

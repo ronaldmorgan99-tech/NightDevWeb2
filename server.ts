@@ -78,6 +78,15 @@ async function start() {
     prompt: z.string().max(2000, 'prompt is too long').optional().default('')
   });
 
+
+  const serverNodeSchema = z.object({
+    name: z.string().min(1).max(100),
+    ip: z.string().min(1).max(255),
+    region: z.string().max(100).optional().default('Unknown'),
+    game: z.string().max(50).optional().default('Rust'),
+    map: z.string().max(100).optional().default('Unknown')
+  });
+
   type MediaOperationStatus = 'in_progress' | 'done' | 'error';
   type MediaOperationRecord = {
     ownerId: number;
@@ -145,6 +154,33 @@ async function start() {
       'INSERT INTO moderation_actions (moderator_id, action_type, target_type, target_id, reason) VALUES (?, ?, ?, ?, ?)',
       [moderatorId, actionType, targetType, targetId, reason ?? null]
     );
+  };
+
+  const syncServerNodesFromJson = async (rawJson: string) => {
+    let parsed: any = [];
+    try {
+      parsed = JSON.parse(rawJson || '[]');
+    } catch {
+      parsed = [];
+    }
+
+    const servers = Array.isArray(parsed) ? parsed : [];
+    await db.execute('DELETE FROM server_nodes');
+
+    for (const entry of servers) {
+      const name = String(entry?.name || entry?.label || 'Unnamed Node');
+      const ip = String(entry?.ip || entry?.address || '0.0.0.0:0');
+      const region = String(entry?.region || 'Unknown');
+      const game = String(entry?.game || 'Rust');
+      const map = String(entry?.map || 'Unknown');
+      const playersCurrent = Number.isFinite(Number(entry?.players_current ?? entry?.players)) ? Math.max(0, Number(entry.players_current ?? entry.players)) : 0;
+      const status = entry?.status === 'online' ? 'online' : 'offline';
+
+      await db.execute(
+        'INSERT INTO server_nodes (name, ip, region, game, map, players_current, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [name, ip, region, game, map, playersCurrent, status]
+      );
+    }
   };
 
   // --- API ROUTES ---
@@ -320,6 +356,60 @@ async function start() {
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  const legacyServerSetting = await db.queryOne<any>("SELECT value FROM site_settings WHERE `key` = 'network_servers'");
+  const existingNodeCount = await db.queryOne<any>('SELECT COUNT(*) as count FROM server_nodes');
+  if (legacyServerSetting?.value && Number(existingNodeCount?.count || 0) === 0) {
+    await syncServerNodesFromJson(String(legacyServerSetting.value));
+  }
+
+  app.get('/api/servers', async (_req, res) => {
+    try {
+      const servers = await db.query<any>(`
+        SELECT id, name, ip, region, game, map, players_current, status
+        FROM server_nodes
+        ORDER BY created_at DESC
+      `);
+      const normalized = servers.map((server) => ({
+        ...server,
+        players_current: Number(server.players_current) || 0,
+        players: Number(server.players_current) || 0,
+        status: server.status === 'online' ? 'online' : 'offline'
+      }));
+      res.json(normalized);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/admin/servers', authenticate, isAdmin, async (req, res) => {
+    try {
+      const payload = serverNodeSchema.parse(req.body);
+      await db.execute(
+        'INSERT INTO server_nodes (name, ip, region, game, map, players_current, status) VALUES (?, ?, ?, ?, ?, 0, ?)',
+        [payload.name, payload.ip, payload.region, payload.game, payload.map, 'offline']
+      );
+      res.status(201).json({ success: true });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/admin/servers/:id/status', authenticate, isAdmin, async (req, res) => {
+    const { id } = req.params;
+    const status = req.body?.status === 'online' ? 'online' : 'offline';
+    const playersCurrent = Number.isFinite(Number(req.body?.players_current ?? req.body?.players)) ? Math.max(0, Number(req.body.players_current ?? req.body.players)) : 0;
+
+    try {
+      await db.execute(
+        'UPDATE server_nodes SET status = ?, players_current = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [status, playersCurrent, id]
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
     }
   });
 
@@ -814,11 +904,17 @@ async function start() {
   });
 
   app.post('/api/admin/settings', authenticate, isAdmin, async (req, res) => {
-    const settings = req.body; // Array of { key, value }
+    const settings = Array.isArray(req.body) ? req.body : req.body?.settings || [];
     try {
       for (const setting of settings) {
         await db.execute('UPDATE site_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?', [setting.value, setting.key]);
       }
+
+      const networkServersSetting = settings.find((setting: any) => setting.key === 'network_servers');
+      if (networkServersSetting) {
+        await syncServerNodesFromJson(String(networkServersSetting.value || '[]'));
+      }
+
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

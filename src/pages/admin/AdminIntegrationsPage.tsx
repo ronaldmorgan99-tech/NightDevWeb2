@@ -75,6 +75,7 @@ const AdminIntegrationsPage: React.FC = () => {
       items: [
         { key: 'steam_api_key', label: 'Steam Web API Key', placeholder: '32-character hex key', type: 'password' },
         { key: 'twitch_client_id', label: 'Twitch Client ID', placeholder: 'Client ID from Twitch Dev Console', type: 'text' },
+        { key: 'network_servers', label: 'Network Servers JSON', placeholder: '[{"name":"Node Alpha","ip":"127.0.0.1:28015"}]', type: 'textarea' },
       ]
     },
     {
@@ -138,14 +139,24 @@ const AdminIntegrationsPage: React.FC = () => {
                     <span className="text-[8px] font-mono text-zinc-700 uppercase tracking-widest">Key: {item.key}</span>
                   </div>
                   <div className="relative group">
-                    <input 
-                      type={item.type}
-                      className="w-full bg-cyber-black border border-white/10 rounded-xl px-4 py-4 text-sm text-white focus:border-neon-cyan/50 outline-none transition-all"
-                      placeholder={item.placeholder}
-                      value={localSettings[item.key] || ''}
-                      onChange={(e) => setLocalSettings({ ...localSettings, [item.key]: e.target.value })}
-                    />
-                    <div className="absolute inset-y-0 right-4 flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    {item.type === 'textarea' ? (
+                      <textarea
+                        rows={6}
+                        className="w-full bg-cyber-black border border-white/10 rounded-xl px-4 py-4 text-sm text-white focus:border-neon-cyan/50 outline-none transition-all resize-y"
+                        placeholder={item.placeholder}
+                        value={localSettings[item.key] || ''}
+                        onChange={(e) => setLocalSettings({ ...localSettings, [item.key]: e.target.value })}
+                      />
+                    ) : (
+                      <input
+                        type={item.type}
+                        className="w-full bg-cyber-black border border-white/10 rounded-xl px-4 py-4 text-sm text-white focus:border-neon-cyan/50 outline-none transition-all"
+                        placeholder={item.placeholder}
+                        value={localSettings[item.key] || ''}
+                        onChange={(e) => setLocalSettings({ ...localSettings, [item.key]: e.target.value })}
+                      />
+                    )}
+                    <div className="absolute top-4 right-4 flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
                       <Link2 className="w-4 h-4 text-zinc-600" />
                     </div>
                   </div>
