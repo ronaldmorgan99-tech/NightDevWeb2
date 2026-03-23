@@ -78,6 +78,15 @@ async function start() {
     prompt: z.string().max(2000, 'prompt is too long').optional().default('')
   });
 
+
+  const serverNodeSchema = z.object({
+    name: z.string().min(1).max(100),
+    ip: z.string().min(1).max(255),
+    region: z.string().max(100).optional().default('Unknown'),
+    game: z.string().max(50).optional().default('Rust'),
+    map: z.string().max(100).optional().default('Unknown')
+  });
+
   type MediaOperationStatus = 'in_progress' | 'done' | 'error';
   type MediaOperationRecord = {
     ownerId: number;
@@ -320,6 +329,53 @@ async function start() {
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/servers', async (_req, res) => {
+    try {
+      const servers = await db.query<any>(`
+        SELECT id, name, ip, region, game, map, players, status
+        FROM server_nodes
+        ORDER BY created_at DESC
+      `);
+      const normalized = servers.map((server) => ({
+        ...server,
+        players: Number(server.players) || 0,
+        status: server.status === 'online' ? 'online' : 'offline'
+      }));
+      res.json(normalized);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/admin/servers', authenticate, isAdmin, async (req, res) => {
+    try {
+      const payload = serverNodeSchema.parse(req.body);
+      await db.execute(
+        'INSERT INTO server_nodes (name, ip, region, game, map, players, status) VALUES (?, ?, ?, ?, ?, 0, ?)',
+        [payload.name, payload.ip, payload.region, payload.game, payload.map, 'offline']
+      );
+      res.status(201).json({ success: true });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/admin/servers/:id/status', authenticate, isAdmin, async (req, res) => {
+    const { id } = req.params;
+    const status = req.body?.status === 'online' ? 'online' : 'offline';
+    const players = Number.isFinite(Number(req.body?.players)) ? Math.max(0, Number(req.body.players)) : 0;
+
+    try {
+      await db.execute(
+        'UPDATE server_nodes SET status = ?, players = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [status, players, id]
+      );
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
     }
   });
 

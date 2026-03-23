@@ -295,6 +295,22 @@ export async function initDb() {
     )
   `);
 
+  // Game Server Nodes
+  await run(`
+    CREATE TABLE IF NOT EXISTS server_nodes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      ip TEXT NOT NULL,
+      region TEXT,
+      game TEXT DEFAULT 'Rust',
+      map TEXT DEFAULT 'Unknown',
+      players INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'offline',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // Site Settings
   await run(`
     CREATE TABLE IF NOT EXISTS site_settings (
