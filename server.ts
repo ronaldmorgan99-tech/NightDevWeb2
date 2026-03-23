@@ -156,6 +156,33 @@ async function start() {
     );
   };
 
+  const syncServerNodesFromJson = async (rawJson: string) => {
+    let parsed: any = [];
+    try {
+      parsed = JSON.parse(rawJson || '[]');
+    } catch {
+      parsed = [];
+    }
+
+    const servers = Array.isArray(parsed) ? parsed : [];
+    await db.execute('DELETE FROM server_nodes');
+
+    for (const entry of servers) {
+      const name = String(entry?.name || entry?.label || 'Unnamed Node');
+      const ip = String(entry?.ip || entry?.address || '0.0.0.0:0');
+      const region = String(entry?.region || 'Unknown');
+      const game = String(entry?.game || 'Rust');
+      const map = String(entry?.map || 'Unknown');
+      const playersCurrent = Number.isFinite(Number(entry?.players_current ?? entry?.players)) ? Math.max(0, Number(entry.players_current ?? entry.players)) : 0;
+      const status = entry?.status === 'online' ? 'online' : 'offline';
+
+      await db.execute(
+        'INSERT INTO server_nodes (name, ip, region, game, map, players_current, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [name, ip, region, game, map, playersCurrent, status]
+      );
+    }
+  };
+
   // --- API ROUTES ---
 
   // Auth
@@ -332,6 +359,16 @@ async function start() {
     }
   });
 
+  const legacyServerSetting = await db.queryOne<any>("SELECT value FROM site_settings WHERE `key` = 'network_servers'");
+  const existingNodeCount = await db.queryOne<any>('SELECT COUNT(*) as count FROM server_nodes');
+  if (legacyServerSetting?.value && Number(existingNodeCount?.count || 0) === 0) {
+    await syncServerNodesFromJson(String(legacyServerSetting.value));
+  }
+
+  app.get('/api/servers', async (_req, res) => {
+    try {
+      const servers = await db.query<any>(`
+        SELECT id, name, ip, region, game, map, players_current, status
   app.get('/api/servers', async (_req, res) => {
     try {
       const servers = await db.query<any>(`
@@ -341,6 +378,8 @@ async function start() {
       `);
       const normalized = servers.map((server) => ({
         ...server,
+        players_current: Number(server.players_current) || 0,
+        players: Number(server.players_current) || 0,
         players: Number(server.players) || 0,
         status: server.status === 'online' ? 'online' : 'offline'
       }));
@@ -354,6 +393,7 @@ async function start() {
     try {
       const payload = serverNodeSchema.parse(req.body);
       await db.execute(
+        'INSERT INTO server_nodes (name, ip, region, game, map, players_current, status) VALUES (?, ?, ?, ?, ?, 0, ?)',
         'INSERT INTO server_nodes (name, ip, region, game, map, players, status) VALUES (?, ?, ?, ?, ?, 0, ?)',
         [payload.name, payload.ip, payload.region, payload.game, payload.map, 'offline']
       );
@@ -366,6 +406,12 @@ async function start() {
   app.patch('/api/admin/servers/:id/status', authenticate, isAdmin, async (req, res) => {
     const { id } = req.params;
     const status = req.body?.status === 'online' ? 'online' : 'offline';
+    const playersCurrent = Number.isFinite(Number(req.body?.players_current ?? req.body?.players)) ? Math.max(0, Number(req.body.players_current ?? req.body.players)) : 0;
+
+    try {
+      await db.execute(
+        'UPDATE server_nodes SET status = ?, players_current = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [status, playersCurrent, id]
     const players = Number.isFinite(Number(req.body?.players)) ? Math.max(0, Number(req.body.players)) : 0;
 
     try {
@@ -870,11 +916,17 @@ async function start() {
   });
 
   app.post('/api/admin/settings', authenticate, isAdmin, async (req, res) => {
-    const settings = req.body; // Array of { key, value }
+    const settings = Array.isArray(req.body) ? req.body : req.body?.settings || [];
     try {
       for (const setting of settings) {
         await db.execute('UPDATE site_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?', [setting.value, setting.key]);
       }
+
+      const networkServersSetting = settings.find((setting: any) => setting.key === 'network_servers');
+      if (networkServersSetting) {
+        await syncServerNodesFromJson(String(networkServersSetting.value || '[]'));
+      }
+
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

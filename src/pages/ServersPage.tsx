@@ -8,6 +8,7 @@ type ServerNode = {
   id: number;
   name: string;
   ip: string;
+  players_current: number;
   players: number;
   map: string;
   status: 'online' | 'offline';
@@ -92,6 +93,7 @@ const ServerCard: React.FC<{
 export default function ServersPage() {
   const { data: servers = [] } = useQuery<ServerNode[]>({
     queryKey: ['servers'],
+    refetchInterval: 10000,
     queryFn: async () => {
       const response = await fetch('/api/servers');
       if (!response.ok) {
@@ -101,6 +103,7 @@ export default function ServersPage() {
     }
   });
 
+  const activePlayers = servers.reduce((sum, server) => sum + (server.players_current || 0), 0);
   const activePlayers = servers.reduce((sum, server) => sum + (server.players || 0), 0);
   const onlineNodes = servers.filter(server => server.status === 'online').length;
 
@@ -129,6 +132,7 @@ export default function ServersPage() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
+          { icon: Users, label: 'Active Players', value: `${activePlayers} PLAYERS`, color: 'text-neon-cyan' },
           { icon: Users, label: 'Active Players', value: String(activePlayers), color: 'text-neon-cyan' },
           { icon: Zap, label: 'Avg Latency', value: servers.length > 0 ? 'Live' : 'N/A', color: 'text-neon-magenta' },
           { icon: Shield, label: 'Network Status', value: onlineNodes > 0 ? 'Online' : 'Offline', color: onlineNodes > 0 ? 'text-neon-green' : 'text-red-400' },
@@ -149,6 +153,7 @@ export default function ServersPage() {
               key={server.id}
               name={server.name}
               ip={server.ip}
+              players={`${server.players_current || 0} PLAYERS`}
               players={`${server.players} PLAYERS`}
               map={server.map || server.region}
               status={server.status}
