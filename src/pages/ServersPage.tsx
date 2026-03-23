@@ -1,7 +1,19 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Server, Globe, Zap, Shield, Users, Copy, Check, ExternalLink, Activity } from 'lucide-react';
+import { Globe, Zap, Shield, Users, Copy, Check, ExternalLink, Activity } from 'lucide-react';
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+
+type ServerNode = {
+  id: number;
+  name: string;
+  ip: string;
+  players: number;
+  map: string;
+  status: 'online' | 'offline';
+  region: string;
+  game: string;
+};
 
 const ServerCard: React.FC<{
   name: string;
@@ -21,15 +33,14 @@ const ServerCard: React.FC<{
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
       className="group relative p-6 bg-cyber-black/40 border border-white/5 rounded-2xl hover:border-neon-cyan/30 transition-all duration-500 overflow-hidden"
     >
-      {/* Decorative Background */}
       <div className={`absolute top-0 right-0 w-32 h-32 bg-${color}/5 blur-[60px] rounded-full -mr-16 -mt-16 group-hover:bg-${color}/10 transition-all`} />
-      
+
       <div className="relative z-10">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -49,7 +60,7 @@ const ServerCard: React.FC<{
           <code className="flex-1 text-xs font-mono text-zinc-400 group-hover/ip:text-white transition-colors truncate">
             {ip}
           </code>
-          <button 
+          <button
             onClick={copyToClipboard}
             className="p-2 text-zinc-500 hover:text-neon-cyan transition-colors relative"
           >
@@ -61,7 +72,7 @@ const ServerCard: React.FC<{
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <button 
+          <button
             className="btn-neon-cyan py-2.5 text-[10px] flex items-center justify-center gap-2"
             onClick={() => window.open(`steam://connect/${ip}`, '_blank')}
           >
@@ -79,19 +90,22 @@ const ServerCard: React.FC<{
 };
 
 export default function ServersPage() {
-  const servers: {
-    name: string;
-    ip: string;
-    players: string;
-    map: string;
-    status: 'online' | 'offline';
-    color: string;
-    game: string;
-  }[] = [];
+  const { data: servers = [] } = useQuery<ServerNode[]>({
+    queryKey: ['servers'],
+    queryFn: async () => {
+      const response = await fetch('/api/servers');
+      if (!response.ok) {
+        throw new Error('Failed to load servers');
+      }
+      return response.json();
+    }
+  });
+
+  const activePlayers = servers.reduce((sum, server) => sum + (server.players || 0), 0);
+  const onlineNodes = servers.filter(server => server.status === 'online').length;
 
   return (
     <div className="max-w-6xl mx-auto space-y-12 py-8">
-      {/* Header Section */}
       <section className="relative p-12 cyber-card border-neon-cyan/20 overflow-hidden text-center">
         <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-neon-cyan/50 to-transparent" />
         <div className="relative z-10">
@@ -106,21 +120,19 @@ export default function ServersPage() {
             Access the NightRespawn network. High-performance, low-latency nodes distributed across the digital underground.
           </p>
         </div>
-        
-        {/* Atmospheric Background */}
+
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full pointer-events-none opacity-20">
           <div className="absolute top-0 left-0 w-64 h-64 bg-neon-cyan/20 blur-[100px] rounded-full" />
           <div className="absolute bottom-0 right-0 w-64 h-64 bg-neon-magenta/20 blur-[100px] rounded-full" />
         </div>
       </section>
 
-      {/* Stats Overview */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { icon: Users, label: "Active Players", value: "0", color: "text-neon-cyan" },
-          { icon: Zap, label: "Avg Latency", value: "24ms", color: "text-neon-magenta" },
-          { icon: Shield, label: "Uptime", value: "99.9%", color: "text-neon-green" },
-          { icon: Activity, label: "Total Nodes", value: "12", color: "text-neon-purple" }
+          { icon: Users, label: 'Active Players', value: String(activePlayers), color: 'text-neon-cyan' },
+          { icon: Zap, label: 'Avg Latency', value: servers.length > 0 ? 'Live' : 'N/A', color: 'text-neon-magenta' },
+          { icon: Shield, label: 'Network Status', value: onlineNodes > 0 ? 'Online' : 'Offline', color: onlineNodes > 0 ? 'text-neon-green' : 'text-red-400' },
+          { icon: Activity, label: 'Total Nodes', value: String(servers.length), color: 'text-neon-purple' }
         ].map((stat, i) => (
           <div key={i} className="cyber-card p-6 border-white/5 bg-white/[0.02] text-center group hover:border-white/10 transition-all">
             <stat.icon className={`w-5 h-5 mx-auto mb-3 ${stat.color} opacity-50 group-hover:opacity-100 transition-opacity`} />
@@ -130,32 +142,30 @@ export default function ServersPage() {
         ))}
       </div>
 
-      {/* Server Grid */}
       {servers.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {servers.map((server, i) => (
-            <ServerCard 
-              key={i} 
+          {servers.map((server) => (
+            <ServerCard
+              key={server.id}
               name={server.name}
               ip={server.ip}
-              players={server.players}
-              map={server.map}
+              players={`${server.players} PLAYERS`}
+              map={server.map || server.region}
               status={server.status}
-              color={server.color}
+              color="neon-cyan"
               game={server.game}
             />
           ))}
         </div>
       ) : (
         <section className="cyber-card p-12 border-white/5 bg-white/[0.01] text-center">
-          <h2 className="text-2xl font-black text-white italic tracking-tighter uppercase mb-3">No Servers Connected</h2>
+          <h2 className="text-2xl font-black text-white italic tracking-tighter uppercase mb-3">No active nodes detected</h2>
           <p className="text-zinc-500 text-sm max-w-xl mx-auto">
             Server telemetry is empty right now. Once a node is connected, live player counts and map status will appear here automatically.
           </p>
         </section>
       )}
 
-      {/* Connection Guide */}
       <section className="cyber-card p-10 border-white/5 bg-white/[0.01]">
         <div className="flex flex-col md:flex-row gap-12">
           <div className="flex-1">

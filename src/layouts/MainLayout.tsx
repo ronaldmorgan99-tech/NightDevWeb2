@@ -30,6 +30,14 @@ import { motion, AnimatePresence } from 'motion/react';
 
 const GlobeIcon = Globe;
 
+type SidebarServer = {
+  id: number;
+  name: string;
+  players: number;
+  status: 'online' | 'offline';
+  map: string;
+};
+
 const DiscordIcon = () => (
   <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
     <path d="M19.27 4.57c-1.3-.6-2.7-1.04-4.19-1.3-.17.3-.37.63-.5.94-1.58-.24-3.15-.24-4.7 0-.13-.31-.33-.64-.5-.94-1.49.26-2.89.7-4.19 1.3C2.56 8.53 1.64 12.39 2.02 16.23c1.79 1.32 3.53 2.12 5.24 2.65.42-.58.8-1.21 1.12-1.88-.62-.23-1.21-.53-1.77-.88.15-.11.29-.22.43-.34 3.42 1.58 7.13 1.58 10.5 0 .14.12.28.23.43.34-.56.35-1.15.65-1.77.88.32.67.7 1.3 1.12 1.88 1.71-.53 3.45-1.33 5.24-2.65.46-4.4-.7-8.22-3.04-11.66zM8.47 13.42c-.99 0-1.81-.91-1.81-2.03s.8-2.03 1.81-2.03c1.02 0 1.83.91 1.81 2.03-.02 1.12-.8 2.03-1.81 2.03zm7.06 0c-.99 0-1.81-.91-1.81-2.03s.8-2.03 1.81-2.03c1.02 0 1.83.91 1.81 2.03 0 1.12-.8 2.03-1.81 2.03z"/>
@@ -78,6 +86,20 @@ const MainLayout: React.FC = () => {
     queryKey: ['site-settings'],
     queryFn: () => fetch('/api/settings').then(res => res.json())
   });
+
+  const { data: sidebarServers = [] } = useQuery<SidebarServer[]>({
+    queryKey: ['servers'],
+    queryFn: async () => {
+      const response = await fetch('/api/servers');
+      if (!response.ok) {
+        throw new Error('Failed to load server status');
+      }
+      return response.json();
+    }
+  });
+
+  const activeUplinkPlayers = sidebarServers.reduce((sum, server) => sum + (server.players || 0), 0);
+  const onlineNodes = sidebarServers.filter(server => server.status === 'online').length;
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
@@ -556,13 +578,42 @@ const MainLayout: React.FC = () => {
               </div>
 
               <div className="space-y-3">
-                <div className="rounded-xl border border-dashed border-white/10 bg-cyber-black/40 px-4 py-5 text-center">
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">No Servers Connected</p>
-                  <p className="mt-2 text-[10px] text-zinc-600">Connect a game server to display live network status.</p>
+                <div className="rounded-xl border border-white/10 bg-cyber-black/40 px-4 py-4">
+                  <p className="text-[9px] text-zinc-500 uppercase tracking-[0.2em] font-black">Network Stats</p>
+                  <div className="mt-3 space-y-2 text-[10px] uppercase tracking-[0.15em]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-zinc-500">Active Uplinks</span>
+                      <span className="font-mono text-neon-cyan">{activeUplinkPlayers} PLAYERS</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-zinc-500">Global Nodes</span>
+                      <span className={onlineNodes > 0 ? 'font-mono text-neon-green' : 'font-mono text-red-400'}>
+                        {onlineNodes > 0 ? `${onlineNodes} ONLINE` : 'OFFLINE'}
+                      </span>
+                    </div>
+                  </div>
                 </div>
+
+                {sidebarServers.length > 0 ? (
+                  sidebarServers.slice(0, 3).map((server) => (
+                    <ServerStatus
+                      key={server.id}
+                      name={server.name}
+                      players={`${server.players} PLAYERS`}
+                      map={server.map || 'UNKNOWN'}
+                      status={server.status}
+                      color="neon-cyan"
+                    />
+                  ))
+                ) : (
+                  <div className="rounded-xl border border-dashed border-white/10 bg-cyber-black/40 px-4 py-5 text-center">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">No Servers Connected</p>
+                    <p className="mt-2 text-[10px] text-zinc-600">Connect a game server to display live network status.</p>
+                  </div>
+                )}
               </div>
 
-              <button className="w-full mt-6 btn-holographic py-2 text-[8px]">
+              <button className="w-full mt-6 btn-holographic py-2 text-[8px]" onClick={() => navigate('/servers')}>
                 View All Servers
               </button>
             </div>
