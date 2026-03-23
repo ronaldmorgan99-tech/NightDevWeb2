@@ -558,7 +558,6 @@ async function start() {
         updates.push('content = ?');
         params.push(content);
       }
-
       if (is_hidden !== undefined) {
         updates.push('is_hidden = ?');
         params.push(is_hidden ? 1 : 0);
@@ -569,7 +568,6 @@ async function start() {
           });
         }
       }
-
       if (is_deleted !== undefined) {
         updates.push('is_deleted = ?');
         params.push(is_deleted ? 1 : 0);
@@ -603,6 +601,7 @@ async function start() {
 
   app.patch('/api/threads/:id', authenticate, async (req: any, res) => {
     const { is_pinned, is_locked, is_solved, is_hidden } = req.body;
+    if (!['admin', 'moderator'].includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
     try {
       const thread = await db.queryOne<any>('SELECT * FROM threads WHERE id = ?', [req.params.id]);
       if (!thread) return res.status(404).json({ error: 'Thread not found' });
@@ -617,9 +616,6 @@ async function start() {
         return res.status(403).json({ error: 'Only moderators can hide/unhide threads' });
       }
       if ((is_locked !== undefined || is_solved !== undefined) && !isStaff && !isOwner) {
-        return res.status(403).json({ error: 'Forbidden' });
-      }
-      if (!isStaff && !isOwner) {
         return res.status(403).json({ error: 'Forbidden' });
       }
 
