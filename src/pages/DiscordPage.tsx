@@ -15,6 +15,18 @@ export default function DiscordPage() {
     queryKey: ['community-stats'],
     queryFn: () => fetch('/api/community/stats').then(res => res.json())
   });
+  const {
+    data: discordFeed,
+    isLoading: isDiscordFeedLoading,
+    isError: isDiscordFeedError
+  } = useQuery<{ items: Array<{ id: string; author: string; content: string; createdAt: string; avatarUrl?: string }> }>({
+    queryKey: ['discord-feed'],
+    queryFn: async () => {
+      const response = await fetch('/api/discord/feed');
+      if (!response.ok) throw new Error('Failed to load Discord feed');
+      return response.json();
+    }
+  });
 
   return (
     <div className="max-w-4xl mx-auto py-12 px-4">
@@ -112,25 +124,44 @@ export default function DiscordPage() {
             <Zap className="w-4 h-4" />
             LIVE FEED
           </h2>
-          <div className="space-y-4">
-            <div className="p-4 bg-cyber-black/40 border border-white/5 rounded-xl">
-              <p className="text-[10px] text-zinc-400 leading-relaxed italic">
-                "The community here is insane. Best modding support I've found in the underground."
-              </p>
-              <div className="mt-2 flex items-center gap-2">
-                <div className="w-4 h-4 rounded-full bg-neon-purple/20" />
-                <span className="text-[8px] font-black text-neon-purple uppercase tracking-widest">@Cipher_X</span>
+          <div className="space-y-4 min-h-[178px]">
+            {isDiscordFeedLoading && (
+              <div className="p-4 bg-cyber-black/40 border border-white/5 rounded-xl">
+                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+                  Syncing Discord uplink...
+                </p>
               </div>
-            </div>
-            <div className="p-4 bg-cyber-black/40 border border-white/5 rounded-xl">
-              <p className="text-[10px] text-zinc-400 leading-relaxed italic">
-                "Coordinate your raids in the #tactical channel. We never miss a wipe."
-              </p>
-              <div className="mt-2 flex items-center gap-2">
-                <div className="w-4 h-4 rounded-full bg-neon-cyan/20" />
-                <span className="text-[8px] font-black text-neon-cyan uppercase tracking-widest">@Neon_Ghost</span>
+            )}
+
+            {isDiscordFeedError && (
+              <div className="p-4 bg-cyber-black/40 border border-red-500/20 rounded-xl">
+                <p className="text-[10px] text-red-300 uppercase tracking-widest font-bold">
+                  Discord feed unavailable. Check back shortly.
+                </p>
               </div>
-            </div>
+            )}
+
+            {!isDiscordFeedLoading && !isDiscordFeedError && (discordFeed?.items?.length ?? 0) === 0 && (
+              <div className="p-4 bg-cyber-black/40 border border-white/5 rounded-xl">
+                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+                  No live transmissions yet.
+                </p>
+              </div>
+            )}
+
+            {!isDiscordFeedLoading && !isDiscordFeedError && (discordFeed?.items ?? []).slice(0, 3).map((item, index) => (
+              <div key={item.id} className="p-4 bg-cyber-black/40 border border-white/5 rounded-xl">
+                <p className="text-[10px] text-zinc-400 leading-relaxed italic">
+                  "{item.content}"
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <div className={`w-4 h-4 rounded-full ${index % 2 === 0 ? 'bg-neon-purple/20' : 'bg-neon-cyan/20'}`} />
+                  <span className={`text-[8px] font-black uppercase tracking-widest ${index % 2 === 0 ? 'text-neon-purple' : 'text-neon-cyan'}`}>
+                    @{item.author}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>

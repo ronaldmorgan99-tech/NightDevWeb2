@@ -87,6 +87,29 @@ async function start() {
     map: z.string().max(100).optional().default('Unknown')
   });
 
+  const discordWidgetMemberSchema = z.object({
+    id: z.string().optional(),
+    username: z.string().optional(),
+    discriminator: z.string().optional(),
+    status: z.string().optional(),
+    avatar_url: z.string().url().optional()
+  });
+
+  const discordWidgetChannelSchema = z.object({
+    id: z.string(),
+    name: z.string(),
+    position: z.number().optional()
+  });
+
+  const discordWidgetResponseSchema = z.object({
+    id: z.string().optional(),
+    name: z.string().optional(),
+    instant_invite: z.string().optional(),
+    channels: z.array(discordWidgetChannelSchema).optional().default([]),
+    members: z.array(discordWidgetMemberSchema).optional().default([]),
+    presence_count: z.number().optional().default(0)
+  });
+
   type MediaOperationStatus = 'in_progress' | 'done' | 'error';
   type MediaOperationRecord = {
     ownerId: number;
@@ -388,6 +411,63 @@ async function start() {
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/discord/feed', async (_req, res) => {
+    const guildId = process.env.DISCORD_GUILD_ID;
+    if (!guildId) {
+      return res.json({ items: [] });
+    }
+
+    try {
+      const widgetResponse = await fetch(`https://discord.com/api/guilds/${guildId}/widget.json`, {
+        headers: { Accept: 'application/json' }
+      });
+
+      if (!widgetResponse.ok) {
+        return res.status(widgetResponse.status).json({ error: 'Failed to fetch Discord feed', items: [] });
+      }
+
+      const widgetJson = await widgetResponse.json();
+      const widgetData = discordWidgetResponseSchema.parse(widgetJson);
+
+      const nowIso = new Date().toISOString();
+      const memberItems = widgetData.members.slice(0, 6).map((member, index) => ({
+        id: member.id || `member-${index}`,
+        author: member.username || 'Unknown User',
+        content: `${member.status || 'online'} in ${widgetData.name || 'Discord'}`,
+        createdAt: nowIso,
+        avatarUrl: member.avatar_url || null
+      }));
+
+      const channelItems = widgetData.channels
+        .slice()
+        .sort((a, b) => (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER))
+        .slice(0, 3)
+        .map((channel) => ({
+          id: `channel-${channel.id}`,
+          author: 'Channel Update',
+          content: `#${channel.name} is active`,
+          createdAt: nowIso,
+          avatarUrl: null as string | null
+        }));
+
+      const normalizedItems = [...memberItems, ...channelItems]
+        .map((item) => ({
+          id: String(item.id),
+          author: String(item.author),
+          content: String(item.content),
+          createdAt: new Date(item.createdAt).toISOString(),
+          ...(item.avatarUrl ? { avatarUrl: item.avatarUrl } : {})
+        }))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+      res.json({
+        items: normalizedItems
+      });
+    } catch (err: any) {
+      res.status(502).json({ error: err.message || 'Discord feed unavailable', items: [] });
     }
   });
 
