@@ -103,7 +103,6 @@ export default function ServersPage() {
     }
   });
 
-  const activePlayers = servers.reduce((sum, server) => sum + (server.players_current || 0), 0);
   const activePlayers = servers.reduce((sum, server) => sum + (server.players || 0), 0);
   const onlineNodes = servers.filter(server => server.status === 'online').length;
 
@@ -153,7 +152,6 @@ export default function ServersPage() {
               key={server.id}
               name={server.name}
               ip={server.ip}
-              players={`${server.players_current || 0} PLAYERS`}
               players={`${server.players} PLAYERS`}
               map={server.map || server.region}
               status={server.status}

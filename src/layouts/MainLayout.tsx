@@ -100,7 +100,6 @@ const MainLayout: React.FC = () => {
     }
   });
 
-  const activeUplinkPlayers = sidebarServers.reduce((sum, server) => sum + (server.players_current || 0), 0);
   const activeUplinkPlayers = sidebarServers.reduce((sum, server) => sum + (server.players || 0), 0);
   const onlineNodes = sidebarServers.filter(server => server.status === 'online').length;
 
@@ -602,7 +601,6 @@ const MainLayout: React.FC = () => {
                     <ServerStatus
                       key={server.id}
                       name={server.name}
-                      players={`${server.players_current || 0} PLAYERS`}
                       players={`${server.players} PLAYERS`}
                       map={server.map || 'UNKNOWN'}
                       status={server.status}
