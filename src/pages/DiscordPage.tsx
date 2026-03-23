@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { MessageSquare, Users, Zap, Shield, Globe, ExternalLink } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 
 const DiscordIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
@@ -10,6 +11,11 @@ const DiscordIcon = ({ className }: { className?: string }) => (
 
 export default function DiscordPage() {
   const discordLink = "https://discord.gg/NZbmQNxX";
+  const discordLink = "https://discord.gg/3axtkUBN";
+  const { data: communityStats } = useQuery<{ users: number }>({
+    queryKey: ['community-stats'],
+    queryFn: () => fetch('/api/community/stats').then(res => res.json())
+  });
 
   return (
     <div className="max-w-4xl mx-auto py-12 px-4">
@@ -37,7 +43,7 @@ export default function DiscordPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full mb-12">
             {[
-              { icon: Users, title: "COMMUNITY", desc: "5,000+ Active Operatives" },
+              { icon: Users, title: "COMMUNITY", desc: `${(communityStats?.users ?? 0).toLocaleString('en-US')} Active Operatives` },
               { icon: Zap, title: "REAL-TIME", desc: "Instant Mission Briefs" },
               { icon: Shield, title: "SECURE", desc: "Encrypted Comms" }
             ].map((feature, i) => (

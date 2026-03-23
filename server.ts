@@ -332,7 +332,25 @@ async function start() {
   app.get('/api/forums/categories', async (req, res) => {
     try {
       const categories = await db.query<any>('SELECT * FROM forum_categories ORDER BY display_order ASC');
-      const forums = await db.query<any>('SELECT * FROM forums ORDER BY display_order ASC');
+      const forums = await db.query<any>(`
+        SELECT
+          f.*,
+          COALESCE(tc.thread_count, 0) AS thread_count,
+          COALESCE(pc.post_count, 0) AS post_count
+        FROM forums f
+        LEFT JOIN (
+          SELECT forum_id, COUNT(*) AS thread_count
+          FROM threads
+          GROUP BY forum_id
+        ) tc ON tc.forum_id = f.id
+        LEFT JOIN (
+          SELECT t.forum_id, COUNT(p.id) AS post_count
+          FROM threads t
+          LEFT JOIN posts p ON p.thread_id = t.id
+          GROUP BY t.forum_id
+        ) pc ON pc.forum_id = f.id
+        ORDER BY f.display_order ASC
+      `);
       
       const result = categories.map(cat => ({
         ...cat,
@@ -340,6 +358,34 @@ async function start() {
       }));
       
       res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/community/stats', async (_req, res) => {
+    try {
+      const [users, threads, posts, servers] = await Promise.all([
+        db.queryOne<any>('SELECT COUNT(*) as count FROM users'),
+        db.queryOne<any>('SELECT COUNT(*) as count FROM threads'),
+        db.queryOne<any>('SELECT COUNT(*) as count FROM posts'),
+        db.queryOne<any>(`
+          SELECT
+            COUNT(*) as total_servers,
+            SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online_servers,
+            SUM(CASE WHEN status = 'online' THEN COALESCE(players, 0) ELSE 0 END) as active_players
+          FROM server_nodes
+        `)
+      ]);
+
+      res.json({
+        users: Number(users?.count || 0),
+        threads: Number(threads?.count || 0),
+        posts: Number(posts?.count || 0),
+        total_servers: Number(servers?.total_servers || 0),
+        online_servers: Number(servers?.online_servers || 0),
+        active_players: Number(servers?.active_players || 0)
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
