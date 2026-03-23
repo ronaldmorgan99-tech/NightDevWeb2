@@ -9,6 +9,8 @@ interface Forum {
   name: string;
   description: string;
   display_order: number;
+  thread_count: number;
+  post_count: number;
 }
 
 interface Category {
@@ -18,11 +20,27 @@ interface Category {
   forums: Forum[];
 }
 
+interface CommunityStats {
+  users: number;
+  threads: number;
+  posts: number;
+  total_servers: number;
+  online_servers: number;
+  active_players: number;
+}
+
 const ForumsPage: React.FC = () => {
   const { data: categories, isLoading } = useQuery<Category[]>({
     queryKey: ['forum-categories'],
     queryFn: () => fetch('/api/forums/categories').then(res => res.json())
   });
+  const { data: communityStats } = useQuery<CommunityStats>({
+    queryKey: ['community-stats'],
+    queryFn: () => fetch('/api/community/stats').then(res => res.json())
+  });
+
+  const formatCompact = (value: number) =>
+    new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
 
   if (isLoading) {
     return (
@@ -123,14 +141,14 @@ const ForumsPage: React.FC = () => {
             </div>
             
             <div className="flex items-center gap-8">
-              <div className="hidden lg:flex items-center gap-4">
-                <div className="text-right">
-                  <p className="text-xs font-black text-neon-green uppercase tracking-widest">249 ONLINE</p>
+                <div className="hidden lg:flex items-center gap-4">
+                  <div className="text-right">
+                  <p className="text-xs font-black text-neon-green uppercase tracking-widest">{communityStats?.active_players ?? 0} ONLINE</p>
                   <p className="text-[8px] text-zinc-600 uppercase font-bold">Active Operatives</p>
                 </div>
                 <div className="w-[1px] h-8 bg-white/10" />
                 <div className="text-right">
-                  <p className="text-xs font-black text-neon-cyan uppercase tracking-widest">12 NODES</p>
+                  <p className="text-xs font-black text-neon-cyan uppercase tracking-widest">{communityStats?.total_servers ?? 0} NODES</p>
                   <p className="text-[8px] text-zinc-600 uppercase font-bold">Global Network</p>
                 </div>
               </div>
@@ -185,11 +203,11 @@ const ForumsPage: React.FC = () => {
 
                   <div className="hidden sm:flex items-center gap-10 text-sm">
                     <div className="text-center">
-                      <p className="text-neon-cyan font-mono font-bold text-lg">1.2k</p>
+                      <p className="text-neon-cyan font-mono font-bold text-lg">{formatCompact(forum.thread_count || 0)}</p>
                       <p className="text-zinc-600 text-[8px] uppercase tracking-[0.2em] font-black">Threads</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-neon-pink font-mono font-bold text-lg">14k</p>
+                      <p className="text-neon-pink font-mono font-bold text-lg">{formatCompact(forum.post_count || 0)}</p>
                       <p className="text-zinc-600 text-[8px] uppercase tracking-[0.2em] font-black">Posts</p>
                     </div>
                   </div>
@@ -213,7 +231,7 @@ const ForumsPage: React.FC = () => {
             <div className="w-16 h-16 bg-neon-cyan/10 rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
               <Users className="w-8 h-8 text-neon-cyan" />
             </div>
-            <h4 className="text-4xl font-black text-white italic tracking-tighter">12,450</h4>
+            <h4 className="text-4xl font-black text-white italic tracking-tighter">{(communityStats?.users ?? 0).toLocaleString('en-US')}</h4>
             <p className="text-zinc-500 text-[10px] uppercase tracking-[0.3em] font-black mt-2">Active Operatives</p>
           </div>
         </div>
@@ -223,7 +241,7 @@ const ForumsPage: React.FC = () => {
             <div className="w-16 h-16 bg-neon-pink/10 rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
               <MessageSquare className="w-8 h-8 text-neon-pink" />
             </div>
-            <h4 className="text-4xl font-black text-white italic tracking-tighter">84,210</h4>
+            <h4 className="text-4xl font-black text-white italic tracking-tighter">{(communityStats?.posts ?? 0).toLocaleString('en-US')}</h4>
             <p className="text-zinc-500 text-[10px] uppercase tracking-[0.3em] font-black mt-2">Data Transmissions</p>
           </div>
         </div>
@@ -233,7 +251,7 @@ const ForumsPage: React.FC = () => {
             <div className="w-16 h-16 bg-neon-green/10 rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
               <Gamepad2 className="w-8 h-8 text-neon-green" />
             </div>
-            <h4 className="text-4xl font-black text-white italic tracking-tighter">1,240</h4>
+            <h4 className="text-4xl font-black text-white italic tracking-tighter">{(communityStats?.online_servers ?? 0).toLocaleString('en-US')}</h4>
             <p className="text-zinc-500 text-[10px] uppercase tracking-[0.3em] font-black mt-2">Uplinks Active</p>
           </div>
         </div>
