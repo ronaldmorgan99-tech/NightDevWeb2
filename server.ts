@@ -368,18 +368,12 @@ async function start() {
   app.get('/api/servers', async (_req, res) => {
     try {
       const servers = await db.query<any>(`
-        SELECT id, name, ip, region, game, map, players_current, status
-  app.get('/api/servers', async (_req, res) => {
-    try {
-      const servers = await db.query<any>(`
         SELECT id, name, ip, region, game, map, players, status
         FROM server_nodes
         ORDER BY created_at DESC
       `);
       const normalized = servers.map((server) => ({
         ...server,
-        players_current: Number(server.players_current) || 0,
-        players: Number(server.players_current) || 0,
         players: Number(server.players) || 0,
         status: server.status === 'online' ? 'online' : 'offline'
       }));
@@ -393,7 +387,6 @@ async function start() {
     try {
       const payload = serverNodeSchema.parse(req.body);
       await db.execute(
-        'INSERT INTO server_nodes (name, ip, region, game, map, players_current, status) VALUES (?, ?, ?, ?, ?, 0, ?)',
         'INSERT INTO server_nodes (name, ip, region, game, map, players, status) VALUES (?, ?, ?, ?, ?, 0, ?)',
         [payload.name, payload.ip, payload.region, payload.game, payload.map, 'offline']
       );
@@ -406,12 +399,6 @@ async function start() {
   app.patch('/api/admin/servers/:id/status', authenticate, isAdmin, async (req, res) => {
     const { id } = req.params;
     const status = req.body?.status === 'online' ? 'online' : 'offline';
-    const playersCurrent = Number.isFinite(Number(req.body?.players_current ?? req.body?.players)) ? Math.max(0, Number(req.body.players_current ?? req.body.players)) : 0;
-
-    try {
-      await db.execute(
-        'UPDATE server_nodes SET status = ?, players_current = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [status, playersCurrent, id]
     const players = Number.isFinite(Number(req.body?.players)) ? Math.max(0, Number(req.body.players)) : 0;
 
     try {
