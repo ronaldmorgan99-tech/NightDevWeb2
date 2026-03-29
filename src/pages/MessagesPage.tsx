@@ -36,15 +36,62 @@ export default function MessagesPage() {
   const [userSearch, setUserSearch] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isInitialLoadRef = useRef(true);
+  const wasNearBottomRef = useRef(true);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const getIsNearBottom = () => {
+    const container = messagesContainerRef.current;
+    if (!container) return true;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    return distanceFromBottom <= 80;
+  };
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+  };
+
+  const dedupeMessagesById = (items: Message[]) => {
+    const messageMap = new Map<number, Message>();
+    items.forEach(message => messageMap.set(message.id, message));
+    return Array.from(messageMap.values());
   };
 
   useEffect(() => {
-    scrollToBottom();
+    const latestMessage = messages[messages.length - 1];
+    const isOwnLatestMessage = latestMessage?.sender_id === user?.id;
+    const shouldAutoScroll = isInitialLoadRef.current || isOwnLatestMessage || wasNearBottomRef.current;
+
+    if (shouldAutoScroll) {
+      scrollToBottom(isInitialLoadRef.current ? 'auto' : 'smooth');
+      isInitialLoadRef.current = false;
+      wasNearBottomRef.current = true;
+    }
   }, [messages]);
+
+  useEffect(() => {
+    if (!selectedUser?.id) return;
+    isInitialLoadRef.current = true;
+    wasNearBottomRef.current = true;
+    scrollToBottom('auto');
+  }, [selectedUser?.id]);
+
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      wasNearBottomRef.current = getIsNearBottom();
+    };
+
+    handleScroll();
+    container.addEventListener('scroll', handleScroll);
+
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+    };
+  }, [selectedUser?.id]);
 
   useEffect(() => {
     if (user) {
@@ -114,7 +161,8 @@ export default function MessagesPage() {
     if (socket && user) {
       socket.on('new_message', (message: Message) => {
         if (selectedUser && (message.sender_id === selectedUser.id || message.receiver_id === selectedUser.id)) {
-          setMessages(prev => [...prev, message]);
+          wasNearBottomRef.current = getIsNearBottom();
+          setMessages(prev => dedupeMessagesById([...prev, message]));
         }
         fetchConversations();
       });
@@ -147,7 +195,8 @@ export default function MessagesPage() {
       const res = await fetch(`/api/messages/${userId}`);
       if (res.ok) {
         const data = await res.json();
-        setMessages(data);
+        wasNearBottomRef.current = getIsNearBottom();
+        setMessages(dedupeMessagesById(data));
         // Update unread count locally
         setConversations(prev => prev.map(c => c.id === userId ? { ...c, unread_count: 0 } : c));
       }
@@ -162,7 +211,8 @@ export default function MessagesPage() {
 
     try {
       const sentMessage = await sendMessage(selectedUser.id, newMessage);
-      setMessages(prev => [...prev, sentMessage]);
+      wasNearBottomRef.current = getIsNearBottom();
+      setMessages(prev => dedupeMessagesById([...prev, sentMessage]));
       setNewMessage('');
       fetchConversations();
     } catch (err) {
@@ -290,7 +340,7 @@ export default function MessagesPage() {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-6 space-y-4">
               {messages.map((msg, idx) => {
                 const isMe = msg.sender_id === user?.id;
                 const showDate = idx === 0 || format(new Date(messages[idx-1].created_at), 'yyyy-MM-dd') !== format(new Date(msg.created_at), 'yyyy-MM-dd');
