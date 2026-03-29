@@ -5,15 +5,17 @@ import { Server } from 'socket.io';
 import http from 'http';
 import path from 'path';
 import cookieParser from 'cookie-parser';
+import csurf from 'csurf';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import db, { initDb } from './src/lib/db';
 import { seedDb } from './src/lib/seed';
 import { GoogleGenAI, type GenerateVideosOperation } from '@google/genai';
 import { z } from 'zod';
+import { PUBLIC_SETTINGS_ALLOWLIST, isPublicSetting } from './src/lib/settingsAllowlist';
 
+const JWT_SECRET = process.env.JWT_SECRET || '';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'cyber-secret-key';
 const AUTH_COOKIE_NAME = 'token';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
@@ -24,9 +26,28 @@ const AUTH_COOKIE_OPTIONS: CookieOptions = {
   path: '/'
 };
 
+function validateEnv() {
+  if (!JWT_SECRET || JWT_SECRET.length < 32) {
+    throw new Error('JWT_SECRET is required and must be at least 32 characters.');
+  }
+
+  if (!process.env.NODE_ENV) {
+    throw new Error('NODE_ENV is required (development or production).');
+  }
+
+  if (!['development', 'production'].includes(process.env.NODE_ENV)) {
+    throw new Error("NODE_ENV must be 'development' or 'production'.");
+  }
+
+  if (process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL is required in production.');
+  }
+}
+
 async function start() {
   console.log('--- STARTING NIGHTRESPAWN SERVER ---');
-  
+  validateEnv();
+
   // Startup order is deterministic: create/validate schema first, then seed/reset data.
   try {
     console.log('Initializing database schema...');
@@ -36,6 +57,7 @@ async function start() {
     console.log('Database startup tasks completed.');
   } catch (err) {
     console.error('Database startup failed:', err);
+    process.exit(1);
   }
 
   const app = express();
@@ -50,6 +72,32 @@ async function start() {
 
   app.use(express.json({ limit: '50mb' }));
   app.use(cookieParser());
+
+  const csrfProtection = csurf({
+    cookie: {
+      httpOnly: true,
+      secure: IS_PRODUCTION,
+      sameSite: IS_PRODUCTION ? 'none' : 'lax',
+      path: '/'
+    },
+    value: (req) => req.headers['x-csrf-token'] as string || ''
+  });
+
+  app.get('/api/csrf-token', csrfProtection, (_req, res) => {
+    res.json({ csrfToken: (_req as any).csrfToken() });
+  });
+
+  // We need login/register to be possible for new anonymous sessions, so we skip CSRF there.
+  // Apply CSRF protection to all other state-changing routes.
+  app.use('/api', (req, res, next) => {
+    if (['/auth/login', '/auth/register', '/auth/logout', '/csrf-token'].includes(req.path)) {
+      return next();
+    }
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+      return csrfProtection(req, res, next);
+    }
+    next();
+  });
 
   // --- SOCKET.IO AUTH ---
   io.use((socket, next) => {
@@ -68,7 +116,7 @@ async function start() {
     }
   });
 
-  const userSockets = new Map<number, string>();
+  const userSockets = new Map<number, Set<string>>();
 
   const MEDIA_OPERATION_TTL_MS = 30 * 60 * 1000;
   const MEDIA_MODEL = 'veo-2.0-generate-001';
@@ -137,12 +185,22 @@ async function start() {
 
   io.on('connection', (socket) => {
     const userId = socket.data.user.id;
-    userSockets.set(userId, socket.id);
-    console.log(`User ${userId} connected via socket`);
+    const currentSockets = userSockets.get(userId) || new Set<string>();
+    currentSockets.add(socket.id);
+    userSockets.set(userId, currentSockets);
+    console.log(`User ${userId} connected via socket [${socket.id}]`);
 
     socket.on('disconnect', () => {
-      userSockets.delete(userId);
-      console.log(`User ${userId} disconnected from socket`);
+      const userSet = userSockets.get(userId);
+      if (userSet) {
+        userSet.delete(socket.id);
+        if (userSet.size === 0) {
+          userSockets.delete(userId);
+        } else {
+          userSockets.set(userId, userSet);
+        }
+      }
+      console.log(`User ${userId} disconnected from socket [${socket.id}]`);
     });
   });
 
@@ -156,6 +214,16 @@ async function start() {
       next();
     } catch (err) {
       res.status(401).json({ error: 'Invalid token' });
+    }
+  };
+
+  const getUserFromToken = (req: any) => {
+    const token = req.cookies[AUTH_COOKIE_NAME];
+    if (!token) return null;
+    try {
+      return jwt.verify(token, JWT_SECRET) as any;
+    } catch {
+      return null;
     }
   };
 
@@ -252,10 +320,10 @@ async function start() {
     }
   });
 
-  app.get('/api/auth/me', authenticate, async (req: any, res) => {
+  app.get('/api/auth/me', authenticate, csrfProtection, async (req: any, res) => {
     try {
       const user = await db.queryOne<any>('SELECT id, username, email, role, avatar_url, banner_url, bio, created_at, last_active FROM users WHERE id = ?', [req.user.id]);
-      res.json({ user });
+      res.json({ user, csrfToken: req.csrfToken() });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -396,8 +464,7 @@ async function start() {
           SELECT
             COUNT(*) as total_servers,
             SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online_servers,
-            SUM(CASE WHEN status = 'online' THEN COALESCE(players, 0) ELSE 0 END) as active_players
-          FROM server_nodes
+          SUM(CASE WHEN status = 'online' THEN COALESCE(players_current, 0) ELSE 0 END) as active_players
         `)
       ]);
 
@@ -475,11 +542,24 @@ async function start() {
   app.get('/api/settings', async (req, res) => {
     try {
       const settings = await db.query<any>('SELECT * FROM site_settings');
-      const result = settings.reduce((acc: any, s: any) => {
+      const dictionary = settings.reduce((acc: any, s: any) => {
         acc[s.key] = s.value;
         return acc;
       }, {});
-      res.json(result);
+
+      const user = getUserFromToken(req);
+      if (user?.role === 'admin') {
+        return res.json(dictionary);
+      }
+
+      const publicSettings: Record<string, any> = {};
+      for (const key of Object.keys(dictionary)) {
+        if (isPublicSetting(key)) {
+          publicSettings[key] = dictionary[key];
+        }
+      }
+
+      return res.json(publicSettings);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -494,13 +574,14 @@ async function start() {
   app.get('/api/servers', async (_req, res) => {
     try {
       const servers = await db.query<any>(`
-        SELECT id, name, ip, region, game, map, players, status
+        SELECT id, name, ip, region, game, map, players_current, status
         FROM server_nodes
         ORDER BY created_at DESC
       `);
       const normalized = servers.map((server) => ({
         ...server,
-        players: Number(server.players) || 0,
+        players_current: Number(server.players_current) || 0,
+        players: Number(server.players_current) || 0,
         status: server.status === 'online' ? 'online' : 'offline'
       }));
       res.json(normalized);
@@ -513,8 +594,8 @@ async function start() {
     try {
       const payload = serverNodeSchema.parse(req.body);
       await db.execute(
-        'INSERT INTO server_nodes (name, ip, region, game, map, players, status) VALUES (?, ?, ?, ?, ?, 0, ?)',
-        [payload.name, payload.ip, payload.region, payload.game, payload.map, 'offline']
+        'INSERT INTO server_nodes (name, ip, region, game, map, players_current, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [payload.name, payload.ip, payload.region, payload.game, payload.map, 0, 'offline']
       );
       res.status(201).json({ success: true });
     } catch (err: any) {
@@ -529,7 +610,7 @@ async function start() {
 
     try {
       await db.execute(
-        'UPDATE server_nodes SET status = ?, players = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        'UPDATE server_nodes SET status = ?, players_current = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [status, players, id]
       );
       res.json({ success: true });
@@ -801,16 +882,13 @@ async function start() {
     try {
       const thread = await db.queryOne<any>('SELECT * FROM threads WHERE id = ?', [req.params.id]);
       if (!thread) return res.status(404).json({ error: 'Thread not found' });
-      const canDelete = thread.author_id === req.user.id || ['admin', 'moderator'].includes(req.user.role);
-      if (!canDelete) return res.status(403).json({ error: 'Forbidden' });
-      await db.execute('DELETE FROM threads WHERE id = ?', [req.params.id]);
-
       const isStaff = isStaffRole(req.user.role);
       const isOwner = thread.author_id === req.user.id;
       if (!isStaff && !isOwner) {
         return res.status(403).json({ error: 'Forbidden' });
       }
 
+      await db.execute('DELETE FROM posts WHERE thread_id = ?', [req.params.id]);
       await db.execute('DELETE FROM threads WHERE id = ?', [req.params.id]);
 
       if (isStaff) {
@@ -1329,10 +1407,10 @@ async function start() {
         throw new Error('Failed to retrieve created message');
       }
       
-      // Emit via socket
-      const receiverSocketId = userSockets.get(Number(receiver_id));
-      if (receiverSocketId) {
-        io.to(receiverSocketId).emit('new_message', message);
+      // Emit via socket to all devices/tabs for receiver
+      const receiverSocketIds = userSockets.get(Number(receiver_id)) || new Set<string>();
+      for (const socketId of receiverSocketIds) {
+        io.to(socketId).emit('new_message', message);
       }
 
       // Create notification
@@ -1340,9 +1418,9 @@ async function start() {
       await db.execute('INSERT INTO notifications (user_id, type, title, content, link) VALUES (?, ?, ?, ?, ?)', 
         [receiver_id, 'message', `New message from ${sender.username}`, content.substring(0, 50), `/messages?user=${req.user.id}`]);
       
-      if (receiverSocketId) {
-        const notification = await db.queryOne<any>('SELECT * FROM notifications ORDER BY created_at DESC LIMIT 1');
-        io.to(receiverSocketId).emit('new_notification', notification);
+      const notification = await db.queryOne<any>('SELECT * FROM notifications ORDER BY created_at DESC LIMIT 1');
+      for (const socketId of receiverSocketIds) {
+        io.to(socketId).emit('new_notification', notification);
       }
 
       res.json(message);
@@ -1504,6 +1582,16 @@ async function start() {
       operation.error = err?.message || 'Failed to poll media provider.';
       return res.status(502).json({ done: true, error: operation.error });
     }
+  });
+
+  // Error handling for CSRF and other failures
+  app.use((err: any, req: any, res: any, next: any) => {
+    if (err.code === 'EBADCSRFTOKEN') {
+      return res.status(403).json({ success: false, error: 'Invalid CSRF token', code: 'CSRF_INVALID_TOKEN' });
+    }
+
+    console.error('Unhandled error:', err);
+    return res.status(500).json({ success: false, error: err?.message || 'Server error', code: 'INTERNAL_SERVER_ERROR' });
   });
 
   // Vite Middleware

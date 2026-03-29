@@ -90,7 +90,7 @@ const CustomCursor = () => {
 };
 
 export default function App() {
-  const isStudioEnabled = import.meta.env.VITE_ENABLE_STUDIO === 'true';
+  const isStudioEnabled = (import.meta as any).env.VITE_ENABLE_STUDIO === 'true';
 
   return (
     <QueryClientProvider client={queryClient}>

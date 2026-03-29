@@ -10,30 +10,50 @@ export async function seedDb() {
   const catCount = await db.queryOne<{ count: number }>('SELECT COUNT(*) as count FROM forum_categories');
   const statsCount = await db.queryOne<{ count: number }>('SELECT COUNT(*) as count FROM game_stats');
   const duplicateCats = await db.query('SELECT name, COUNT(*) as count FROM forum_categories GROUP BY name HAVING count > 1');
-  
-  if (userCount && userCount.count > 0 && catCount && catCount.count > 0 && statsCount && statsCount.count > 0 && duplicateCats.length === 0) return;
 
-  console.log('Running seed/reset logic (schema already initialized)...');
+  const resetDbEnabled = String(process.env.RESET_DB || '').toLowerCase() === 'true';
 
-  // Clear existing data to prevent duplicates
-  await db.execute('DELETE FROM forum_categories');
-  await db.execute('DELETE FROM forums');
-  await db.execute('DELETE FROM threads');
-  await db.execute('DELETE FROM posts');
-  await db.execute('DELETE FROM tags');
-  await db.execute('DELETE FROM thread_tags');
-  await db.execute('DELETE FROM products');
-  await db.execute('DELETE FROM game_stats');
+  if (resetDbEnabled && process.env.NODE_ENV === 'production') {
+    throw new Error('RESET_DB is forbidden in production.');
+  }
+
+  if (!resetDbEnabled && userCount && userCount.count > 0 && catCount && catCount.count > 0 && statsCount && statsCount.count > 0 && duplicateCats.length === 0) {
+    return;
+  }
+
+  console.log(`Running seed/reset logic (schema already initialized, RESET_DB=${resetDbEnabled})...`);
+
+  if (resetDbEnabled) {
+    await db.execute('DELETE FROM thread_tags');
+    await db.execute('DELETE FROM posts');
+    await db.execute('DELETE FROM threads');
+    await db.execute('DELETE FROM forums');
+    await db.execute('DELETE FROM forum_categories');
+    await db.execute('DELETE FROM tags');
+    await db.execute('DELETE FROM products');
+    await db.execute('DELETE FROM game_stats');
+    await db.execute('DELETE FROM game_transactions');
+    await db.execute('DELETE FROM game_matches');
+    await db.execute('DELETE FROM tickets');
+    await db.execute('DELETE FROM ticket_messages');
+    await db.execute('DELETE FROM moderation_actions');
+    await db.execute('DELETE FROM notifications');
+    await db.execute('DELETE FROM messages');
+    await db.execute('DELETE FROM orders');
+    await db.execute('DELETE FROM order_items');
+    await db.execute('DELETE FROM reports');
+    await db.execute('DELETE FROM users');
+  }
 
   const hashedPassword = bcrypt.hashSync('password', 10);
 
   // Users
-  const insertUser = 'INSERT INTO users (username, email, password, role, bio) VALUES (?, ?, ?, ?, ?)';
+  const insertUser = process.env.DATABASE_URL ? 'INSERT IGNORE INTO users (username, email, password, role, bio) VALUES (?, ?, ?, ?, ?)' : 'INSERT OR IGNORE INTO users (username, email, password, role, bio) VALUES (?, ?, ?, ?, ?)';
   await db.execute(insertUser, ['admin', 'admin@nightrespawn.com', hashedPassword, 'admin', 'The platform administrator.']);
   await db.execute(insertUser, ['member', 'member@nightrespawn.com', hashedPassword, 'member', 'A regular community member.']);
 
   // Categories
-  const insertCategory = 'INSERT INTO forum_categories (name, description, display_order) VALUES (?, ?, ?)';
+  const insertCategory = process.env.DATABASE_URL ? 'INSERT IGNORE INTO forum_categories (name, description, display_order) VALUES (?, ?, ?)' : 'INSERT OR IGNORE INTO forum_categories (name, description, display_order) VALUES (?, ?, ?)';
   await db.execute(insertCategory, ['Official', 'Official news and announcements', 1]);
   await db.execute(insertCategory, ['General', 'General community discussion', 2]);
   await db.execute(insertCategory, ['Gaming', 'Talk about your favorite games', 3]);
