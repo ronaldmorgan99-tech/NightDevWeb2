@@ -13,6 +13,7 @@ import { seedDb } from './src/lib/seed';
 import { GoogleGenAI, type GenerateVideosOperation } from '@google/genai';
 import { z } from 'zod';
 import { PUBLIC_SETTINGS_ALLOWLIST, isPublicSetting } from './src/lib/settingsAllowlist';
+import { sendWelcomeEmail } from './src/lib/mailer';
 
 const JWT_SECRET = process.env.JWT_SECRET || '';
 
@@ -279,9 +280,16 @@ async function start() {
   // Auth
   app.post('/api/auth/register', async (req, res) => {
     const { username, email, password } = req.body;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail);
+
+    if (!isValidEmail) {
+      return res.status(400).json({ error: 'A valid email address is required.' });
+    }
+
     try {
       const hashedPassword = bcrypt.hashSync(password, 10);
-      await db.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)', [username, email, hashedPassword]);
+      await db.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)', [username, normalizedEmail, hashedPassword]);
 
       const user = await db.queryOne<any>(
         'SELECT id, username, email, role FROM users WHERE username = ?',
@@ -290,6 +298,12 @@ async function start() {
 
       if (!user) {
         return res.status(500).json({ error: 'Failed to load registered user' });
+      }
+
+      try {
+        await sendWelcomeEmail({ to: user.email, username: user.username });
+      } catch (mailErr) {
+        console.error(`Failed to send welcome email to ${user.email}:`, mailErr);
       }
 
       const token = jwt.sign(
