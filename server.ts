@@ -464,7 +464,8 @@ async function start() {
           SELECT
             COUNT(*) as total_servers,
             SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online_servers,
-          SUM(CASE WHEN status = 'online' THEN COALESCE(players_current, 0) ELSE 0 END) as active_players
+            SUM(CASE WHEN status = 'online' THEN COALESCE(players_current, 0) ELSE 0 END) as active_players
+          FROM server_nodes
         `)
       ]);
 
