@@ -235,6 +235,20 @@ async function start() {
 
   const isStaffRole = (role?: string) => role === 'admin' || role === 'moderator';
 
+  // Check if a user's role meets or exceeds the minimum required role
+  // Role hierarchy: admin > moderator > member > suspended
+  const meetsMinRole = (userRole: string, minRequiredRole: string): boolean => {
+    const roleHierarchy: { [key: string]: number } = {
+      'admin': 4,
+      'moderator': 3,
+      'member': 2,
+      'suspended': 1
+    };
+    const userRank = roleHierarchy[userRole] || 0;
+    const requiredRank = roleHierarchy[minRequiredRole] || 0;
+    return userRank >= requiredRank;
+  };
+
   const createModerationAction = async (
     moderatorId: number,
     actionType: string,
@@ -344,11 +358,58 @@ async function start() {
   });
 
   app.patch('/api/auth/me', authenticate, async (req: any, res) => {
-    const { avatar_url, banner_url, bio } = req.body;
+    const { avatar_url, banner_url, bio, username, email, currentPassword, newPassword } = req.body;
     try {
       const updates: string[] = [];
       const params: any[] = [];
       
+      // Handle username update
+      if (username !== undefined && username !== '') {
+        // Check if username is already taken (by another user)
+        const existingUser = await db.queryOne<any>('SELECT id FROM users WHERE username = ? AND id != ?', [username, req.user.id]);
+        if (existingUser) {
+          return res.status(400).json({ error: 'Username already taken' });
+        }
+        updates.push('username = ?');
+        params.push(username);
+      }
+
+      // Handle email update
+      if (email !== undefined && email !== '') {
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+          return res.status(400).json({ error: 'Invalid email format' });
+        }
+        // Check if email is already taken (by another user)
+        const existingUser = await db.queryOne<any>('SELECT id FROM users WHERE email = ? AND id != ?', [email, req.user.id]);
+        if (existingUser) {
+          return res.status(400).json({ error: 'Email already taken' });
+        }
+        updates.push('email = ?');
+        params.push(email);
+      }
+
+      // Handle password update
+      if (newPassword !== undefined && newPassword !== '') {
+        if (!currentPassword) {
+          return res.status(400).json({ error: 'Current password required to set new password' });
+        }
+        
+        // Verify current password
+        const user = await db.queryOne<any>('SELECT password FROM users WHERE id = ?', [req.user.id]);
+        const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+        if (!isPasswordValid) {
+          return res.status(401).json({ error: 'Current password is incorrect' });
+        }
+        
+        // Hash and update new password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        updates.push('password = ?');
+        params.push(hashedPassword);
+      }
+
+      // Handle profile updates
       if (avatar_url !== undefined) {
         updates.push('avatar_url = ?');
         params.push(avatar_url);
@@ -678,6 +739,17 @@ async function start() {
   app.post('/api/threads', authenticate, async (req: any, res) => {
     const { forum_id, title, content } = req.body;
     try {
+      // Fetch forum to check min_role_to_thread permission
+      const forum = await db.queryOne<any>('SELECT id, min_role_to_thread FROM forums WHERE id = ?', [forum_id]);
+      if (!forum) {
+        return res.status(404).json({ error: 'Forum not found' });
+      }
+
+      // Check if user's role meets the minimum role requirement for this forum
+      if (!meetsMinRole(req.user.role, forum.min_role_to_thread)) {
+        return res.status(403).json({ error: 'You do not have permission to create threads in this forum' });
+      }
+
       const result = await db.execute('INSERT INTO threads (forum_id, author_id, title) VALUES (?, ?, ?)', [forum_id, req.user.id, title]);
       const threadId = result.lastInsertRowid || result.insertId;
       await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [threadId, req.user.id, content]);
@@ -735,6 +807,23 @@ async function start() {
   app.post('/api/posts', authenticate, async (req: any, res) => {
     const { thread_id, content } = req.body;
     try {
+      // Fetch thread and its forum to check permissions
+      const thread = await db.queryOne<any>(`
+        SELECT t.id, f.min_role_to_thread
+        FROM threads t
+        JOIN forums f ON t.forum_id = f.id
+        WHERE t.id = ?
+      `, [thread_id]);
+      
+      if (!thread) {
+        return res.status(404).json({ error: 'Thread not found' });
+      }
+
+      // Check if user's role meets the minimum role requirement for this forum
+      if (!meetsMinRole(req.user.role, thread.min_role_to_thread)) {
+        return res.status(403).json({ error: 'You do not have permission to post in this forum' });
+      }
+
       await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [thread_id, req.user.id, content]);
       await db.execute('UPDATE threads SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [thread_id]);
       res.json({ success: true });
@@ -967,6 +1056,130 @@ async function start() {
     try {
       const products = await db.query<any>('SELECT * FROM products');
       res.json(products);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Cart management - stored in memory per user
+  const userCarts: Map<number, Map<number, { productId: number; quantity: number; price: number; name: string }>> = new Map();
+
+  app.post('/api/cart', authenticate, async (req: any, res) => {
+    try {
+      const { productId, quantity } = req.body;
+      if (!productId || !quantity || quantity < 1) {
+        return res.status(400).json({ error: 'Invalid product ID or quantity' });
+      }
+
+      // Fetch product to verify it exists and get price
+      const product = await db.queryOne<any>('SELECT id, name, price, stock FROM products WHERE id = ?', [productId]);
+      if (!product) {
+        return res.status(404).json({ error: 'Product not found' });
+      }
+
+      // Initialize cart for user if not exists
+      if (!userCarts.has(req.user.id)) {
+        userCarts.set(req.user.id, new Map());
+      }
+
+      const cart = userCarts.get(req.user.id)!;
+      if (cart.has(productId)) {
+        const item = cart.get(productId)!;
+        item.quantity += quantity;
+      } else {
+        cart.set(productId, {
+          productId,
+          quantity,
+          price: product.price,
+          name: product.name
+        });
+      }
+
+      res.json({ success: true, cartSize: cart.size });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/cart', authenticate, async (req: any, res) => {
+    try {
+      const cart = userCarts.get(req.user.id) || new Map();
+      const items = Array.from(cart.values());
+      const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      res.json({ items, total, count: items.length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/cart/:productId', authenticate, async (req: any, res) => {
+    try {
+      const productId = parseInt(req.params.productId);
+      const cart = userCarts.get(req.user.id);
+      if (!cart || !cart.has(productId)) {
+        return res.status(404).json({ error: 'Item not in cart' });
+      }
+      cart.delete(productId);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/orders', authenticate, async (req: any, res) => {
+    try {
+      const cart = userCarts.get(req.user.id);
+      if (!cart || cart.size === 0) {
+        return res.status(400).json({ error: 'Cart is empty' });
+      }
+
+      const items = Array.from(cart.values());
+      const totalPrice = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+      // Create order in database
+      const orderResult = await db.execute(
+        'INSERT INTO orders (user_id, total_price, status) VALUES (?, ?, ?)',
+        [req.user.id, totalPrice, 'completed']
+      );
+      const orderId = orderResult.lastInsertRowid || orderResult.insertId;
+
+      // Clear user's cart
+      userCarts.delete(req.user.id);
+
+      res.json({
+        id: orderId,
+        userId: req.user.id,
+        totalPrice,
+        itemsCount: items.length,
+        status: 'completed'
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/orders', authenticate, async (req: any, res) => {
+    try {
+      const orders = await db.query<any>(
+        'SELECT id, total_price, status, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC',
+        [req.user.id]
+      );
+      res.json(orders);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/orders/:id', authenticate, async (req: any, res) => {
+    try {
+      const order = await db.queryOne<any>(
+        'SELECT * FROM orders WHERE id = ? AND user_id = ?',
+        [req.params.id, req.user.id]
+      );
+      if (!order) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+      res.json(order);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

@@ -52,6 +52,15 @@ const SettingsPage: React.FC = () => {
       if (updateProfile) updateProfile(data.user);
       setSuccessMessage('System protocols updated successfully');
       setErrorMessage(null);
+      // Clear password fields after successful update
+      if (formData.newPassword) {
+        setFormData(prev => ({
+          ...prev,
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: ''
+        }));
+      }
       setTimeout(() => setSuccessMessage(null), 3000);
     },
     onError: (error: any) => {
@@ -77,6 +86,7 @@ const SettingsPage: React.FC = () => {
     e.preventDefault();
     updateMutation.mutate({
       username: formData.username,
+      email: formData.email,
       bio: formData.bio
     });
   };
@@ -224,7 +234,7 @@ const SettingsPage: React.FC = () => {
             )}
 
             {activeTab === 'account' && (
-              <div className="space-y-8">
+              <form onSubmit={handleSaveProfile} className="space-y-8">
                 <div className="p-6 bg-white/5 border border-white/10 rounded-2xl">
                   <div className="flex items-center gap-4 mb-4">
                     <div className="w-10 h-10 rounded-xl bg-cyber-black border border-white/10 flex items-center justify-center text-neon-cyan">
@@ -235,15 +245,20 @@ const SettingsPage: React.FC = () => {
                       <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Primary communication uplink</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex flex-col gap-4">
                     <input
                       type="email"
-                      readOnly
-                      value={user?.email}
-                      className="flex-1 bg-cyber-black/50 border border-white/5 rounded-xl px-4 py-3 text-sm text-zinc-500 outline-none cursor-not-allowed"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="Enter your email address"
+                      className="flex-1 bg-cyber-black border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-neon-cyan/50 outline-none transition-all"
                     />
-                    <button className="px-4 py-3 bg-white/5 text-zinc-400 rounded-xl text-[10px] font-black uppercase tracking-widest hover:text-white transition-all">
-                      Request Change
+                    <button 
+                      type="submit"
+                      disabled={updateMutation.isPending}
+                      className="flex items-center justify-center gap-2 px-4 py-3 bg-neon-cyan text-cyber-black rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      <Save className="w-4 h-4" /> {updateMutation.isPending ? 'Updating...' : 'Update Email'}
                     </button>
                   </div>
                 </div>
@@ -265,7 +280,7 @@ const SettingsPage: React.FC = () => {
                     </button>
                   </div>
                 </div>
-              </div>
+              </form>
             )}
 
             {activeTab === 'security' && (

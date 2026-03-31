@@ -1,7 +1,7 @@
-import React from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { ShoppingBag, Star, Tag, ChevronRight, ShoppingCart, Award } from 'lucide-react';
-import { motion } from 'motion/react';
+import React, { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { ShoppingBag, Star, Tag, ChevronRight, ShoppingCart, Award, X, Check, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface Product {
   id: number;
@@ -12,16 +12,149 @@ interface Product {
   category: string;
 }
 
+interface CartItem {
+  productId: number;
+  quantity: number;
+  price: number;
+  name: string;
+}
+
 const StorePage: React.FC = () => {
   const { data: products, isLoading } = useQuery<Product[]>({
     queryKey: ['products'],
     queryFn: () => fetch('/api/store/products').then(res => res.json())
   });
 
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [showCart, setShowCart] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const handleAddToCart = async (product: Product) => {
+    try {
+      const response = await fetch('/api/cart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: product.id, quantity: 1 })
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to add to cart');
+      }
+      setCart([...cart, { productId: product.id, quantity: 1, price: product.price, name: product.name }]);
+      setSuccess(`${product.name} added to cart!`);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.message);
+      setTimeout(() => setError(null), 5000);
+    }
+  };
+
+  const handleRemoveFromCart = async (productId: number) => {
+    try {
+      const response = await fetch(`/api/cart/${productId}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Failed to remove from cart');
+      setCart(cart.filter(item => item.productId !== productId));
+    } catch (err: any) {
+      setError(err.message);
+      setTimeout(() => setError(null), 5000);
+    }
+  };
+
+  const checkoutMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Checkout failed');
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setSuccess(`Order #${data.id} created successfully!`);
+      setCart([]);
+      setShowCart(false);
+      setTimeout(() => setSuccess(null), 3000);
+    },
+    onError: (error: any) => {
+      setError(error.message);
+      setTimeout(() => setError(null), 5000);
+    }
+  });
+
+  const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
   if (isLoading) return <div className="animate-pulse grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">{[1, 2, 3].map(i => <div key={i} className="h-80 bg-white/5 rounded-2xl" />)}</div>;
 
   return (
     <div className="space-y-12">
+      {/* Notifications */}
+      <AnimatePresence>
+        {success && (
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="fixed top-6 right-6 flex items-center gap-3 px-6 py-3 bg-neon-green/10 border border-neon-green text-neon-green rounded-xl z-50">
+            <Check className="w-5 h-5" /> {success}
+          </motion.div>
+        )}
+        {error && (
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="fixed top-6 right-6 flex items-center gap-3 px-6 py-3 bg-neon-pink/10 border border-neon-pink text-neon-pink rounded-xl z-50">
+            <AlertCircle className="w-5 h-5" /> {error}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Cart Button */}
+      <div className="fixed bottom-6 right-6 z-40">
+        <button onClick={() => setShowCart(!showCart)} className="relative flex items-center justify-center w-16 h-16 bg-neon-cyan text-cyber-black rounded-full shadow-[0_0_20px_rgba(0,243,255,0.5)] hover:scale-110 transition-transform">
+          <ShoppingCart className="w-6 h-6" />
+          {cart.length > 0 && (
+            <div className="absolute -top-2 -right-2 w-6 h-6 bg-neon-pink text-white rounded-full flex items-center justify-center text-xs font-black">
+              {cart.length}
+            </div>
+          )}
+        </button>
+      </div>
+
+      {/* Cart Sidebar */}
+      <AnimatePresence>
+        {showCart && (
+          <motion.div initial={{ x: 400 }} animate={{ x: 0 }} exit={{ x: 400 }} className="fixed top-0 right-0 h-screen w-96 bg-cyber-black border-l border-white/10 shadow-2xl z-40 flex flex-col">
+            <div className="p-6 border-b border-white/10 flex items-center justify-between">
+              <h3 className="text-xl font-black text-white uppercase">Shopping Cart</h3>
+              <button onClick={() => setShowCart(false)} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {cart.length === 0 ? (
+                <p className="text-center text-zinc-500 py-12">Cart is empty</p>
+              ) : (
+                cart.map(item => (
+                  <div key={item.productId} className="flex justify-between items-start p-4 bg-white/5 rounded-xl border border-white/10">
+                    <div className="flex-1">
+                      <h4 className="text-sm font-black text-white">{item.name}</h4>
+                      <p className="text-xs text-zinc-500 mt-1">Qty: {item.quantity}</p>
+                      <p className="text-sm font-bold text-neon-green mt-2">${(item.price * item.quantity).toFixed(2)}</p>
+                    </div>
+                    <button onClick={() => handleRemoveFromCart(item.productId)} className="text-zinc-500 hover:text-neon-pink transition-colors">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            {cart.length > 0 && (
+              <div className="border-t border-white/10 p-6 space-y-4">
+                <div className="flex justify-between items-center text-lg font-black text-white">
+                  <span>Total:</span>
+                  <span className="text-neon-green">${cartTotal.toFixed(2)}</span>
+                </div>
+                <button onClick={() => checkoutMutation.mutate()} disabled={checkoutMutation.isPending} className="w-full py-3 bg-neon-green text-cyber-black rounded-xl font-black uppercase hover:scale-105 active:scale-95 transition-all disabled:opacity-50">
+                  {checkoutMutation.isPending ? 'Processing...' : 'Checkout'}
+                </button>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Hero */}
       <section className="relative py-24 px-12 rounded-[2rem] overflow-hidden bg-cyber-black border border-neon-cyan/20 text-center">
         <div className="relative z-10 max-w-3xl mx-auto">
@@ -77,7 +210,7 @@ const StorePage: React.FC = () => {
                   <Star className="w-4 h-4 fill-current neon-glow-pink" />
                   <span className="text-[10px] font-black uppercase tracking-widest">Elite Status</span>
                 </div>
-                <button className="cyber-button text-xs flex items-center gap-2">
+                <button onClick={() => handleAddToCart(product)} className="cyber-button text-xs flex items-center gap-2">
                   <ShoppingCart className="w-4 h-4" />
                   Acquire
                 </button>
@@ -112,5 +245,3 @@ const StorePage: React.FC = () => {
     </div>
   );
 };
-
-export default StorePage;

@@ -110,7 +110,7 @@ export default function VeoStudioPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-zinc-400 mb-2">Animation Prompt (Optional)</label>
+            <label className="block text-sm font-medium text-zinc-400 mb-2">Animation Prompt (Required)</label>
             <textarea 
               value={prompt}
               onChange={e => setPrompt(e.target.value)}
@@ -121,7 +121,7 @@ export default function VeoStudioPage() {
 
           <button 
             onClick={handleGenerate}
-            disabled={!image || isGenerating}
+            disabled={!image || !prompt.trim() || isGenerating}
             className="w-full bg-indigo-600 text-white font-medium py-3 rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isGenerating ? 'Generating...' : 'Animate Image'}
