@@ -1,33 +1,94 @@
-import Stripe from 'stripe';
-import { Client as PayPalClient, Environment as PayPalEnv, OrdersController, CheckoutPaymentIntent } from '@paypal/paypal-server-sdk';
-
 // Environment variables
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
 const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
-// Stripe configuration
-let stripe: Stripe | null = null;
-if (STRIPE_SECRET_KEY) {
+type StripePaymentIntentResponse = {
+  id: string;
+  client_secret: string | null;
+  amount: number;
+  currency: string;
+  status: string;
+};
+
+type StripeClient = {
+  paymentIntents: {
+    create(params: {
+      amount: number;
+      currency: string;
+      automatic_payment_methods: { enabled: boolean };
+    }): Promise<StripePaymentIntentResponse>;
+    retrieve(paymentIntentId: string): Promise<StripePaymentIntentResponse>;
+  };
+};
+
+type PayPalOrderController = {
+  createOrder(params: {
+    body: {
+      intent: 'CAPTURE';
+      purchaseUnits: Array<{
+        amount: {
+          currencyCode: string;
+          value: string;
+        };
+      }>;
+    };
+    prefer: string;
+  }): Promise<{ body: unknown }>;
+  captureOrder(params: { id: string }): Promise<{ body: unknown }>;
+};
+
+let stripe: StripeClient | null = null;
+let paypalClient: unknown = null;
+let paypalOrderController: PayPalOrderController | null = null;
+
+const stripeAvailable = !!STRIPE_SECRET_KEY;
+const paypalAvailable = !!(PAYPAL_CLIENT_ID && PAYPAL_CLIENT_SECRET);
+
+const dynamicImport = (moduleName: string): Promise<any> =>
+  new Function('m', 'return import(m)')(moduleName) as Promise<any>;
+
+async function getStripeClient(): Promise<StripeClient> {
+  if (!STRIPE_SECRET_KEY) {
+    throw new Error('Stripe is not configured');
+  }
+
+  if (stripe) {
+    return stripe;
+  }
+
+  const stripeModule = await dynamicImport('stripe');
+  const Stripe = stripeModule.default;
+
   stripe = new Stripe(STRIPE_SECRET_KEY, {
     apiVersion: '2026-03-25.dahlia',
-  });
+  }) as unknown as StripeClient;
+
+  return stripe;
 }
 
-// PayPal configuration
-let paypalClient: PayPalClient | null = null;
-let paypalOrderController: OrdersController | null = null;
-if (PAYPAL_CLIENT_ID && PAYPAL_CLIENT_SECRET) {
-  paypalClient = new PayPalClient({
-    environment: IS_PRODUCTION ? PayPalEnv.Production : PayPalEnv.Sandbox,
+async function getPayPalOrderController(): Promise<PayPalOrderController> {
+  if (!PAYPAL_CLIENT_ID || !PAYPAL_CLIENT_SECRET) {
+    throw new Error('PayPal is not configured');
+  }
+
+  if (paypalOrderController) {
+    return paypalOrderController;
+  }
+
+  const paypal = await dynamicImport('@paypal/paypal-server-sdk');
+
+  paypalClient = new paypal.Client({
+    environment: IS_PRODUCTION ? paypal.Environment.Production : paypal.Environment.Sandbox,
     clientCredentialsAuthCredentials: {
       oAuthClientId: PAYPAL_CLIENT_ID,
       oAuthClientSecret: PAYPAL_CLIENT_SECRET,
     },
   });
 
-  paypalOrderController = new OrdersController(paypalClient);
+  paypalOrderController = new paypal.OrdersController(paypalClient) as unknown as PayPalOrderController;
+  return paypalOrderController;
 }
 
 export interface PaymentProvider {
@@ -56,11 +117,11 @@ export interface PayPalOrder {
 export const paymentProviders: PaymentProvider[] = [
   {
     name: 'stripe',
-    available: !!stripe
+    available: stripeAvailable
   },
   {
     name: 'paypal',
-    available: !!paypalClient
+    available: paypalAvailable
   }
 ];
 
@@ -88,11 +149,9 @@ export function validatePaymentConfig(): { valid: boolean; errors: string[] } {
 
 // Stripe payment methods
 export async function createStripePaymentIntent(amount: number, currency: string = 'usd'): Promise<PaymentIntent> {
-  if (!stripe) {
-    throw new Error('Stripe is not configured');
-  }
+  const stripeClient = await getStripeClient();
 
-  const paymentIntent = await stripe.paymentIntents.create({
+  const paymentIntent = await stripeClient.paymentIntents.create({
     amount: Math.round(amount * 100), // Convert to cents
     currency,
     automatic_payment_methods: {
@@ -100,21 +159,22 @@ export async function createStripePaymentIntent(amount: number, currency: string
     },
   });
 
+  if (!paymentIntent.client_secret) {
+    throw new Error('Stripe did not return a client secret');
+  }
+
   return {
     id: paymentIntent.id,
-    client_secret: paymentIntent.client_secret!,
+    client_secret: paymentIntent.client_secret,
     amount: paymentIntent.amount,
     currency: paymentIntent.currency,
   };
 }
 
 export async function confirmStripePayment(paymentIntentId: string): Promise<boolean> {
-  if (!stripe) {
-    throw new Error('Stripe is not configured');
-  }
-
   try {
-    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    const stripeClient = await getStripeClient();
+    const paymentIntent = await stripeClient.paymentIntents.retrieve(paymentIntentId);
     return paymentIntent.status === 'succeeded';
   } catch (error) {
     console.error('Error confirming Stripe payment:', error);
@@ -124,14 +184,12 @@ export async function confirmStripePayment(paymentIntentId: string): Promise<boo
 
 // PayPal payment methods
 export async function createPayPalOrder(amount: number, currency: string = 'USD'): Promise<PayPalOrder> {
-  if (!paypalOrderController) {
-    throw new Error('PayPal is not configured');
-  }
+  const orderController = await getPayPalOrderController();
 
   try {
-    const response = await paypalOrderController.createOrder({
+    const response = await orderController.createOrder({
       body: {
-        intent: CheckoutPaymentIntent.Capture,
+        intent: 'CAPTURE',
         purchaseUnits: [
           {
             amount: {
@@ -144,7 +202,7 @@ export async function createPayPalOrder(amount: number, currency: string = 'USD'
       prefer: 'return=representation',
     });
 
-    const orderBody = response.body as unknown as { id: string; status: string; links?: Array<{ href: string; rel: string; method: string }> };
+    const orderBody = response.body as { id: string; status: string; links?: Array<{ href: string; rel: string; method: string }> };
     return {
       id: orderBody.id,
       status: orderBody.status,
@@ -157,13 +215,11 @@ export async function createPayPalOrder(amount: number, currency: string = 'USD'
 }
 
 export async function capturePayPalOrder(orderId: string): Promise<boolean> {
-  if (!paypalOrderController) {
-    throw new Error('PayPal is not configured');
-  }
+  const orderController = await getPayPalOrderController();
 
   try {
-    const response = await paypalOrderController.captureOrder({ id: orderId });
-    const captureBody = response.body as unknown as { status: string };
+    const response = await orderController.captureOrder({ id: orderId });
+    const captureBody = response.body as { status: string };
     return captureBody.status === 'COMPLETED';
   } catch (error) {
     console.error('Error capturing PayPal order:', error);
