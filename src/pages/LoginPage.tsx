@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { apiJson } from '../lib/api';
 import { useNavigate, Link } from 'react-router';
 import { Gamepad2, Lock, User, ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -14,20 +15,14 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/auth/login', {
+      const data = await apiJson<{ user: any }>('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
+        json: { username, password }
       });
-      const data = await res.json();
-      if (res.ok) {
-        login(data.user);
-        navigate('/');
-      } else {
-        setError(data.error);
-      }
-    } catch (err) {
-      setError('An error occurred');
+      login(data.user);
+      navigate('/');
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
     }
   };
 

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { ShoppingBag, Star, Tag, ChevronRight, ShoppingCart, Award, X, Check, AlertCircle } from 'lucide-react';
+import { apiJson } from '../lib/api';
+import { ShoppingBag, Star, Tag, ChevronRight, ShoppingCart, Award, X, Check, AlertCircle, CreditCard } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface Product {
@@ -19,29 +20,48 @@ interface CartItem {
   name: string;
 }
 
+interface PaymentProvider {
+  name: 'stripe' | 'paypal';
+  available: boolean;
+}
+
 const StorePage: React.FC = () => {
   const { data: products, isLoading } = useQuery<Product[]>({
     queryKey: ['products'],
     queryFn: () => fetch('/api/store/products').then(res => res.json())
   });
 
+  const { data: paymentProviders } = useQuery<PaymentProvider[]>({
+    queryKey: ['paymentProviders'],
+    queryFn: () => apiJson<{ providers: PaymentProvider[] }>('/api/payments/providers').then(res => res.providers)
+  });
+
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCart, setShowCart] = useState(false);
+  const [selectedPaymentProvider, setSelectedPaymentProvider] = useState<'stripe' | 'paypal' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  useEffect(() => {
+    const loadCart = async () => {
+      try {
+        const cartData = await apiJson<{ items: CartItem[]; total: number; count: number }>('/api/cart');
+        setCart(cartData.items);
+      } catch (err: any) {
+        console.warn('Failed to load cart', err.message);
+      }
+    };
+
+    loadCart();
+  }, []);
+
   const handleAddToCart = async (product: Product) => {
     try {
-      const response = await fetch('/api/cart', {
+      await apiJson('/api/cart', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productId: product.id, quantity: 1 })
+        json: { productId: product.id, quantity: 1 }
       });
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to add to cart');
-      }
-      setCart([...cart, { productId: product.id, quantity: 1, price: product.price, name: product.name }]);
+      setCart(prev => [...prev, { productId: product.id, quantity: 1, price: product.price, name: product.name }]);
       setSuccess(`${product.name} added to cart!`);
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
@@ -52,9 +72,8 @@ const StorePage: React.FC = () => {
 
   const handleRemoveFromCart = async (productId: number) => {
     try {
-      const response = await fetch(`/api/cart/${productId}`, { method: 'DELETE' });
-      if (!response.ok) throw new Error('Failed to remove from cart');
-      setCart(cart.filter(item => item.productId !== productId));
+      await apiJson(`/api/cart/${productId}`, { method: 'DELETE' });
+      setCart(prev => prev.filter(item => item.productId !== productId));
     } catch (err: any) {
       setError(err.message);
       setTimeout(() => setError(null), 5000);
@@ -63,17 +82,74 @@ const StorePage: React.FC = () => {
 
   const checkoutMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Checkout failed');
+      if (!selectedPaymentProvider) {
+        throw new Error('Please select a payment method');
       }
-      return response.json();
+
+      // First create the order
+      const order = await apiJson<{ id: number }>('/api/orders', { method: 'POST', json: {} });
+
+      // Then process payment based on provider
+      if (selectedPaymentProvider === 'stripe') {
+        const paymentIntent = await apiJson<{
+          paymentIntentId: string;
+          clientSecret: string;
+          amount: number;
+          currency: string;
+        }>('/api/payments/stripe/create-intent', {
+          method: 'POST',
+          json: { amount: cartTotal }
+        });
+
+        // In a real implementation, you'd redirect to Stripe Checkout or use Stripe Elements
+        // For now, we'll simulate payment confirmation
+        const confirmed = await apiJson<{ success: boolean; status: string }>(
+          `/api/payments/stripe/confirm/${order.id}`,
+          {
+            method: 'POST',
+            json: { paymentIntentId: paymentIntent.paymentIntentId }
+          }
+        );
+
+        if (!confirmed.success) {
+          throw new Error('Payment failed');
+        }
+
+        return { orderId: order.id, paymentMethod: 'stripe' };
+      } else if (selectedPaymentProvider === 'paypal') {
+        const paypalOrder = await apiJson<{
+          orderId: string;
+          status: string;
+          approvalUrl: string;
+        }>('/api/payments/paypal/create-order', {
+          method: 'POST',
+          json: { amount: cartTotal }
+        });
+
+        // In a real implementation, you'd redirect to PayPal approval URL
+        // For now, we'll simulate payment capture
+        const captured = await apiJson<{ success: boolean; status: string }>(
+          `/api/payments/paypal/capture/${order.id}`,
+          {
+            method: 'POST',
+            json: { paypalOrderId: paypalOrder.orderId }
+          }
+        );
+
+        if (!captured.success) {
+          throw new Error('Payment failed');
+        }
+
+        return { orderId: order.id, paymentMethod: 'paypal' };
+      }
+
+      throw new Error('Invalid payment provider');
     },
     onSuccess: (data) => {
-      setSuccess(`Order #${data.id} created successfully!`);
+      setSuccess(`Order #${data.orderId} completed successfully with ${data.paymentMethod}!`);
       setCart([]);
       setShowCart(false);
+      setSelectedPaymentProvider(null);
       setTimeout(() => setSuccess(null), 3000);
     },
     onError: (error: any) => {
@@ -146,8 +222,34 @@ const StorePage: React.FC = () => {
                   <span>Total:</span>
                   <span className="text-neon-green">${cartTotal.toFixed(2)}</span>
                 </div>
-                <button onClick={() => checkoutMutation.mutate()} disabled={checkoutMutation.isPending} className="w-full py-3 bg-neon-green text-cyber-black rounded-xl font-black uppercase hover:scale-105 active:scale-95 transition-all disabled:opacity-50">
-                  {checkoutMutation.isPending ? 'Processing...' : 'Checkout'}
+
+                {/* Payment Provider Selection */}
+                <div className="space-y-3">
+                  <h4 className="text-sm font-bold text-white uppercase tracking-wider">Payment Method</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    {paymentProviders?.filter(p => p.available).map(provider => (
+                      <button
+                        key={provider.name}
+                        onClick={() => setSelectedPaymentProvider(provider.name)}
+                        className={`p-3 rounded-xl border-2 transition-all font-bold uppercase text-xs ${
+                          selectedPaymentProvider === provider.name
+                            ? 'border-neon-cyan bg-neon-cyan/10 text-neon-cyan'
+                            : 'border-white/20 bg-white/5 text-zinc-400 hover:border-white/40'
+                        }`}
+                      >
+                        <CreditCard className="w-4 h-4 mx-auto mb-1" />
+                        {provider.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => checkoutMutation.mutate()}
+                  disabled={checkoutMutation.isPending || !selectedPaymentProvider}
+                  className="w-full py-3 bg-neon-green text-cyber-black rounded-xl font-black uppercase hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {checkoutMutation.isPending ? 'Processing...' : 'Complete Purchase'}
                 </button>
               </div>
             )}
@@ -245,3 +347,5 @@ const StorePage: React.FC = () => {
     </div>
   );
 };
+
+export default StorePage;

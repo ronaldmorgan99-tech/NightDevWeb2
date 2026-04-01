@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Navigate, useParams, useNavigate } from 'react-router';
+import { apiJson } from '../lib/api';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Calendar, MessageSquare, Award, ShieldCheck, Clock, MapPin, Camera, Save, X, Settings, Github, Youtube, Twitch, Facebook, Server, TrendingUp, Wallet, Target, Activity, History, ArrowUpRight, ArrowDownLeft, Car, Zap, Trophy, MessageCircle } from 'lucide-react';
 import { motion, useMotionValue, useSpring, animate, AnimatePresence } from 'motion/react';
@@ -488,11 +489,10 @@ export default function ProfilePage() {
 
   const updateMutation = useMutation({
     mutationFn: (updates: { avatar_url?: string; banner_url?: string; bio?: string }) =>
-      fetch('/api/auth/me', {
+      apiJson<{ user: any }>('/api/auth/me', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates)
-      }).then(res => res.json()),
+        json: updates
+      }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['profile', userId] });
       if (updateProfile) updateProfile(data.user);

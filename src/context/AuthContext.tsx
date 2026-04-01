@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { apiJson } from '../lib/api';
 
 interface User {
   id: number;
@@ -81,14 +82,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    await fetch('/api/auth/logout', {
-      method: 'POST',
-      headers: {
-        'X-CSRF-Token': csrfToken || ''
-      }
-    });
-    setUser(null);
-    setCsrfToken(null);
+    try {
+      await apiJson('/api/auth/logout', { method: 'POST' });
+    } catch (err) {
+      console.warn('Logout failed:', err);
+    } finally {
+      setUser(null);
+      setCsrfToken(null);
+    }
   };
 
   const updateProfile = (userData: User) => {

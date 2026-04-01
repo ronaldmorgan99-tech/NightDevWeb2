@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { apiJson } from '../lib/api';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, AlertTriangle, Send } from 'lucide-react';
 
@@ -20,21 +21,18 @@ const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, targetType, 
 
     setIsSubmitting(true);
     try {
-      const res = await fetch('/api/reports', {
+      await apiJson('/api/reports', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_type: targetType, target_id: targetId, reason })
+        json: { target_type: targetType, target_id: targetId, reason }
       });
 
-      if (res.ok) {
-        setIsSuccess(true);
-        setTimeout(() => {
-          onClose();
-          setIsSuccess(false);
-          setReason('');
-        }, 2000);
-      }
-    } catch (err) {
+      setIsSuccess(true);
+      setTimeout(() => {
+        onClose();
+        setIsSuccess(false);
+        setReason('');
+      }, 2000);
+    } catch (err: any) {
       console.error('Failed to submit report', err);
     } finally {
       setIsSubmitting(false);

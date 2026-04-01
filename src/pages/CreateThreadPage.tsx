@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { apiJson } from '../lib/api';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams, Link } from 'react-router';
 import { MessageSquare, ArrowLeft, Send, AlertCircle } from 'lucide-react';
@@ -29,7 +30,7 @@ export default function CreateThreadPage() {
 
   const { data: forumData, isLoading: forumLoading } = useQuery<ForumResponse>({
     queryKey: ['forum', forumId],
-    queryFn: () => fetch(`/api/forums/${forumId}`).then(res => res.json()),
+    queryFn: () => apiJson<ForumResponse>(`/api/forums/${forumId}`),
     enabled: !!forumId
   });
 
@@ -40,14 +41,10 @@ export default function CreateThreadPage() {
 
   const mutation = useMutation({
     mutationFn: async (newThread: { forum_id: string; title: string; content: string }): Promise<CreateThreadResponse> => {
-      const res = await fetch('/api/threads', {
+      return apiJson<CreateThreadResponse>('/api/threads', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newThread)
+        json: newThread
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create thread');
-      return data;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['forum', forumId] });

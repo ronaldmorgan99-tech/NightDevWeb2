@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiJson } from '../../lib/api';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   Link2, 
@@ -27,7 +28,7 @@ const AdminIntegrationsPage: React.FC = () => {
 
   const { data: settings, isLoading } = useQuery<Setting[]>({
     queryKey: ['admin-settings'],
-    queryFn: () => fetch('/api/admin/settings').then(res => res.json())
+    queryFn: () => apiJson<Setting[]>('/api/admin/settings')
   });
 
   useEffect(() => {
@@ -39,10 +40,9 @@ const AdminIntegrationsPage: React.FC = () => {
   }, [settings]);
 
   const updateMutation = useMutation({
-    mutationFn: (newSettings: { key: string, value: string }[]) => fetch('/api/admin/settings', {
+    mutationFn: (newSettings: { key: string, value: string }[]) => apiJson('/api/admin/settings', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ settings: newSettings })
+      json: { settings: newSettings }
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-settings'] });

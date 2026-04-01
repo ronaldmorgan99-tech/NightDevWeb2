@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { apiJson } from '../../lib/api';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   FolderTree, 
@@ -50,14 +51,13 @@ const AdminSectorsPage: React.FC = () => {
 
   const { data: categories, isLoading } = useQuery<Category[]>({
     queryKey: ['admin-categories'],
-    queryFn: () => fetch('/api/forums/categories').then(res => res.json())
+    queryFn: () => apiJson<Category[]>('/api/forums/categories')
   });
 
   const createCategoryMutation = useMutation({
-    mutationFn: (name: string) => fetch('/api/admin/categories', {
+    mutationFn: (name: string) => apiJson('/api/admin/categories', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name })
+      json: { name }
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-categories'] });
@@ -67,10 +67,9 @@ const AdminSectorsPage: React.FC = () => {
   });
 
   const updateCategoryMutation = useMutation({
-    mutationFn: (category: Category) => fetch(`/api/admin/categories/${category.id}`, {
+    mutationFn: (category: Category) => apiJson(`/api/admin/categories/${category.id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: category.name, display_order: category.display_order })
+      json: { name: category.name, display_order: category.display_order }
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-categories'] });
@@ -79,10 +78,9 @@ const AdminSectorsPage: React.FC = () => {
   });
 
   const createForumMutation = useMutation({
-    mutationFn: (forum: any) => fetch('/api/admin/forums', {
+    mutationFn: (forum: any) => apiJson('/api/admin/forums', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(forum)
+      json: forum
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-categories'] });
@@ -92,10 +90,9 @@ const AdminSectorsPage: React.FC = () => {
   });
 
   const updateForumMutation = useMutation({
-    mutationFn: (forum: Forum) => fetch(`/api/admin/forums/${forum.id}`, {
+    mutationFn: (forum: Forum) => apiJson(`/api/admin/forums/${forum.id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(forum)
+      json: forum
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-categories'] });
@@ -104,12 +101,12 @@ const AdminSectorsPage: React.FC = () => {
   });
 
   const deleteCategoryMutation = useMutation({
-    mutationFn: (id: number) => fetch(`/api/admin/categories/${id}`, { method: 'DELETE' }),
+    mutationFn: (id: number) => apiJson(`/api/admin/categories/${id}`, { method: 'DELETE' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-categories'] })
   });
 
   const deleteForumMutation = useMutation({
-    mutationFn: (id: number) => fetch(`/api/admin/forums/${id}`, { method: 'DELETE' }),
+    mutationFn: (id: number) => apiJson(`/api/admin/forums/${id}`, { method: 'DELETE' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-categories'] })
   });
 

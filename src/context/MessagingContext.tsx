@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import { apiFetch, apiJson } from '../lib/api';
 
 interface Message {
   id: number;
@@ -40,11 +41,8 @@ export const MessagingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const fetchNotifications = useCallback(async () => {
     try {
-      const res = await fetch('/api/notifications');
-      if (res.ok) {
-        const data = await res.json();
-        setNotifications(data);
-      }
+      const data = await apiJson<Notification[]>('/api/notifications');
+      setNotifications(data);
     } catch (err) {
       console.error('Failed to fetch notifications:', err);
     }
@@ -73,10 +71,8 @@ export const MessagingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const markNotificationAsRead = async (id: number) => {
     try {
-      const res = await fetch(`/api/notifications/${id}/read`, { method: 'PATCH' });
-      if (res.ok) {
-        setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: 1 } : n));
-      }
+      await apiFetch(`/api/notifications/${id}/read`, { method: 'PATCH' });
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: 1 } : n));
     } catch (err) {
       console.error('Failed to mark notification as read:', err);
     }
@@ -84,23 +80,18 @@ export const MessagingProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const markAllNotificationsAsRead = async () => {
     try {
-      const res = await fetch('/api/notifications/read-all', { method: 'POST' });
-      if (res.ok) {
-        setNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
-      }
+      await apiFetch('/api/notifications/read-all', { method: 'POST' });
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
     } catch (err) {
       console.error('Failed to mark all notifications as read:', err);
     }
   };
 
   const sendMessage = async (receiverId: number, content: string) => {
-    const res = await fetch('/api/messages', {
+    return apiJson<Message>('/api/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ receiver_id: receiverId, content })
+      json: { receiver_id: receiverId, content }
     });
-    if (!res.ok) throw new Error('Failed to send message');
-    return res.json();
   };
 
   const unreadNotificationsCount = notifications.filter(n => !n.is_read).length;

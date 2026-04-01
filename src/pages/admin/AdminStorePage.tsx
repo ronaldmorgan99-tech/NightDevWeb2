@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { apiJson } from '../../lib/api';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   Plus, 
@@ -40,14 +41,13 @@ const AdminStorePage: React.FC = () => {
 
   const { data: products, isLoading } = useQuery<Product[]>({
     queryKey: ['admin-products'],
-    queryFn: () => fetch('/api/store/products').then(res => res.json())
+    queryFn: () => apiJson<Product[]>('/api/store/products')
   });
 
   const createMutation = useMutation({
-    mutationFn: (product: typeof newProduct) => fetch('/api/admin/products', {
+    mutationFn: (product: typeof newProduct) => apiJson('/api/admin/products', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(product)
+      json: product
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-products'] });
@@ -57,10 +57,9 @@ const AdminStorePage: React.FC = () => {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (product: Product) => fetch(`/api/admin/products/${product.id}`, {
+    mutationFn: (product: Product) => apiJson(`/api/admin/products/${product.id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(product)
+      json: product
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-products'] });
@@ -69,7 +68,7 @@ const AdminStorePage: React.FC = () => {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => fetch(`/api/admin/products/${id}`, { method: 'DELETE' }),
+    mutationFn: (id: number) => apiJson(`/api/admin/products/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-products'] });
       setConfirmDelete(null);

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { apiJson } from '../../lib/api';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Users, ShieldCheck, Award, MoreVertical, Search, Filter, User as UserIcon, ShieldAlert, XCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -19,16 +20,15 @@ const AdminUsersPage: React.FC = () => {
 
   const { data: users, isLoading } = useQuery<User[]>({
     queryKey: ['admin-users'],
-    queryFn: () => fetch('/api/admin/users').then(res => res.json())
+    queryFn: () => apiJson<User[]>('/api/admin/users')
   });
 
   const roleMutation = useMutation({
     mutationFn: ({ userId, role }: { userId: number; role: string }) =>
-      fetch(`/api/admin/users/${userId}/role`, {
+      apiJson(`/api/admin/users/${userId}/role`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role })
-      }).then(res => res.json()),
+        json: { role }
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
       setActiveMenu(null);

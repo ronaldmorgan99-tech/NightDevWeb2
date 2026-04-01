@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { apiJson } from '../../lib/api';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   Ticket, 
@@ -50,20 +51,19 @@ const AdminSupportPage: React.FC = () => {
 
   const { data: tickets, isLoading: isLoadingTickets } = useQuery<SupportTicket[]>({
     queryKey: ['admin-tickets'],
-    queryFn: () => fetch('/api/admin/tickets').then(res => res.json())
+    queryFn: () => apiJson<SupportTicket[]>('/api/admin/tickets')
   });
 
   const { data: ticketDetail, isLoading: isLoadingDetail } = useQuery<{ ticket: SupportTicket, messages: TicketMessage[] }>({
     queryKey: ['admin-ticket', selectedTicketId],
-    queryFn: () => fetch(`/api/admin/tickets/${selectedTicketId}`).then(res => res.json()),
+    queryFn: () => apiJson<{ ticket: SupportTicket, messages: TicketMessage[] }>(`/api/admin/tickets/${selectedTicketId}`),
     enabled: !!selectedTicketId
   });
 
   const replyMutation = useMutation({
-    mutationFn: (message: string) => fetch(`/api/admin/tickets/${selectedTicketId}/messages`, {
+    mutationFn: (message: string) => apiJson(`/api/admin/tickets/${selectedTicketId}/messages`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message })
+      json: { message }
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-ticket', selectedTicketId] });
@@ -73,10 +73,9 @@ const AdminSupportPage: React.FC = () => {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: (status: string) => fetch(`/api/admin/tickets/${selectedTicketId}`, {
+    mutationFn: (status: string) => apiJson(`/api/admin/tickets/${selectedTicketId}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status })
+      json: { status }
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-ticket', selectedTicketId] });

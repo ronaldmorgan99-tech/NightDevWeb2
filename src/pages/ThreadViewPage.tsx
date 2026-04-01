@@ -26,6 +26,7 @@ import {
   Mail
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { apiJson } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import ReportModal from '../components/ReportModal';
 import ConfirmationModal from '../components/ConfirmationModal';
@@ -88,21 +89,15 @@ const ThreadViewPage: React.FC = () => {
 
   const { data, isLoading } = useQuery<ThreadData>({
     queryKey: ['thread', id],
-    queryFn: () => fetch(`/api/threads/${id}`).then(res => res.json())
+    queryFn: () => apiJson<ThreadData>(`/api/threads/${id}`)
   });
 
   const replyMutation = useMutation({
     mutationFn: async (content: string) => {
-      const res = await fetch('/api/posts', {
+      return apiJson('/api/posts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ thread_id: id, content })
+        json: { thread_id: id, content }
       });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to post reply');
-      }
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['thread', id] });
@@ -116,16 +111,10 @@ const ThreadViewPage: React.FC = () => {
 
   const editMutation = useMutation({
     mutationFn: async ({ postId, content, is_hidden, is_deleted }: { postId: number; content?: string; is_hidden?: number; is_deleted?: number }) => {
-      const res = await fetch(`/api/posts/${postId}`, {
+      return apiJson(`/api/posts/${postId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, is_hidden, is_deleted })
+        json: { content, is_hidden, is_deleted }
       });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to update post');
-      }
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['thread', id] });
@@ -139,16 +128,10 @@ const ThreadViewPage: React.FC = () => {
 
   const threadModMutation = useMutation({
     mutationFn: async (updates: Partial<ThreadData['thread']>) => {
-      const res = await fetch(`/api/threads/${id}`, {
+      return apiJson(`/api/threads/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates)
+        json: updates
       });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to update thread');
-      }
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['thread', id] });
@@ -161,14 +144,7 @@ const ThreadViewPage: React.FC = () => {
 
   const deleteThreadMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/threads/${id}`, {
-        method: 'DELETE'
-      });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to delete thread');
-      }
-      return res.json();
+      return apiJson(`/api/threads/${id}`, { method: 'DELETE' });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['forum', String(data?.thread.forum_id)] });

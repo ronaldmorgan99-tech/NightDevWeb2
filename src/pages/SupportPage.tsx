@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { apiJson } from '../lib/api';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   Ticket, 
@@ -56,26 +57,25 @@ const SupportPage: React.FC = () => {
 
   const { data: siteSettings } = useQuery<Record<string, string>>({
     queryKey: ['site-settings'],
-    queryFn: () => fetch('/api/settings').then(res => res.json())
+    queryFn: () => apiJson<Record<string, string>>('/api/settings')
   });
 
   const { data: tickets, isLoading: isLoadingTickets } = useQuery<SupportTicket[]>({
     queryKey: ['user-tickets'],
-    queryFn: () => fetch('/api/tickets').then(res => res.json()),
+    queryFn: () => apiJson<SupportTicket[]>('/api/tickets'),
     enabled: !!user
   });
 
   const { data: ticketDetail, isLoading: isLoadingDetail } = useQuery<{ ticket: SupportTicket, messages: TicketMessage[] }>({
     queryKey: ['user-ticket', selectedTicketId],
-    queryFn: () => fetch(`/api/tickets/${selectedTicketId}`).then(res => res.json()),
+    queryFn: () => apiJson<{ ticket: SupportTicket, messages: TicketMessage[] }>(`/api/tickets/${selectedTicketId}`),
     enabled: !!selectedTicketId
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: typeof newTicket) => fetch('/api/tickets', {
+    mutationFn: (data: typeof newTicket) => apiJson('/api/tickets', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
+      json: data
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user-tickets'] });
@@ -85,10 +85,9 @@ const SupportPage: React.FC = () => {
   });
 
   const replyMutation = useMutation({
-    mutationFn: (message: string) => fetch(`/api/tickets/${selectedTicketId}/messages`, {
+    mutationFn: (message: string) => apiJson(`/api/tickets/${selectedTicketId}/messages`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message })
+      json: { message }
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user-ticket', selectedTicketId] });

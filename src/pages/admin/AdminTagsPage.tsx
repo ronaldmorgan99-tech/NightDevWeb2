@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { apiJson } from '../../lib/api';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   Plus, 
@@ -26,14 +27,13 @@ const AdminTagsPage: React.FC = () => {
 
   const { data: tags, isLoading } = useQuery<Tag[]>({
     queryKey: ['admin-tags'],
-    queryFn: () => fetch('/api/admin/tags').then(res => res.json())
+    queryFn: () => apiJson<Tag[]>('/api/admin/tags')
   });
 
   const createMutation = useMutation({
-    mutationFn: (tag: typeof newTag) => fetch('/api/admin/tags', {
+    mutationFn: (tag: typeof newTag) => apiJson('/api/admin/tags', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(tag)
+      json: tag
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-tags'] });
@@ -43,10 +43,9 @@ const AdminTagsPage: React.FC = () => {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (tag: Tag) => fetch(`/api/admin/tags/${tag.id}`, {
+    mutationFn: (tag: Tag) => apiJson(`/api/admin/tags/${tag.id}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: tag.name, color: tag.color })
+      json: { name: tag.name, color: tag.color }
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-tags'] });
@@ -55,7 +54,7 @@ const AdminTagsPage: React.FC = () => {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => fetch(`/api/admin/tags/${id}`, { method: 'DELETE' }),
+    mutationFn: (id: number) => apiJson(`/api/admin/tags/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-tags'] });
       setConfirmDelete(null);

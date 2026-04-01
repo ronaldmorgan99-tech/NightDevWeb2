@@ -14,6 +14,10 @@ import { GoogleGenAI, type GenerateVideosOperation } from '@google/genai';
 import { z } from 'zod';
 import { PUBLIC_SETTINGS_ALLOWLIST, isPublicSetting } from './src/lib/settingsAllowlist';
 import { sendWelcomeEmail } from './src/lib/mailer';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET || '';
 
@@ -42,6 +46,22 @@ function validateEnv() {
 
   if (process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL is required in production.');
+  }
+
+  // Validate payment configuration
+  const hasStripe = process.env.STRIPE_SECRET_KEY;
+  const hasPayPal = process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET;
+
+  if (!hasStripe && !hasPayPal) {
+    console.warn('Warning: No payment providers configured. Store checkout will not work.');
+  }
+
+  if (hasStripe && !process.env.STRIPE_SECRET_KEY?.startsWith('sk_')) {
+    throw new Error('Invalid Stripe secret key format. Must start with "sk_".');
+  }
+
+  if (process.env.PAYPAL_CLIENT_ID && !process.env.PAYPAL_CLIENT_SECRET) {
+    throw new Error('PayPal client secret is required when PayPal client ID is provided.');
   }
 }
 
@@ -1061,9 +1081,7 @@ async function start() {
     }
   });
 
-  // Cart management - stored in memory per user
-  const userCarts: Map<number, Map<number, { productId: number; quantity: number; price: number; name: string }>> = new Map();
-
+  // Cart management - stored in database
   app.post('/api/cart', authenticate, async (req: any, res) => {
     try {
       const { productId, quantity } = req.body;
@@ -1077,25 +1095,43 @@ async function start() {
         return res.status(404).json({ error: 'Product not found' });
       }
 
-      // Initialize cart for user if not exists
-      if (!userCarts.has(req.user.id)) {
-        userCarts.set(req.user.id, new Map());
+      // Get or create user's cart
+      let cart = await db.queryOne<any>('SELECT id FROM carts WHERE user_id = ?', [req.user.id]);
+      if (!cart) {
+        const cartResult = await db.execute('INSERT INTO carts (user_id) VALUES (?)', [req.user.id]);
+        cart = { id: cartResult.lastInsertRowid || cartResult.insertId };
       }
 
-      const cart = userCarts.get(req.user.id)!;
-      if (cart.has(productId)) {
-        const item = cart.get(productId)!;
-        item.quantity += quantity;
+      // Check if item already exists in cart
+      const existingItem = await db.queryOne<any>(
+        'SELECT id, quantity FROM cart_items WHERE cart_id = ? AND product_id = ?',
+        [cart.id, productId]
+      );
+
+      if (existingItem) {
+        // Update existing item quantity
+        await db.execute(
+          'UPDATE cart_items SET quantity = quantity + ?, price = ? WHERE id = ?',
+          [quantity, product.price, existingItem.id]
+        );
       } else {
-        cart.set(productId, {
-          productId,
-          quantity,
-          price: product.price,
-          name: product.name
-        });
+        // Add new item to cart
+        await db.execute(
+          'INSERT INTO cart_items (cart_id, product_id, quantity, price) VALUES (?, ?, ?, ?)',
+          [cart.id, productId, quantity, product.price]
+        );
       }
 
-      res.json({ success: true, cartSize: cart.size });
+      // Update cart timestamp
+      await db.execute('UPDATE carts SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [cart.id]);
+
+      // Get cart size for response
+      const cartSize = await db.queryOne<any>(
+        'SELECT COUNT(*) as count FROM cart_items WHERE cart_id = ?',
+        [cart.id]
+      );
+
+      res.json({ success: true, cartSize: cartSize.count });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -1103,8 +1139,20 @@ async function start() {
 
   app.get('/api/cart', authenticate, async (req: any, res) => {
     try {
-      const cart = userCarts.get(req.user.id) || new Map();
-      const items = Array.from(cart.values());
+      // Get user's cart
+      const cart = await db.queryOne<any>('SELECT id FROM carts WHERE user_id = ?', [req.user.id]);
+      if (!cart) {
+        return res.json({ items: [], total: 0, count: 0 });
+      }
+
+      // Get cart items with product details
+      const items = await db.query<any>(`
+        SELECT ci.product_id as productId, ci.quantity, ci.price, p.name
+        FROM cart_items ci
+        JOIN products p ON ci.product_id = p.id
+        WHERE ci.cart_id = ?
+      `, [cart.id]);
+
       const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
       res.json({ items, total, count: items.length });
     } catch (err: any) {
@@ -1115,11 +1163,28 @@ async function start() {
   app.delete('/api/cart/:productId', authenticate, async (req: any, res) => {
     try {
       const productId = parseInt(req.params.productId);
-      const cart = userCarts.get(req.user.id);
-      if (!cart || !cart.has(productId)) {
+
+      // Get user's cart
+      const cart = await db.queryOne<any>('SELECT id FROM carts WHERE user_id = ?', [req.user.id]);
+      if (!cart) {
+        return res.status(404).json({ error: 'Cart not found' });
+      }
+
+      // Check if item exists in cart
+      const item = await db.queryOne<any>(
+        'SELECT id FROM cart_items WHERE cart_id = ? AND product_id = ?',
+        [cart.id, productId]
+      );
+      if (!item) {
         return res.status(404).json({ error: 'Item not in cart' });
       }
-      cart.delete(productId);
+
+      // Remove item from cart
+      await db.execute('DELETE FROM cart_items WHERE id = ?', [item.id]);
+
+      // Update cart timestamp
+      await db.execute('UPDATE carts SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [cart.id]);
+
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1128,30 +1193,50 @@ async function start() {
 
   app.post('/api/orders', authenticate, async (req: any, res) => {
     try {
-      const cart = userCarts.get(req.user.id);
-      if (!cart || cart.size === 0) {
+      // Get user's cart from database
+      const cart = await db.queryOne<any>('SELECT id FROM carts WHERE user_id = ?', [req.user.id]);
+      if (!cart) {
         return res.status(400).json({ error: 'Cart is empty' });
       }
 
-      const items = Array.from(cart.values());
+      // Get cart items
+      const items = await db.query<any>(`
+        SELECT ci.product_id, ci.quantity, ci.price, p.name
+        FROM cart_items ci
+        JOIN products p ON ci.product_id = p.id
+        WHERE ci.cart_id = ?
+      `, [cart.id]);
+
+      if (items.length === 0) {
+        return res.status(400).json({ error: 'Cart is empty' });
+      }
+
       const totalPrice = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
       // Create order in database
       const orderResult = await db.execute(
-        'INSERT INTO orders (user_id, total_price, status) VALUES (?, ?, ?)',
-        [req.user.id, totalPrice, 'completed']
+        'INSERT INTO orders (user_id, total_amount, status) VALUES (?, ?, ?)',
+        [req.user.id, totalPrice, 'pending']
       );
       const orderId = orderResult.lastInsertRowid || orderResult.insertId;
 
+      // Create order items
+      for (const item of items) {
+        await db.execute(
+          'INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase) VALUES (?, ?, ?, ?)',
+          [orderId, item.product_id, item.quantity, item.price]
+        );
+      }
+
       // Clear user's cart
-      userCarts.delete(req.user.id);
+      await db.execute('DELETE FROM cart_items WHERE cart_id = ?', [cart.id]);
 
       res.json({
         id: orderId,
         userId: req.user.id,
         totalPrice,
         itemsCount: items.length,
-        status: 'completed'
+        status: 'pending'
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1161,7 +1246,7 @@ async function start() {
   app.get('/api/orders', authenticate, async (req: any, res) => {
     try {
       const orders = await db.query<any>(
-        'SELECT id, total_price, status, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC',
+        'SELECT id, total_amount as total_price, status, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC',
         [req.user.id]
       );
       res.json(orders);
@@ -1180,6 +1265,113 @@ async function start() {
         return res.status(404).json({ error: 'Order not found' });
       }
       res.json(order);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Payment endpoints
+  app.get('/api/payments/providers', (req, res) => {
+    const { paymentProviders } = require('./src/lib/payments.js');
+    res.json({ providers: paymentProviders });
+  });
+
+  app.post('/api/payments/stripe/create-intent', authenticate, async (req: any, res) => {
+    try {
+      const { amount, currency = 'usd' } = req.body;
+
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ error: 'Valid amount is required' });
+      }
+
+      const { createStripePaymentIntent } = require('./src/lib/payments.js');
+      const paymentIntent = await createStripePaymentIntent(amount, currency);
+
+      res.json({
+        paymentIntentId: paymentIntent.id,
+        clientSecret: paymentIntent.client_secret,
+        amount: paymentIntent.amount,
+        currency: paymentIntent.currency
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/payments/paypal/create-order', authenticate, async (req: any, res) => {
+    try {
+      const { amount, currency = 'USD' } = req.body;
+
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ error: 'Valid amount is required' });
+      }
+
+      const { createPayPalOrder } = require('./src/lib/payments.js');
+      const order = await createPayPalOrder(amount, currency);
+
+      res.json({
+        orderId: order.id,
+        status: order.status,
+        approvalUrl: order.links.find(link => link.rel === 'approve')?.href
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/payments/stripe/confirm/:orderId', authenticate, async (req: any, res) => {
+    try {
+      const { paymentIntentId } = req.body;
+      const orderId = parseInt(req.params.orderId);
+
+      // Verify order belongs to user and is pending
+      const order = await db.queryOne<any>('SELECT * FROM orders WHERE id = ? AND user_id = ?', [orderId, req.user.id]);
+      if (!order) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+
+      if (order.status !== 'pending') {
+        return res.status(400).json({ error: 'Order is not in pending status' });
+      }
+
+      const { confirmStripePayment } = require('./src/lib/payments.js');
+      const success = await confirmStripePayment(paymentIntentId);
+
+      if (success) {
+        await db.execute('UPDATE orders SET status = ?, payment_method = ? WHERE id = ?', ['completed', 'stripe', orderId]);
+        res.json({ success: true, status: 'completed' });
+      } else {
+        res.status(400).json({ error: 'Payment confirmation failed' });
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/payments/paypal/capture/:orderId', authenticate, async (req: any, res) => {
+    try {
+      const { paypalOrderId } = req.body;
+      const orderId = parseInt(req.params.orderId);
+
+      // Verify order belongs to user and is pending
+      const order = await db.queryOne<any>('SELECT * FROM orders WHERE id = ? AND user_id = ?', [orderId, req.user.id]);
+      if (!order) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+
+      if (order.status !== 'pending') {
+        return res.status(400).json({ error: 'Order is not in pending status' });
+      }
+
+      const { capturePayPalOrder } = require('./src/lib/payments.js');
+      const success = await capturePayPalOrder(paypalOrderId);
+
+      if (success) {
+        await db.execute('UPDATE orders SET status = ?, payment_method = ? WHERE id = ?', ['completed', 'paypal', orderId]);
+        res.json({ success: true, status: 'completed' });
+      } else {
+        res.status(400).json({ error: 'Payment capture failed' });
+      }
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

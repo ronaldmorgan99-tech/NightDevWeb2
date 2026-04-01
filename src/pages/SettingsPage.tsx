@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiJson } from '../lib/api';
+import { useMutation } from '@tanstack/react-query';
 import { 
   User, 
   Mail, 
@@ -22,7 +23,6 @@ import { motion, AnimatePresence } from 'motion/react';
 
 const SettingsPage: React.FC = () => {
   const { user, updateProfile } = useAuth();
-  const queryClient = useQueryClient();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<'profile' | 'account' | 'security' | 'notifications'>('profile');
   const [showPassword, setShowPassword] = useState(false);
@@ -38,15 +38,21 @@ const SettingsPage: React.FC = () => {
     confirmPassword: ''
   });
 
+  useEffect(() => {
+    if (user) {
+      setFormData(prev => ({
+        ...prev,
+        username: user.username || '',
+        email: user.email || '',
+        bio: user.bio || ''
+      }));
+    }
+  }, [user]);
+
   const updateMutation = useMutation({
-    mutationFn: (updates: any) => fetch('/api/auth/me', {
+    mutationFn: (updates: any) => apiJson<{ user: any }>('/api/auth/me', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates)
-    }).then(async res => {
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Update failed');
-      return data;
+      json: updates
     }),
     onSuccess: (data) => {
       if (updateProfile) updateProfile(data.user);
