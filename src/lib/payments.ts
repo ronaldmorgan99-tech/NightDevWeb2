@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import { Client as PayPalClient, Environment as PayPalEnv, OrdersController, CheckoutPaymentIntent } from '@paypal/paypal-server-sdk';
+import { Client as PayPalClient, Environment as PayPalEnv, OrdersController, CheckoutPaymentIntent, Order } from '@paypal/paypal-server-sdk';
 
 // Environment variables
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
@@ -50,6 +50,22 @@ export interface PayPalOrder {
     rel: string;
     method: string;
   }>;
+}
+
+function mapPayPalOrder(order: Pick<Order, 'id' | 'status' | 'links'>): PayPalOrder {
+  return {
+    id: order.id ?? '',
+    status: order.status ?? 'UNKNOWN',
+    links: (order.links ?? []).map((link) => ({
+      href: link.href ?? '',
+      rel: link.rel ?? '',
+      method: link.method ?? '',
+    })),
+  };
+}
+
+function isPayPalOrderBody(body: unknown): body is Pick<Order, 'id' | 'status' | 'links'> {
+  return typeof body === 'object' && body !== null;
 }
 
 // Available payment providers
@@ -144,12 +160,11 @@ export async function createPayPalOrder(amount: number, currency: string = 'USD'
       prefer: 'return=representation',
     });
 
-    const orderBody = response.body as unknown as { id: string; status: string; links?: Array<{ href: string; rel: string; method: string }> };
-    return {
-      id: orderBody.id,
-      status: orderBody.status,
-      links: orderBody.links || [],
-    };
+    if (!isPayPalOrderBody(response.body)) {
+      throw new Error('Unexpected PayPal order response body');
+    }
+
+    return mapPayPalOrder(response.body);
   } catch (error) {
     console.error('Error creating PayPal order:', error);
     throw new Error('Failed to create PayPal order');
@@ -163,8 +178,11 @@ export async function capturePayPalOrder(orderId: string): Promise<boolean> {
 
   try {
     const response = await paypalOrderController.captureOrder({ id: orderId });
-    const captureBody = response.body as unknown as { status: string };
-    return captureBody.status === 'COMPLETED';
+    if (!isPayPalOrderBody(response.body)) {
+      return false;
+    }
+
+    return response.body.status === 'COMPLETED';
   } catch (error) {
     console.error('Error capturing PayPal order:', error);
     return false;
