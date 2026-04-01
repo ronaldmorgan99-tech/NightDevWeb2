@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events';
 import express from 'express';
 import type { CookieOptions } from 'express';
 import { createServer as createViteServer } from 'vite';
@@ -65,9 +66,38 @@ function validateEnv() {
   }
 }
 
+function sanitizeProxyEnvironment() {
+  const proxyVars = [
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'http_proxy',
+    'https_proxy',
+    'npm_config_http_proxy',
+    'npm_config_https_proxy',
+    'npm_config_proxy'
+  ];
+
+  const setProxy = proxyVars.filter((v) => !!process.env[v]);
+  if (setProxy.length > 0) {
+    console.warn(
+      'npm WARN: Unknown env config "http-proxy" / proxy vars found and will be removed in future npm versions.\n' +
+      `Detected: ${setProxy.join(', ')}. Clearing these variables in this process for predictable behavior.`
+    );
+
+    setProxy.forEach((v) => { delete process.env[v]; });
+  }
+
+  // Avoid noisy Node.js MaxListeners warnings in legitimate high-connection usage by increasing the default.
+  const minLimit = 20;
+  if (EventEmitter.defaultMaxListeners < minLimit) {
+    EventEmitter.defaultMaxListeners = minLimit;
+  }
+}
+
 async function start() {
   console.log('--- STARTING NIGHTRESPAWN SERVER ---');
   validateEnv();
+  sanitizeProxyEnvironment();
 
   // Startup order is deterministic: create/validate schema first, then seed/reset data.
   try {
