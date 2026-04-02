@@ -29,6 +29,11 @@
 - **Details**: .env.local loading, DATABASE_URL detection, DISABLE_HMR flag, Vite HMR for Codespaces
 - **Definition of Done**: All dev environments work without websocket/file loading errors
 
+### Vercel Split-Deployment API Routing
+- **Status**: 🚧 Partially implemented
+- **Details**: Added Vercel serverless route file `api/[...path].ts`, fixed POST 405 path normalization for `/api/*`, and adjusted SPA rewrites to avoid intercepting API requests. Remaining API surface still lives in `server.ts` and should be migrated incrementally if full parity is required.
+- **Definition of Done**: All production-critical `/api/*` routes used by frontend are available through Vercel functions with no 404s.
+
 ### Integration Testing
 - **Status**: ✅ Implemented
 - **Details**: test:integration script with dedicated tmp/test.db, real server/database testing
