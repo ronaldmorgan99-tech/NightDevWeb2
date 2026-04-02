@@ -60,7 +60,11 @@
 
 ## Decisions Log
 
-**2026-04-02 (Latest)**: Fixed infinite Suspense recursion by wrapping each lazy route in isolated Suspense boundaries instead of single top-level boundary. This prevents cascading state changes during navigation and solves "Maximum call stack size exceeded" during login.
+**2026-04-02 (Latest)**: Added configurable `VITE_API_BASE_URL` support in `src/lib/api.ts` for split frontend/backend deployments (e.g., Vercel frontend + external API). Also added explicit 404 guidance for `/api/*` failures to surface deployment misconfiguration clearly.
+
+**2026-04-02**: Fixed infinite fetch recursion by preserving native `fetch` and avoiding self-calls after monkey-patching `window.fetch` in `src/main.tsx`.
+
+**2026-04-02**: Fixed infinite Suspense recursion by wrapping each lazy route in isolated Suspense boundaries instead of single top-level boundary. This prevents cascading state changes during navigation and solves "Maximum call stack size exceeded" during login.
 
 **2026-04-02**: Implemented smart Vite HMR detection for GitHub Codespaces vs local dev. Uses secure WebSocket (wss://) with forwarded domain for Codespaces, standard ws:// for local. Fixes WebSocket connection failures.
 

@@ -50,5 +50,6 @@ Together, they keep local UI state and remote API data organized, performant, an
 4. Optional values:
    - `GEMINI_API_KEY`: only required when media generation APIs are enabled/implemented.
    - `APP_URL`: used in hosted environments for callback/self links.
+   - `VITE_API_BASE_URL`: set this when frontend and API are hosted on different domains (example: `https://api.yourdomain.com`). If omitted, frontend calls relative `/api/*` paths on the current origin.
 5. Run the app:
    `npm run dev`
