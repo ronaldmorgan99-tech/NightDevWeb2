@@ -50,20 +50,26 @@
 
 ## Recurring Gotchas
 
-- Environment loading: Server expects .env.local (README says create .env.local)
-- Bundle size: Static imports cause large initial bundle - use lazy loading
-- Test mocking: npm test uses mocked fetch, npm run test:integration uses real server
-- Socket.IO CORS: Origin '*' with cookie auth may cause issues in production
-- Media polling: Client must poll every 10 seconds, handle 404/500 gracefully
+- **Suspense boundaries**: Single top-level Suspense wrapping all routes causes infinite recursion during lazy loading. Use isolated Suspense per route instead.
+- **Vite HMR in Codespaces**: Requires wss:// + forwarded domain + clientPort:443. Mismatch between host and socket port breaks connection.
+- **Environment loading**: Server expects .env.local. SQLite path detection must check DATABASE_URL format (contains '://') not endpoint.
+- **Bundle size**: Lazy loading alone isn't enough - need individual Suspense boundaries per route to prevent re-render cascades.
+- **Test database**: Must use separate path (tmp/test.db) and create tmp/ directory before tests run.
+- **Socket.IO CORS**: Origin '*' OK for dev, but expand HTTP methods to avoid preflight failures.
+- **Media polling**: Client polls /api/media/poll every 10 seconds, must handle 404/500 gracefully.
 
 ## Decisions Log
 
+**2026-04-02 (Latest)**: Fixed infinite Suspense recursion by wrapping each lazy route in isolated Suspense boundaries instead of single top-level boundary. This prevents cascading state changes during navigation and solves "Maximum call stack size exceeded" during login.
+
+**2026-04-02**: Implemented smart Vite HMR detection for GitHub Codespaces vs local dev. Uses secure WebSocket (wss://) with forwarded domain for Codespaces, standard ws:// for local. Fixes WebSocket connection failures.
+
 **2026-04-02**: Implemented route-level code splitting with React.lazy + Suspense to reduce bundle size from 1.17MB to multiple <500kB chunks.
 
-**2026-04-02**: Fixed environment loading to prioritize .env.local as per README instructions.
+**2026-04-02**: Fixed environment loading to prioritize .env.local as per README instructions. SQLite now respects DATABASE_URL for test isolation.
 
-**2026-04-02**: Added test:integration script for real server/database testing alongside existing mocked tests.
+**2026-04-02**: Added test:integration script for real server/database testing with dedicated tmp/test.db. Uses environment variable detection to avoid MySQL URL parsing for local SQLite.
 
-**2026-04-02**: Cleaned up .env.example duplicate VITE_ENABLE_STUDIO entries.
+**2026-04-02**: Cleaned up .env.example duplicate VITE_ENABLE_STUDIO entries and added DISABLE_HMR flag for Codespaces.
 
-**2026-04-02**: Expanded Socket.IO CORS methods to prevent preflight failures.
+**2026-04-02**: Expanded Socket.IO CORS methods to include OPTIONS, HEAD, PUT, DELETE, PATCH for better compatibility.
