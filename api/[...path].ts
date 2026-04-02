@@ -10,6 +10,17 @@ const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
+// Vercel can invoke this catch-all function with either:
+// - /api/<path> (direct hit), or
+// - /<path> (already mounted at /api by the platform adapter).
+// Normalize to /api/* so routes are stable in both execution modes.
+app.use((req, _res, next) => {
+  if (!req.url.startsWith('/api/')) {
+    req.url = `/api${req.url.startsWith('/') ? '' : '/'}${req.url}`;
+  }
+  next();
+});
+
 const JWT_SECRET = process.env.JWT_SECRET || '';
 const AUTH_COOKIE_NAME = 'token';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
