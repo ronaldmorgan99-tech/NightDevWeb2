@@ -29,6 +29,11 @@
 - **Details**: .env.local loading, DATABASE_URL detection, DISABLE_HMR flag, Vite HMR for Codespaces
 - **Definition of Done**: All dev environments work without websocket/file loading errors
 
+### Vercel Split-Deployment API Routing
+- **Status**: ⚠️ In progress
+- **Details**: Frontend now supports `VITE_API_BASE_URL`, but production still requires an actual API host (or serverless API routes) for `/api/*`.
+- **Definition of Done**: Vercel project has working API origin configured, `/api/settings` and `/api/auth/login` return 200/401 (not 404) in production.
+
 ### Integration Testing
 - **Status**: ✅ Implemented
 - **Details**: test:integration script with dedicated tmp/test.db, real server/database testing
