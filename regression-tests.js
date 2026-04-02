@@ -51,7 +51,7 @@ async function request(path, options = {}) {
 function spawnServer() {
   return new Promise((resolve, reject) => {
     const proc = spawn('npx', ['tsx', 'server.ts'], {
-      env: { ...process.env, NODE_ENV: 'development', JWT_SECRET, PORT: String(PORT) },
+      env: { ...process.env, NODE_ENV: 'development', JWT_SECRET, PORT: String(PORT), DATABASE_URL: './tmp/test.db' },
       stdio: ['ignore', 'pipe', 'pipe']
     });
 
@@ -74,9 +74,16 @@ function spawnServer() {
 }
 
 async function runTests() {
-  if (fs.existsSync('nightrespawn.db')) {
-    fs.unlinkSync('nightrespawn.db');
-    console.log('🧹 Removed existing nightrespawn.db for clean regression run');
+  // Ensure tmp directory exists
+  if (!fs.existsSync('tmp')) {
+    fs.mkdirSync('tmp');
+    console.log('📁 Created tmp directory for test database');
+  }
+
+  const testDbPath = './tmp/test.db';
+  if (fs.existsSync(testDbPath)) {
+    fs.unlinkSync(testDbPath);
+    console.log('🧹 Removed existing test database for clean regression run');
   }
 
   const server = await spawnServer();

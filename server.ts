@@ -18,7 +18,7 @@ import { sendWelcomeEmail } from './src/lib/mailer';
 import dotenv from 'dotenv';
 
 // Load environment variables
-dotenv.config();
+dotenv.config({ path: '.env.local' });
 
 const JWT_SECRET = process.env.JWT_SECRET || '';
 
@@ -116,7 +116,7 @@ async function start() {
   const io = new Server(server, {
     cors: {
       origin: '*',
-      methods: ['GET', 'POST']
+      methods: ['GET', 'POST', 'OPTIONS', 'HEAD', 'PUT', 'DELETE', 'PATCH']
     }
   });
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -2048,7 +2048,12 @@ async function start() {
   if (process.env.NODE_ENV !== 'production') {
     console.log('Initializing Vite middleware...');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { 
+        middlewareMode: true,
+        hmr: {
+          port: PORT
+        }
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);

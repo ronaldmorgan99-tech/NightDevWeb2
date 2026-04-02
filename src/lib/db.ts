@@ -13,7 +13,8 @@ export interface IDatabase {
 class SQLiteWrapper implements IDatabase {
   private db: any;
   constructor() {
-    this.db = new Database('nightrespawn.db');
+    const dbPath = process.env.DATABASE_URL || 'nightrespawn.db';
+    this.db = new Database(dbPath);
     this.db.pragma('foreign_keys = ON');
   }
   async execute(sql: string, params: any[] = []) {
@@ -52,11 +53,12 @@ class MySQLWrapper implements IDatabase {
 // Initialize the correct database
 let db: IDatabase;
 
-if (process.env.DATABASE_URL) {
+if (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('://')) {
   console.log('Connecting to MySQL Database...');
   db = new MySQLWrapper(process.env.DATABASE_URL);
 } else {
-  console.log('Using Local SQLite Database...');
+  const dbPath = process.env.DATABASE_URL || 'nightrespawn.db';
+  console.log(`Using Local SQLite Database at ${dbPath}...`);
   db = new SQLiteWrapper();
 }
 

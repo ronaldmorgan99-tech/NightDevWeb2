@@ -10,7 +10,8 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "test": "node --test test/regression.test.js",
-    "test:regression": "node --test test/regression.test.js"
+    "test:regression": "node --test test/regression.test.js",
+    "test:integration": "node regression-tests.js"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
