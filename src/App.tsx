@@ -10,6 +10,18 @@ import { AuthProvider } from './context/AuthContext';
 import { MessagingProvider } from './context/MessagingContext';
 import MainLayout from './layouts/MainLayout';
 import AdminLayout from './layouts/AdminLayout';
+
+// Loading fallback component for lazy-loaded routes
+const LoadingFallback = () => (
+  <div className="min-h-screen flex items-center justify-center bg-cyber-black">
+    <div className="text-center">
+      <div className="animate-pulse mb-4">
+        <div className="w-16 h-16 bg-neon-cyan/20 rounded-lg mx-auto"></div>
+      </div>
+      <p className="text-neon-cyan text-sm uppercase tracking-widest">Loading...</p>
+    </div>
+  </div>
+);
 const ForumsPage = lazy(() => import('./pages/ForumsPage'));
 const ForumViewPage = lazy(() => import('./pages/ForumViewPage'));
 const ThreadViewPage = lazy(() => import('./pages/ThreadViewPage'));
@@ -98,41 +110,39 @@ export default function App() {
         <MessagingProvider>
           <CustomCursor />
           <BrowserRouter>
-            <Suspense fallback={<div>Loading...</div>}>
-              <Routes>
-                <Route path="/" element={<MainLayout />}>
-                  <Route index element={<ForumsPage />} />
-                  <Route path="forums/:id" element={<ForumViewPage />} />
-                  <Route path="forums/:id/new" element={<CreateThreadPage />} />
-                  <Route path="threads/:id" element={<ThreadViewPage />} />
-                  <Route path="members" element={<MembersPage />} />
-                  <Route path="profile" element={<ProfilePage />} />
-                  <Route path="profile/:id" element={<ProfilePage />} />
-                  <Route path="store" element={<StorePage />} />
-                  <Route path="support" element={<SupportPage />} />
-                  <Route path="help" element={<HelpPage />} />
-                  <Route path="settings" element={<SettingsPage />} />
-                  <Route path="messages" element={<MessagesPage />} />
-                  <Route path="discord" element={<DiscordPage />} />
-                  <Route path="servers" element={<ServersPage />} />
-                  <Route path="login" element={<LoginPage />} />
-                  <Route path="register" element={<RegisterPage />} />
-                  <Route path="studio" element={isStudioEnabled ? <VeoStudioPage /> : <ComingSoonPage />} />
-                </Route>
-                <Route path="/admin" element={<AdminLayout />}>
-                  <Route index element={<AdminDashboard />} />
-                  <Route path="users" element={<AdminUsersPage />} />
-                  <Route path="moderation" element={<AdminModerationPage />} />
-                  <Route path="forums" element={<AdminSectorsPage />} />
-                  <Route path="tags" element={<AdminTagsPage />} />
-                  <Route path="store" element={<AdminStorePage />} />
-                  <Route path="integrations" element={<AdminIntegrationsPage />} />
-                  <Route path="analytics" element={<AdminAnalyticsPage />} />
-                  <Route path="support" element={<AdminSupportPage />} />
-                  <Route path="settings" element={<AdminSettingsPage />} />
-                </Route>
-              </Routes>
-            </Suspense>
+            <Routes>
+              <Route path="/" element={<MainLayout />}>
+                <Route index element={<Suspense fallback={<LoadingFallback />}><ForumsPage /></Suspense>} />
+                <Route path="forums/:id" element={<Suspense fallback={<LoadingFallback />}><ForumViewPage /></Suspense>} />
+                <Route path="forums/:id/new" element={<Suspense fallback={<LoadingFallback />}><CreateThreadPage /></Suspense>} />
+                <Route path="threads/:id" element={<Suspense fallback={<LoadingFallback />}><ThreadViewPage /></Suspense>} />
+                <Route path="members" element={<Suspense fallback={<LoadingFallback />}><MembersPage /></Suspense>} />
+                <Route path="profile" element={<Suspense fallback={<LoadingFallback />}><ProfilePage /></Suspense>} />
+                <Route path="profile/:id" element={<Suspense fallback={<LoadingFallback />}><ProfilePage /></Suspense>} />
+                <Route path="store" element={<Suspense fallback={<LoadingFallback />}><StorePage /></Suspense>} />
+                <Route path="support" element={<Suspense fallback={<LoadingFallback />}><SupportPage /></Suspense>} />
+                <Route path="help" element={<Suspense fallback={<LoadingFallback />}><HelpPage /></Suspense>} />
+                <Route path="settings" element={<Suspense fallback={<LoadingFallback />}><SettingsPage /></Suspense>} />
+                <Route path="messages" element={<Suspense fallback={<LoadingFallback />}><MessagesPage /></Suspense>} />
+                <Route path="discord" element={<Suspense fallback={<LoadingFallback />}><DiscordPage /></Suspense>} />
+                <Route path="servers" element={<Suspense fallback={<LoadingFallback />}><ServersPage /></Suspense>} />
+                <Route path="login" element={<Suspense fallback={<LoadingFallback />}><LoginPage /></Suspense>} />
+                <Route path="register" element={<Suspense fallback={<LoadingFallback />}><RegisterPage /></Suspense>} />
+                <Route path="studio" element={isStudioEnabled ? <Suspense fallback={<LoadingFallback />}><VeoStudioPage /></Suspense> : <Suspense fallback={<LoadingFallback />}><ComingSoonPage /></Suspense>} />
+              </Route>
+              <Route path="/admin" element={<AdminLayout />}>
+                <Route index element={<Suspense fallback={<LoadingFallback />}><AdminDashboard /></Suspense>} />
+                <Route path="users" element={<Suspense fallback={<LoadingFallback />}><AdminUsersPage /></Suspense>} />
+                <Route path="moderation" element={<Suspense fallback={<LoadingFallback />}><AdminModerationPage /></Suspense>} />
+                <Route path="forums" element={<Suspense fallback={<LoadingFallback />}><AdminSectorsPage /></Suspense>} />
+                <Route path="tags" element={<Suspense fallback={<LoadingFallback />}><AdminTagsPage /></Suspense>} />
+                <Route path="store" element={<Suspense fallback={<LoadingFallback />}><AdminStorePage /></Suspense>} />
+                <Route path="integrations" element={<Suspense fallback={<LoadingFallback />}><AdminIntegrationsPage /></Suspense>} />
+                <Route path="analytics" element={<Suspense fallback={<LoadingFallback />}><AdminAnalyticsPage /></Suspense>} />
+                <Route path="support" element={<Suspense fallback={<LoadingFallback />}><AdminSupportPage /></Suspense>} />
+                <Route path="settings" element={<Suspense fallback={<LoadingFallback />}><AdminSettingsPage /></Suspense>} />
+              </Route>
+            </Routes>
           </BrowserRouter>
         </MessagingProvider>
       </AuthProvider>
