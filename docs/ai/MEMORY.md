@@ -60,9 +60,7 @@
 
 ## Decisions Log
 
-**2026-04-02 (Latest)**: Added Vercel serverless API entrypoint at `api/[...path].ts` with core endpoints (`/api/settings`, `/api/servers`, `/api/forums/categories`, `/api/community/stats`, `/api/auth/login`, `/api/auth/me`) and a `vercel.json` rewrite config so frontend and API can run in the same Vercel project.
-
-**2026-04-02**: Added configurable `VITE_API_BASE_URL` support in `src/lib/api.ts` for split frontend/backend deployments (e.g., Vercel frontend + external API). Also added explicit 404 guidance for `/api/*` failures to surface deployment misconfiguration clearly.
+**2026-04-02 (Latest)**: Added configurable `VITE_API_BASE_URL` support in `src/lib/api.ts` for split frontend/backend deployments (e.g., Vercel frontend + external API). Also added explicit 404 guidance for `/api/*` failures to surface deployment misconfiguration clearly.
 
 **2026-04-02**: Fixed infinite fetch recursion by preserving native `fetch` and avoiding self-calls after monkey-patching `window.fetch` in `src/main.tsx`.
 

@@ -38,21 +38,15 @@ export async function apiFetch(input: RequestInfo, init: ApiFetchOptions = {}): 
   }
 
   return nativeFetch(requestInput, { ...init, headers });
+  return nativeFetch(input, { ...init, headers });
 }
 
 export async function apiJson<T>(input: RequestInfo, init: ApiFetchOptions = {}): Promise<T> {
   const res = await apiFetch(input, init);
   const contentType = res.headers.get('content-type') || '';
   const data = contentType.includes('application/json') ? await res.json() : await res.text();
-  const isApiPath = typeof input === 'string' && input.startsWith('/api/');
 
   if (!res.ok) {
-    if (res.status === 404 && isApiPath) {
-      throw new Error(
-        'API endpoint not found. If frontend is on Vercel, deploy backend routes or set VITE_API_BASE_URL to your API origin.'
-      );
-    }
-
     if (typeof data === 'string' && data.trim()) {
       throw new Error(data.slice(0, 200));
     }
