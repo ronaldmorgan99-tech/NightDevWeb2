@@ -38,6 +38,7 @@ export async function apiFetch(input: RequestInfo, init: ApiFetchOptions = {}): 
   }
 
   return nativeFetch(requestInput, { ...init, headers });
+  return nativeFetch(input, { ...init, headers });
 }
 
 export async function apiJson<T>(input: RequestInfo, init: ApiFetchOptions = {}): Promise<T> {
