@@ -2,6 +2,8 @@ export interface ApiFetchOptions extends RequestInit {
   json?: any;
 }
 
+const nativeFetch: typeof fetch = globalThis.fetch.bind(globalThis);
+
 export async function apiFetch(input: RequestInfo, init: ApiFetchOptions = {}): Promise<Response> {
   const method = (init.method || 'GET').toString().toUpperCase();
   const headers = new Headers(init.headers || {});
@@ -21,7 +23,7 @@ export async function apiFetch(input: RequestInfo, init: ApiFetchOptions = {}): 
     }
   }
 
-  return window.fetch(input, { ...init, headers });
+  return nativeFetch(input, { ...init, headers });
 }
 
 export async function apiJson<T>(input: RequestInfo, init: ApiFetchOptions = {}): Promise<T> {
