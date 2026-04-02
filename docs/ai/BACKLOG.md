@@ -30,9 +30,9 @@
 - **Definition of Done**: All dev environments work without websocket/file loading errors
 
 ### Vercel Split-Deployment API Routing
-- **Status**: 🚧 Partially implemented
-- **Details**: Added Vercel serverless route file `api/[...path].ts`, fixed POST 405 path normalization for `/api/*`, and adjusted SPA rewrites to avoid intercepting API requests. Remaining API surface still lives in `server.ts` and should be migrated incrementally if full parity is required.
-- **Definition of Done**: All production-critical `/api/*` routes used by frontend are available through Vercel functions with no 404s.
+- **Status**: ⚠️ In progress
+- **Details**: Frontend now supports `VITE_API_BASE_URL`, but production still requires an actual API host (or serverless API routes) for `/api/*`.
+- **Definition of Done**: Vercel project has working API origin configured, `/api/settings` and `/api/auth/login` return 200/401 (not 404) in production.
 
 ### Integration Testing
 - **Status**: ✅ Implemented

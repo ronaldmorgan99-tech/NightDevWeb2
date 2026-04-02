@@ -9,12 +9,6 @@ import { isPublicSetting } from '../src/lib/settingsAllowlist';
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
-app.use((req, _res, next) => {
-  if (req.url.startsWith('/api/')) {
-    req.url = req.url.slice(4) || '/';
-  }
-  next();
-});
 
 const JWT_SECRET = process.env.JWT_SECRET || '';
 const AUTH_COOKIE_NAME = 'token';
@@ -48,7 +42,7 @@ function getTokenPayload(req: Request) {
   }
 }
 
-app.use(async (_req, res, next) => {
+app.use('/api', async (_req, res, next) => {
   try {
     await ensureDb();
     next();
@@ -57,7 +51,7 @@ app.use(async (_req, res, next) => {
   }
 });
 
-app.post('/auth/login', async (req: Request, res: Response) => {
+app.post('/api/auth/login', async (req: Request, res: Response) => {
   if (!JWT_SECRET || JWT_SECRET.length < 32) {
     return res.status(500).json({ error: 'JWT_SECRET is required and must be at least 32 characters.' });
   }
@@ -77,7 +71,7 @@ app.post('/auth/login', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/auth/me', async (req: Request, res: Response) => {
+app.get('/api/auth/me', async (req: Request, res: Response) => {
   const payload = getTokenPayload(req);
   if (!payload?.id) {
     return res.status(401).json({ error: 'Not authenticated' });
@@ -96,7 +90,7 @@ app.get('/auth/me', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/forums/categories', async (_req: Request, res: Response) => {
+app.get('/api/forums/categories', async (_req: Request, res: Response) => {
   try {
     const categories = await db.query<any>('SELECT * FROM forum_categories ORDER BY display_order ASC');
     const forums = await db.query<any>(`
@@ -128,7 +122,7 @@ app.get('/forums/categories', async (_req: Request, res: Response) => {
   }
 });
 
-app.get('/community/stats', async (_req: Request, res: Response) => {
+app.get('/api/community/stats', async (_req: Request, res: Response) => {
   try {
     const [users, threads, posts, servers] = await Promise.all([
       db.queryOne<any>('SELECT COUNT(*) as count FROM users'),
@@ -156,7 +150,7 @@ app.get('/community/stats', async (_req: Request, res: Response) => {
   }
 });
 
-app.get('/settings', async (req: Request, res: Response) => {
+app.get('/api/settings', async (req: Request, res: Response) => {
   try {
     const settings = await db.query<any>('SELECT * FROM site_settings');
     const dictionary = settings.reduce((acc: Record<string, unknown>, s: any) => {
@@ -179,7 +173,7 @@ app.get('/settings', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/servers', async (_req: Request, res: Response) => {
+app.get('/api/servers', async (_req: Request, res: Response) => {
   try {
     const servers = await db.query<any>(`
       SELECT id, name, ip, region, game, map, players_current, status
@@ -197,7 +191,7 @@ app.get('/servers', async (_req: Request, res: Response) => {
   }
 });
 
-app.use((_req: Request, res: Response) => {
+app.use('/api', (_req: Request, res: Response) => {
   res.status(404).json({ error: 'Not Found' });
 });
 
