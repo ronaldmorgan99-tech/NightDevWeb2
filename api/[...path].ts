@@ -3,8 +3,8 @@ import type { CookieOptions, Request, Response } from 'express';
 import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import db, { initDb } from '../src/lib/db';
-import { isPublicSetting } from '../src/lib/settingsAllowlist';
+import db, { initDb } from '../src/lib/db.js';
+import { isPublicSetting } from '../src/lib/settingsAllowlist.js';
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -42,7 +42,7 @@ function getTokenPayload(req: Request) {
   }
 }
 
-app.use('/api', async (_req, res, next) => {
+app.use(async (_req, res, next) => {
   try {
     await ensureDb();
     next();
@@ -51,7 +51,7 @@ app.use('/api', async (_req, res, next) => {
   }
 });
 
-app.post('/api/auth/login', async (req: Request, res: Response) => {
+const loginHandler = async (req: Request, res: Response) => {
   if (!JWT_SECRET || JWT_SECRET.length < 32) {
     return res.status(500).json({ error: 'JWT_SECRET is required and must be at least 32 characters.' });
   }
@@ -69,9 +69,10 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Login failed' });
   }
-});
+};
+app.post(['/api/auth/login', '/auth/login'], loginHandler);
 
-app.get('/api/auth/me', async (req: Request, res: Response) => {
+const meHandler = async (req: Request, res: Response) => {
   const payload = getTokenPayload(req);
   if (!payload?.id) {
     return res.status(401).json({ error: 'Not authenticated' });
@@ -88,9 +89,10 @@ app.get('/api/auth/me', async (req: Request, res: Response) => {
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to load user' });
   }
-});
+};
+app.get(['/api/auth/me', '/auth/me'], meHandler);
 
-app.get('/api/forums/categories', async (_req: Request, res: Response) => {
+const forumCategoriesHandler = async (_req: Request, res: Response) => {
   try {
     const categories = await db.query<any>('SELECT * FROM forum_categories ORDER BY display_order ASC');
     const forums = await db.query<any>(`
@@ -120,9 +122,10 @@ app.get('/api/forums/categories', async (_req: Request, res: Response) => {
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to load forums' });
   }
-});
+};
+app.get(['/api/forums/categories', '/forums/categories'], forumCategoriesHandler);
 
-app.get('/api/community/stats', async (_req: Request, res: Response) => {
+const communityStatsHandler = async (_req: Request, res: Response) => {
   try {
     const [users, threads, posts, servers] = await Promise.all([
       db.queryOne<any>('SELECT COUNT(*) as count FROM users'),
@@ -148,9 +151,10 @@ app.get('/api/community/stats', async (_req: Request, res: Response) => {
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to load community stats' });
   }
-});
+};
+app.get(['/api/community/stats', '/community/stats'], communityStatsHandler);
 
-app.get('/api/settings', async (req: Request, res: Response) => {
+const settingsHandler = async (req: Request, res: Response) => {
   try {
     const settings = await db.query<any>('SELECT * FROM site_settings');
     const dictionary = settings.reduce((acc: Record<string, unknown>, s: any) => {
@@ -171,9 +175,10 @@ app.get('/api/settings', async (req: Request, res: Response) => {
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to load settings' });
   }
-});
+};
+app.get(['/api/settings', '/settings'], settingsHandler);
 
-app.get('/api/servers', async (_req: Request, res: Response) => {
+const serversHandler = async (_req: Request, res: Response) => {
   try {
     const servers = await db.query<any>(`
       SELECT id, name, ip, region, game, map, players_current, status
@@ -189,9 +194,10 @@ app.get('/api/servers', async (_req: Request, res: Response) => {
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to load servers' });
   }
-});
+};
+app.get(['/api/servers', '/servers'], serversHandler);
 
-app.use('/api', (_req: Request, res: Response) => {
+app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: 'Not Found' });
 });
 
