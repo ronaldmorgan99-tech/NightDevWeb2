@@ -3,8 +3,8 @@ import type { CookieOptions, Request, Response } from 'express';
 import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import db, { initDb } from '../src/lib/db';
-import { isPublicSetting } from '../src/lib/settingsAllowlist';
+import db, { initDb } from '../src/lib/db.js';
+import { isPublicSetting } from '../src/lib/settingsAllowlist.js';
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
