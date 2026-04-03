@@ -13,7 +13,7 @@ export interface IDatabase {
 class SQLiteWrapper implements IDatabase {
   private db: any;
   constructor() {
-    const dbPath = process.env.DATABASE_URL || 'nightrespawn.db';
+    const dbPath = resolveSqlitePath();
     this.db = new Database(dbPath);
     this.db.pragma('foreign_keys = ON');
   }
@@ -53,11 +53,22 @@ class MySQLWrapper implements IDatabase {
 // Initialize the correct database
 let db: IDatabase;
 
+function resolveSqlitePath() {
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+
+  // Vercel serverless filesystem is read-only except /tmp.
+  if (process.env.VERCEL === '1') {
+    return path.join('/tmp', 'nightrespawn.db');
+  }
+
+  return 'nightrespawn.db';
+}
+
 if (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('://')) {
   console.log('Connecting to MySQL Database...');
   db = new MySQLWrapper(process.env.DATABASE_URL);
 } else {
-  const dbPath = process.env.DATABASE_URL || 'nightrespawn.db';
+  const dbPath = resolveSqlitePath();
   console.log(`Using Local SQLite Database at ${dbPath}...`);
   db = new SQLiteWrapper();
 }
