@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db, { initDb } from '../src/lib/db.js';
+import { seedDb } from '../src/lib/seed.js';
 import { isPublicSetting } from '../src/lib/settingsAllowlist.js';
 
 const app = express();
@@ -35,10 +36,12 @@ const AUTH_COOKIE_OPTIONS: CookieOptions = {
 let bootPromise: Promise<void> | null = null;
 async function ensureDb() {
   if (!bootPromise) {
-    bootPromise = initDb().catch((err) => {
-      bootPromise = null;
-      throw err;
-    });
+    bootPromise = initDb()
+      .then(() => seedDb())
+      .catch((err) => {
+        bootPromise = null;
+        throw err;
+      });
   }
   await bootPromise;
 }
