@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db, { initDb } from '../src/lib/db.js';
+import { seedDb } from '../src/lib/seed.js';
 import { isPublicSetting } from '../src/lib/settingsAllowlist.js';
 
 const app = express();
@@ -49,6 +50,7 @@ async function ensureDb() {
   if (!bootPromise) {
     bootPromise = initDb()
       .then(() => ensureDefaultAuthUsers())
+      .then(() => seedDb())
       .catch((err) => {
         bootPromise = null;
         throw err;
