@@ -60,6 +60,10 @@
 
 ## Decisions Log
 
+**2026-04-07 (Latest)**: Stabilized Vercel deployment behavior by:
+- adding `handle: filesystem` before SPA fallback in `vercel.json` so built assets are not rewritten to HTML,
+- replacing full `seedDb()` execution in serverless API bootstrap with idempotent default-auth-user initialization (`admin`/`member`) after `initDb()` in `api/[...path].ts`.
+
 **2026-04-02 (Latest)**: Added configurable `VITE_API_BASE_URL` support in `src/lib/api.ts` for split frontend/backend deployments (e.g., Vercel frontend + external API). Also added explicit 404 guidance for `/api/*` failures to surface deployment misconfiguration clearly.
 
 **2026-04-02**: Fixed infinite fetch recursion by preserving native `fetch` and avoiding self-calls after monkey-patching `window.fetch` in `src/main.tsx`.

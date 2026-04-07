@@ -30,9 +30,9 @@
 - **Definition of Done**: All dev environments work without websocket/file loading errors
 
 ### Vercel Split-Deployment API Routing
-- **Status**: ⚠️ In progress
-- **Details**: Frontend now supports `VITE_API_BASE_URL`, but production still requires an actual API host (or serverless API routes) for `/api/*`.
-- **Definition of Done**: Vercel project has working API origin configured, `/api/settings` and `/api/auth/login` return 200/401 (not 404) in production.
+- **Status**: ✅ Core fixes implemented
+- **Details**: Added Vercel filesystem-first routing for static assets and stabilized serverless API bootstrap with idempotent default auth-user creation.
+- **Definition of Done**: Maintain green deploys where `/api/settings`, `/api/servers`, and `/api/auth/login` return expected responses (200/401, not 404/500) after redeploy.
 
 ### Integration Testing
 - **Status**: ✅ Implemented

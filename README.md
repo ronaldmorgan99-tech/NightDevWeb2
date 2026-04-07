@@ -53,3 +53,26 @@ Together, they keep local UI state and remote API data organized, performant, an
    - `VITE_API_BASE_URL`: set this when frontend and API are hosted on different domains (example: `https://api.yourdomain.com`). If omitted, frontend calls relative `/api/*` paths on the current origin.
 5. Run the app:
    `npm run dev`
+
+## Vercel Deployment Notes
+
+If you deploy this repo to Vercel with API routes enabled, make sure the following are configured:
+
+- `JWT_SECRET` (required, minimum 32 characters)
+- `NODE_ENV=production`
+- `DATABASE_URL` (recommended for persistent production data; if omitted on Vercel, SQLite falls back to `/tmp` and data is ephemeral)
+
+### Expected default logins (fresh database)
+
+- `admin` / `password`
+- `member` / `password`
+
+These users are ensured at API bootstrap for serverless deployments.
+
+### Common production errors
+
+- **`Failed to load module script ... MIME type text/html`**  
+  Usually means static assets were rewritten to `index.html`. Confirm Vercel routes preserve filesystem assets before SPA fallback.
+
+- **`/api/* 500` on first load/login**  
+  Usually indicates missing/invalid environment variables (especially `JWT_SECRET`) or database initialization failure in the serverless runtime.
