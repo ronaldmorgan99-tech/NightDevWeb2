@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
 import fs from 'fs';
+import path from 'path';
 
 const PORT = 4000;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -51,7 +52,7 @@ async function request(path, options = {}) {
 function spawnServer() {
   return new Promise((resolve, reject) => {
     const proc = spawn('npx', ['tsx', 'server.ts'], {
-      env: { ...process.env, NODE_ENV: 'development', JWT_SECRET, PORT: String(PORT), DATABASE_URL: './tmp/test.db' },
+      env: { ...process.env, NODE_ENV: 'development', JWT_SECRET, PORT: String(PORT), DATABASE_URL: resolveTestDbPath() },
       stdio: ['ignore', 'pipe', 'pipe']
     });
 
@@ -73,14 +74,18 @@ function spawnServer() {
   });
 }
 
-async function runTests() {
-  // Ensure tmp directory exists
-  if (!fs.existsSync('tmp')) {
-    fs.mkdirSync('tmp');
-    console.log('📁 Created tmp directory for test database');
-  }
+function resolveTestDbPath() {
+  return process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || path.join('tmp', 'test.db');
+}
 
-  const testDbPath = './tmp/test.db';
+async function runTests() {
+  const testDbPath = resolveTestDbPath();
+  const testDbDir = path.dirname(testDbPath);
+
+  if (!fs.existsSync(testDbDir)) {
+    fs.mkdirSync(testDbDir, { recursive: true });
+    console.log(`📁 Created ${testDbDir} directory for test database`);
+  }
   if (fs.existsSync(testDbPath)) {
     fs.unlinkSync(testDbPath);
     console.log('🧹 Removed existing test database for clean regression run');
