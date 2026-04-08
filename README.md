@@ -176,3 +176,12 @@ The repository includes AI collaboration documents that help track context and p
 - `skills/release-readiness/SKILL.md` — reusable workflow guidance for release-readiness checks.
 - `docs/ai/MEMORY.md` — persistent project memory and key context for future sessions.
 - `docs/ai/BACKLOG.md` — prioritized backlog items and follow-up tasks.
+
+### Contributor checklist (release/deploy behavior changes)
+
+When touching release or deployment behavior, update these files in the same PR:
+
+- [ ] Update `docs/ai/MEMORY.md` decisions/invariants and set `Last reviewed: YYYY-MM-DD` to today.
+- [ ] Update `docs/ai/BACKLOG.md` (`Now`/`Next` priorities) and set `Last reviewed: YYYY-MM-DD` to today.
+- [ ] If a `Now` item has been complete for more than 30 days, move it to `docs/ai/archive/BACKLOG_ARCHIVE.md`.
+- [ ] If an old memory/backlog entry is archived, include `Archived on: YYYY-MM-DD` in the archive entry.
