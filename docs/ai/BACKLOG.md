@@ -31,7 +31,7 @@
 
 ### Vercel Split-Deployment API Routing
 - **Status**: ⚠️ In progress
-- **Details**: Frontend now supports `VITE_API_BASE_URL`, but production still requires an actual API host (or serverless API routes) for `/api/*`.
+- **Details**: Frontend supports `VITE_API_BASE_URL` for split deployment. For same-origin Vercel API routes, keep `VITE_API_BASE_URL` unset to avoid preview-to-production CORS failures. Serverless runtime also requires explicit emitted `.js` import extensions in Node ESM paths.
 - **Definition of Done**: Vercel project has working API origin configured, `/api/settings` and `/api/auth/login` return 200/401 (not 404) in production.
 
 ### Integration Testing
