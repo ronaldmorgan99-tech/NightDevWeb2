@@ -10,14 +10,14 @@
 - **Details**: Individual Suspense boundaries per route, smart HMR detection
 
 ### Studio/Veo Shipping Decision
-- **Status**: Pending product decision
-- **Details**: VITE_ENABLE_STUDIO currently false, backend ready with GEMINI_API_KEY dependency
-- **Definition of Done**: Decision made, if shipping: provision key + docs; if not: remove feature flags
+- **Status**: ✅ Decided (Not shipping in April 2026 cycle)
+- **Details**: `/studio` now redirects to `/` so users do not hit dead-end routes. Discoverability remains disabled.
+- **Definition of Done**: Decision documented in README + admin operations docs, with ownership and re-open criteria.
 
 ### Production Media Provider Setup
-- **Status**: Backend ready, needs env provisioning
-- **Details**: GEMINI_API_KEY required for /api/media/ endpoints
-- **Definition of Done**: Key configured in production, 503 errors eliminated
+- **Status**: Deferred (dependent on Studio relaunch)
+- **Details**: `GEMINI_API_KEY` provisioning is intentionally postponed until media routes are production-ready.
+- **Definition of Done**: Provision key only when `/api/media/animate` and `/api/media/poll` are implemented, validated, and monitored.
 
 ### Bundle Optimization & Code Splitting
 - **Status**: ✅ Implemented
