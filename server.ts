@@ -30,6 +30,15 @@ const CLIENT_ORIGINS = String(process.env.CLIENT_ORIGIN || '')
   .filter(Boolean);
 const HAS_SPLIT_ORIGIN_DEPLOYMENT = CLIENT_ORIGINS.length > 0;
 const ERROR_TRACKING_WEBHOOK = process.env.ERROR_TRACKING_WEBHOOK || '';
+const parseEnvNumber = (value: string | undefined, fallback: number) => {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+const AUTH_RATE_LIMIT_CREDENTIAL_WINDOW_MS = parseEnvNumber(process.env.AUTH_RATE_LIMIT_CREDENTIAL_WINDOW_MS, 10 * 60 * 1000);
+const AUTH_RATE_LIMIT_CREDENTIAL_MAX = parseEnvNumber(process.env.AUTH_RATE_LIMIT_CREDENTIAL_MAX, 8);
+const AUTH_RATE_LIMIT_SESSION_WINDOW_MS = parseEnvNumber(process.env.AUTH_RATE_LIMIT_SESSION_WINDOW_MS, 5 * 60 * 1000);
+const AUTH_RATE_LIMIT_SESSION_MAX = parseEnvNumber(process.env.AUTH_RATE_LIMIT_SESSION_MAX, 30);
 
 const AUTH_COOKIE_OPTIONS: CookieOptions = {
   httpOnly: true,
@@ -76,6 +85,43 @@ const adminSettingsUpdateSchema = z.union([
   z.array(adminSettingsItemSchema),
   z.object({ settings: z.array(adminSettingsItemSchema) })
 ]);
+
+const threadCreateSchema = z.object({
+  forum_id: z.coerce.number().int().positive(),
+  title: z.string().trim().min(3).max(200),
+  content: z.string().trim().min(1).max(10_000)
+});
+
+const postCreateSchema = z.object({
+  thread_id: z.coerce.number().int().positive(),
+  content: z.string().trim().min(1).max(10_000)
+});
+
+const ticketMessageSchema = z.object({
+  message: z.string().trim().min(1).max(5_000)
+});
+
+const directMessageSchema = z.object({
+  receiver_id: z.coerce.number().int().positive(),
+  content: z.string().trim().min(1).max(5_000)
+});
+
+const forumCategoryCreateSchema = z.object({
+  name: z.string().trim().min(1).max(100)
+});
+
+const forumCategoryUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  display_order: z.coerce.number().int().min(0).optional().default(0)
+});
+
+const forumCreateSchema = z.object({
+  category_id: z.coerce.number().int().positive(),
+  name: z.string().trim().min(1).max(150),
+  description: z.string().trim().max(1000).optional().default(''),
+  min_role_to_thread: z.enum(['member', 'moderator', 'admin']).optional().default('member'),
+  display_order: z.coerce.number().int().min(0).optional().default(0)
+});
 
 function validateEnv() {
   if (!JWT_SECRET || JWT_SECRET.length < 32) {
@@ -351,9 +397,10 @@ async function start() {
   const app = express();
   app.set('trust proxy', 1);
   const server = http.createServer(app);
+  const socketCorsOrigins = CLIENT_ORIGINS.length > 0 ? CLIENT_ORIGINS : IS_PRODUCTION ? false : true;
   const io = new Server(server, {
     cors: {
-      origin: CLIENT_ORIGINS.length > 0 ? CLIENT_ORIGINS : false,
+      origin: socketCorsOrigins,
       credentials: HAS_SPLIT_ORIGIN_DEPLOYMENT,
       methods: ['GET', 'POST', 'OPTIONS', 'HEAD', 'PUT', 'DELETE', 'PATCH']
     }
@@ -379,6 +426,43 @@ async function start() {
     if (req.method === 'OPTIONS') {
       return res.sendStatus(204);
     }
+    next();
+  });
+
+  const validateBody = <T>(schema: z.ZodSchema<T>) => (
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) => {
+    const parsedPayload = schema.safeParse(req.body);
+    if (!parsedPayload.success) {
+      return res.status(400).json({ error: parsedPayload.error.issues[0]?.message || 'Invalid request payload' });
+    }
+    req.body = parsedPayload.data;
+    next();
+  };
+
+  const createRateLimit = (windowMs: number, maxRequests: number, errorMessage: string) => {
+    const requests = new Map<string, number[]>();
+    return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+      const now = Date.now();
+      const key = req.ip || req.socket.remoteAddress || 'unknown';
+      const timestamps = (requests.get(key) || []).filter((timestamp) => now - timestamp < windowMs);
+      timestamps.push(now);
+      requests.set(key, timestamps);
+
+      if (timestamps.length > maxRequests) {
+        return res.status(429).json({ error: errorMessage });
+      }
+      next();
+    };
+  };
+
+  app.use((req, res, next) => {
+    const shouldLog = req.path.startsWith('/api/auth')
+      || req.path.startsWith('/api/settings')
+      || req.path.startsWith('/api/admin/settings')
+      || req.path.startsWith('/api/media');
 
     next();
   });
@@ -437,24 +521,19 @@ async function start() {
     next();
   });
 
-  const createRateLimit = (windowMs: number, maxRequests: number) => {
-    const requests = new Map<string, number[]>();
-    return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-      const now = Date.now();
-      const key = req.ip || req.socket.remoteAddress || 'unknown';
-      const timestamps = (requests.get(key) || []).filter((timestamp) => now - timestamp < windowMs);
-      timestamps.push(now);
-      requests.set(key, timestamps);
-
-      if (timestamps.length > maxRequests) {
-        return res.status(429).json({ error: 'Too many authentication attempts. Please try again later.' });
-      }
-      next();
-    };
-  };
-
-  const authRateLimit = createRateLimit(10 * 60 * 1000, 20);
-  app.use(['/api/auth/login', '/api/auth/register'], authRateLimit);
+  const strictCredentialRateLimit = createRateLimit(
+    AUTH_RATE_LIMIT_CREDENTIAL_WINDOW_MS,
+    AUTH_RATE_LIMIT_CREDENTIAL_MAX,
+    'Too many credential attempts. Please try again in 10 minutes.'
+  );
+  const authSessionRateLimit = createRateLimit(
+    AUTH_RATE_LIMIT_SESSION_WINDOW_MS,
+    AUTH_RATE_LIMIT_SESSION_MAX,
+    'Too many authentication requests. Please slow down.'
+  );
+  app.use('/api/auth/login', strictCredentialRateLimit);
+  app.use('/api/auth/register', strictCredentialRateLimit);
+  app.use(['/api/auth/me', '/api/auth/logout'], authSessionRateLimit);
 
   const csrfProtection = csurf({
     cookie: {
@@ -783,6 +862,8 @@ async function start() {
       return res.status(400).json({ error: 'A valid email address is required.' });
     }
     const { username, email, password } = parsedPayload.data;
+  app.post('/api/auth/register', validateBody(authRegisterSchema), async (req, res) => {
+    const { username, email, password } = req.body;
 
     try {
       const hashedPassword = bcrypt.hashSync(password, 10);
@@ -828,6 +909,8 @@ async function start() {
       return res.status(400).json({ error: 'Invalid login payload' });
     }
     const { username, password } = parsedPayload.data;
+  app.post('/api/auth/login', validateBody(authLoginSchema), async (req, res) => {
+    const { username, password } = req.body;
     try {
       const user = await db.queryOne<any>('SELECT * FROM users WHERE username = ?', [username]);
       if (!user || !bcrypt.compareSync(password, user.password)) {
@@ -856,12 +939,8 @@ async function start() {
     }
   });
 
-  app.patch('/api/auth/me', authenticate, async (req: any, res) => {
-    const parsedPayload = profileUpdateSchema.safeParse(req.body);
-    if (!parsedPayload.success) {
-      return res.status(400).json({ error: parsedPayload.error.issues[0]?.message || 'Invalid profile payload' });
-    }
-    const { avatar_url, banner_url, bio, username, email, currentPassword, newPassword } = parsedPayload.data;
+  app.patch('/api/auth/me', authenticate, validateBody(profileUpdateSchema), async (req: any, res) => {
+    const { avatar_url, banner_url, bio, username, email, currentPassword, newPassword } = req.body;
     try {
       const updates: string[] = [];
       const params: any[] = [];
@@ -1230,7 +1309,7 @@ async function start() {
     }
   });
 
-  app.post('/api/threads', authenticate, async (req: any, res) => {
+  app.post('/api/threads', authenticate, validateBody(threadCreateSchema), async (req: any, res) => {
     const { forum_id, title, content } = req.body;
     try {
       // Fetch forum to check min_role_to_thread permission
@@ -1298,7 +1377,7 @@ async function start() {
     }
   });
 
-  app.post('/api/posts', authenticate, async (req: any, res) => {
+  app.post('/api/posts', authenticate, validateBody(postCreateSchema), async (req: any, res) => {
     const { thread_id, content } = req.body;
     try {
       // Fetch thread and its forum to check permissions
@@ -1896,7 +1975,7 @@ async function start() {
     }
   });
 
-  app.post('/api/tickets/:id/messages', authenticate, async (req: any, res) => {
+  app.post('/api/tickets/:id/messages', authenticate, validateBody(ticketMessageSchema), async (req: any, res) => {
     const { message } = req.body;
     try {
       const ticket = await db.queryOne<any>('SELECT * FROM tickets WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
@@ -1996,13 +2075,8 @@ async function start() {
     }
   });
 
-  app.post('/api/admin/settings', authenticate, isAdmin, async (req, res) => {
-    const parsedPayload = adminSettingsUpdateSchema.safeParse(req.body);
-    if (!parsedPayload.success) {
-      return res.status(400).json({ error: parsedPayload.error.issues[0]?.message || 'Invalid settings payload' });
-    }
-
-    const settings = Array.isArray(parsedPayload.data) ? parsedPayload.data : parsedPayload.data.settings;
+  app.post('/api/admin/settings', authenticate, isAdmin, validateBody(adminSettingsUpdateSchema), async (req, res) => {
+    const settings = Array.isArray(req.body) ? req.body : req.body.settings;
     try {
       for (const setting of settings) {
         await db.execute(
@@ -2092,7 +2166,7 @@ async function start() {
     }
   });
 
-  app.post('/api/admin/categories', authenticate, isAdmin, async (req, res) => {
+  app.post('/api/admin/categories', authenticate, isAdmin, validateBody(forumCategoryCreateSchema), async (req, res) => {
     const { name } = req.body;
     try {
       await db.execute('INSERT INTO forum_categories (name) VALUES (?)', [name]);
@@ -2102,7 +2176,7 @@ async function start() {
     }
   });
 
-  app.patch('/api/admin/categories/:id', authenticate, isAdmin, async (req, res) => {
+  app.patch('/api/admin/categories/:id', authenticate, isAdmin, validateBody(forumCategoryUpdateSchema), async (req, res) => {
     const { name, display_order } = req.body;
     try {
       await db.execute('UPDATE forum_categories SET name = ?, display_order = ? WHERE id = ?', [name, display_order || 0, req.params.id]);
@@ -2121,7 +2195,7 @@ async function start() {
     }
   });
 
-  app.post('/api/admin/forums', authenticate, isAdmin, async (req, res) => {
+  app.post('/api/admin/forums', authenticate, isAdmin, validateBody(forumCreateSchema), async (req, res) => {
     const { category_id, name, description, min_role_to_thread, display_order } = req.body;
     try {
       await db.execute(
@@ -2134,7 +2208,7 @@ async function start() {
     }
   });
 
-  app.patch('/api/admin/forums/:id', authenticate, isAdmin, async (req, res) => {
+  app.patch('/api/admin/forums/:id', authenticate, isAdmin, validateBody(forumCreateSchema), async (req, res) => {
     const { category_id, name, description, min_role_to_thread, display_order } = req.body;
     try {
       await db.execute(
@@ -2231,7 +2305,7 @@ async function start() {
     }
   });
 
-  app.post('/api/admin/tickets/:id/messages', authenticate, isAdmin, async (req: any, res) => {
+  app.post('/api/admin/tickets/:id/messages', authenticate, isAdmin, validateBody(ticketMessageSchema), async (req: any, res) => {
     const { message } = req.body;
     try {
       await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [req.params.id, req.user.id, message]);
@@ -2298,7 +2372,7 @@ async function start() {
     }
   });
 
-  app.post('/api/messages', authenticate, async (req: any, res) => {
+  app.post('/api/messages', authenticate, validateBody(directMessageSchema), async (req: any, res) => {
     const { receiver_id, content } = req.body;
     try {
       const result = await db.execute('INSERT INTO messages (sender_id, receiver_id, content) VALUES (?, ?, ?)', [req.user.id, receiver_id, content]);
