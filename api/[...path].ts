@@ -5,6 +5,13 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db, { initDb } from '../src/lib/db.js';
 import { seedDb } from '../src/lib/seed.js';
+import {
+  capturePayPalOrder,
+  confirmStripePayment,
+  createPayPalOrder,
+  createStripePaymentIntent,
+  paymentProviders
+} from '../src/lib/payments.js';
 import { isPublicSetting } from '../src/lib/settingsAllowlist.js';
 
 const app = express();
@@ -214,6 +221,196 @@ const wealthLeaderboardHandler = async (_req: Request, res: Response) => {
   }
 };
 app.get(['/api/leaderboards/wealth', '/leaderboards/wealth'], wealthLeaderboardHandler);
+
+const storeProductsHandler = async (_req: Request, res: Response) => {
+  try {
+    const products = await db.query<any>('SELECT * FROM products');
+    return res.json(products);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load products' });
+  }
+};
+app.get(['/api/store/products', '/store/products'], storeProductsHandler);
+
+const cartListHandler = async (req: Request, res: Response) => {
+  try {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+
+    const cart = await db.queryOne<any>('SELECT id FROM carts WHERE user_id = ?', [user.id]);
+    if (!cart) {
+      return res.json({ items: [], total: 0, count: 0 });
+    }
+
+    const items = await db.query<any>(
+      `
+      SELECT ci.product_id as productId, ci.quantity, ci.price, p.name
+      FROM cart_items ci
+      JOIN products p ON ci.product_id = p.id
+      WHERE ci.cart_id = ?
+      `,
+      [cart.id]
+    );
+    const total = items.reduce((sum: number, item: any) => sum + Number(item.price) * Number(item.quantity), 0);
+    return res.json({ items, total, count: items.length });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load cart' });
+  }
+};
+app.get(['/api/cart', '/cart'], cartListHandler);
+
+const cartAddHandler = async (req: Request, res: Response) => {
+  try {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+
+    const { productId, quantity } = req.body || {};
+    if (!productId || !quantity || quantity < 1) {
+      return res.status(400).json({ error: 'Invalid product ID or quantity' });
+    }
+
+    const product = await db.queryOne<any>('SELECT id, name, price FROM products WHERE id = ?', [productId]);
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    let cart = await db.queryOne<any>('SELECT id FROM carts WHERE user_id = ?', [user.id]);
+    if (!cart) {
+      const cartResult = await db.execute('INSERT INTO carts (user_id) VALUES (?)', [user.id]);
+      cart = { id: cartResult.lastInsertRowid || cartResult.insertId };
+    }
+
+    const existingItem = await db.queryOne<any>(
+      'SELECT id FROM cart_items WHERE cart_id = ? AND product_id = ?',
+      [cart.id, productId]
+    );
+
+    if (existingItem) {
+      await db.execute('UPDATE cart_items SET quantity = quantity + ?, price = ? WHERE id = ?', [quantity, product.price, existingItem.id]);
+    } else {
+      await db.execute('INSERT INTO cart_items (cart_id, product_id, quantity, price) VALUES (?, ?, ?, ?)', [cart.id, productId, quantity, product.price]);
+    }
+
+    await db.execute('UPDATE carts SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [cart.id]);
+    const cartSize = await db.queryOne<any>('SELECT COUNT(*) as count FROM cart_items WHERE cart_id = ?', [cart.id]);
+    return res.json({ success: true, cartSize: Number(cartSize?.count || 0) });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to update cart' });
+  }
+};
+app.post(['/api/cart', '/cart'], cartAddHandler);
+
+const cartDeleteHandler = async (req: Request, res: Response) => {
+  try {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+
+    const productId = Number(req.params.productId);
+    if (!productId) {
+      return res.status(400).json({ error: 'Invalid product ID' });
+    }
+
+    const cart = await db.queryOne<any>('SELECT id FROM carts WHERE user_id = ?', [user.id]);
+    if (!cart) {
+      return res.status(404).json({ error: 'Cart not found' });
+    }
+
+    const item = await db.queryOne<any>('SELECT id FROM cart_items WHERE cart_id = ? AND product_id = ?', [cart.id, productId]);
+    if (!item) {
+      return res.status(404).json({ error: 'Item not in cart' });
+    }
+
+    await db.execute('DELETE FROM cart_items WHERE id = ?', [item.id]);
+    await db.execute('UPDATE carts SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [cart.id]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to remove cart item' });
+  }
+};
+app.delete(['/api/cart/:productId', '/cart/:productId'], cartDeleteHandler);
+
+const paymentProvidersHandler = (_req: Request, res: Response) => {
+  return res.json({ providers: paymentProviders });
+};
+app.get(['/api/payments/providers', '/payments/providers'], paymentProvidersHandler);
+
+const stripeCreateIntentHandler = async (req: Request, res: Response) => {
+  try {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+
+    const { amount, currency = 'usd' } = req.body || {};
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: 'Valid amount is required' });
+    }
+
+    const paymentIntent = await createStripePaymentIntent(Number(amount), String(currency));
+    return res.json({
+      paymentIntentId: paymentIntent.id,
+      clientSecret: paymentIntent.client_secret,
+      amount: paymentIntent.amount,
+      currency: paymentIntent.currency
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to create Stripe payment intent' });
+  }
+};
+app.post(['/api/payments/stripe/create-intent', '/payments/stripe/create-intent'], stripeCreateIntentHandler);
+
+const stripeConfirmHandler = async (req: Request, res: Response) => {
+  try {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+
+    const { paymentIntentId } = req.body || {};
+    if (!paymentIntentId) {
+      return res.status(400).json({ error: 'Payment intent ID is required' });
+    }
+
+    const success = await confirmStripePayment(String(paymentIntentId));
+    return res.json({ success, status: success ? 'succeeded' : 'failed' });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to confirm Stripe payment' });
+  }
+};
+app.post(['/api/payments/stripe/confirm/:orderId', '/payments/stripe/confirm/:orderId'], stripeConfirmHandler);
+
+const paypalCreateOrderHandler = async (req: Request, res: Response) => {
+  try {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+
+    const { amount, currency = 'USD' } = req.body || {};
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: 'Valid amount is required' });
+    }
+
+    const order = await createPayPalOrder(Number(amount), String(currency));
+    const approvalUrl = order.links.find((link) => link.rel === 'approve')?.href;
+    return res.json({ orderId: order.id, status: order.status, approvalUrl });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to create PayPal order' });
+  }
+};
+app.post(['/api/payments/paypal/create-order', '/payments/paypal/create-order'], paypalCreateOrderHandler);
+
+const paypalCaptureHandler = async (req: Request, res: Response) => {
+  try {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+
+    const { paypalOrderId } = req.body || {};
+    if (!paypalOrderId) {
+      return res.status(400).json({ error: 'PayPal order ID is required' });
+    }
+
+    const success = await capturePayPalOrder(String(paypalOrderId));
+    return res.json({ success, status: success ? 'completed' : 'failed' });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to capture PayPal order' });
+  }
+};
+app.post(['/api/payments/paypal/capture/:orderId', '/payments/paypal/capture/:orderId'], paypalCaptureHandler);
 
 const forumCategoriesHandler = async (_req: Request, res: Response) => {
   try {
