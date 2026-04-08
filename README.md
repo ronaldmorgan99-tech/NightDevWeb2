@@ -56,6 +56,26 @@ Together, they keep local UI state and remote API data organized, performant, an
 
 ## Vercel Deployment Notes
 
+If you deploy this repo to Vercel with API routes enabled, make sure the following are configured:
+
+- `JWT_SECRET` (required, minimum 32 characters)
+- `NODE_ENV=production`
+- `DATABASE_URL` (recommended for persistent production data; if omitted on Vercel, SQLite falls back to `/tmp` and data is ephemeral)
+
+### Expected default logins (fresh database)
+
+- `admin` / `password`
+- `member` / `password`
+
+These users are ensured at API bootstrap for serverless deployments.
+
+### Common production errors
+
+- **`Failed to load module script ... MIME type text/html`**  
+  Usually means static assets were rewritten to `index.html`. Confirm Vercel routes preserve filesystem assets before SPA fallback.
+
+- **`/api/* 500` on first load/login**  
+  Usually indicates missing/invalid environment variables (especially `JWT_SECRET`) or database initialization failure in the serverless runtime.
 - If frontend and API are deployed on the same Vercel project/domain, leave `VITE_API_BASE_URL` unset so the client uses relative `/api/*` requests and avoids cross-origin CORS issues.
 - Set `VITE_API_BASE_URL` only when the frontend and backend are hosted on different domains.
 - For Node ESM runtime compatibility in Vercel serverless functions, local runtime imports must include `.js` file extensions after TypeScript emit (for example `./db.js`).
