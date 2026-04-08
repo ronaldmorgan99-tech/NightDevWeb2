@@ -24,7 +24,7 @@ Last reviewed: 2026-04-08
 - `/profile/:id` - ProfilePage (user profiles)
 - `/store` - StorePage (premium features)
 - `/admin/*` - AdminLayout with various admin pages
-- `/studio` - Not shipped in April 2026 cycle; route redirects to `/` to avoid dead-end UX
+- `/studio` - Controlled route: enabled only when `VITE_ENABLE_STUDIO=true`, otherwise remains non-discoverable
 
 ### Server Structure (server.ts)
 - Express app with SQLite database
@@ -53,9 +53,10 @@ Last reviewed: 2026-04-08
 - Secure webhook handling
 
 ### Media Generation
-- Deferred for this release cycle
-- Do not provision GEMINI_API_KEY in production until Studio relaunch checklist is complete
-- Relaunch checklist includes validated `/api/media/animate` + `/api/media/poll` and provider outage fallback UX
+- `/api/media/animate` and `/api/media/poll` are implemented in the serverless API surface.
+- Guardrails in place: per-user animation quota, minimum poll interval, poll budget per operation, operation TTL pruning.
+- Monitoring in place via `/api/admin/observability/metrics` with latency + provider outage/quota counters.
+- Keep Studio discoverability gated (`VITE_ENABLE_STUDIO`) until go/no-go owners sign off.
 
 ### Real-time Features
 - Socket.IO with cookie-based auth parsing
@@ -80,7 +81,7 @@ Last reviewed: 2026-04-08
 - adding `handle: filesystem` before SPA fallback in `vercel.json` so built assets are not rewritten to HTML,
 - replacing full `seedDb()` execution in serverless API bootstrap with idempotent default-auth-user initialization (`admin`/`member`) after `initDb()` in `api/[...path].ts`.
 **2026-04-08 (Latest)**: Fixed Vercel function runtime crash by making `src/lib/seed.ts` import `./db.js` (Node ESM requires explicit file extensions at runtime after TypeScript emit). Added deployment note to keep `VITE_API_BASE_URL` unset when frontend/API share the same Vercel origin to avoid preview CORS failures.
-**2026-04-08 (Latest)**: Product + engineering decided **not** to ship `/studio` in this cycle. Route now redirects to `/` and docs capture operational ownership and relaunch criteria.
+**2026-04-08 (Latest)**: Product + engineering introduced backend media endpoints and Studio outage-aware UX, but retained controlled discoverability (`VITE_ENABLE_STUDIO`) pending go/no-go sign-off from Platform Engineering and Admin Operations.
 
 **2026-04-02 (Latest)**: Added configurable `VITE_API_BASE_URL` support in `src/lib/api.ts` for split frontend/backend deployments (e.g., Vercel frontend + external API). Also added explicit 404 guidance for `/api/*` failures to surface deployment misconfiguration clearly.
 

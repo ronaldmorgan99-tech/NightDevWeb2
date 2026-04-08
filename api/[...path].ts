@@ -3,6 +3,7 @@ import type { CookieOptions, Request, Response } from 'express';
 import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { GoogleGenAI, type GenerateVideosOperation } from '@google/genai';
 import { z } from 'zod';
 import db, { initDb } from '../src/lib/db.js';
 import { seedDb } from '../src/lib/seed.js';
@@ -33,6 +34,12 @@ app.use((req, _res, next) => {
 const JWT_SECRET = process.env.JWT_SECRET || '';
 const AUTH_COOKIE_NAME = 'token';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const MEDIA_OPERATION_TTL_MS = 30 * 60 * 1000;
+const MEDIA_MODEL = 'veo-2.0-generate-001';
+const MEDIA_MAX_ANIMATIONS_PER_USER_PER_HOUR = 5;
+const MEDIA_MIN_POLL_INTERVAL_MS = 5_000;
+const MEDIA_MAX_POLLS_PER_OPERATION = 120;
+const dataUriRegex = /^data:(?<mime>[^;]+);base64,(?<data>.+)$/;
 const CLIENT_ORIGINS = String(process.env.CLIENT_ORIGIN || '')
   .split(',')
   .map((origin) => origin.trim())
@@ -61,6 +68,73 @@ const authLoginSchema = z.object({
 });
 
 let bootPromise: Promise<void> | null = null;
+const mediaClient = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
+
+type MediaOperationStatus = 'in_progress' | 'done' | 'error';
+type MediaOperationRecord = {
+  ownerId: number;
+  createdAt: number;
+  expiresAt: number;
+  status: MediaOperationStatus;
+  providerOperation: GenerateVideosOperation;
+  uri?: string;
+  error?: string;
+  lastPolledAt?: number;
+  pollCount: number;
+};
+
+type MediaQuotaRecord = {
+  windowStartedAt: number;
+  requestCount: number;
+};
+
+type LatencyMetrics = {
+  count: number;
+  totalMs: number;
+  minMs: number;
+  maxMs: number;
+};
+
+const observabilityMetrics = {
+  media: {
+    '/api/media/animate': { count: 0, totalMs: 0, minMs: Number.POSITIVE_INFINITY, maxMs: 0 } as LatencyMetrics,
+    '/api/media/poll': { count: 0, totalMs: 0, minMs: Number.POSITIVE_INFINITY, maxMs: 0 } as LatencyMetrics
+  },
+  mediaOutages: {
+    providerUnavailable: 0,
+    providerFailures: 0,
+    quotaRejected: 0,
+    pollRateLimited: 0
+  }
+};
+
+const mediaOperations = new Map<string, MediaOperationRecord>();
+const mediaQuotas = new Map<number, MediaQuotaRecord>();
+
+const recordLatency = (metric: LatencyMetrics, durationMs: number) => {
+  metric.count += 1;
+  metric.totalMs += durationMs;
+  metric.minMs = Math.min(metric.minMs, durationMs);
+  metric.maxMs = Math.max(metric.maxMs, durationMs);
+};
+
+const summarizeLatency = (metric: LatencyMetrics) => ({
+  count: metric.count,
+  avgMs: metric.count > 0 ? Number((metric.totalMs / metric.count).toFixed(2)) : 0,
+  minMs: metric.count > 0 ? Number(metric.minMs.toFixed(2)) : 0,
+  maxMs: metric.count > 0 ? Number(metric.maxMs.toFixed(2)) : 0
+});
+
+const pruneExpiredMediaOperations = () => {
+  const now = Date.now();
+  for (const [operationName, operation] of mediaOperations.entries()) {
+    if (operation.expiresAt <= now) {
+      mediaOperations.delete(operationName);
+    }
+  }
+};
+
+setInterval(pruneExpiredMediaOperations, 60_000).unref();
 
 async function ensureDefaultAuthUsers() {
   const hashedPassword = bcrypt.hashSync('password', 10);
@@ -593,6 +667,232 @@ const serversHandler = async (_req: Request, res: Response) => {
   }
 };
 app.get(['/api/servers', '/servers'], serversHandler);
+
+const mediaAnimateHandler = async (req: Request, res: Response) => {
+  const startedAt = Date.now();
+  try {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+
+    if (!mediaClient) {
+      observabilityMetrics.mediaOutages.providerUnavailable += 1;
+      return res.status(503).json({
+        error: 'Studio media provider is temporarily unavailable.',
+        code: 'MEDIA_PROVIDER_UNAVAILABLE',
+        retryable: true
+      });
+    }
+
+    const quotaNow = Date.now();
+    const existingQuota = mediaQuotas.get(user.id);
+    if (!existingQuota || quotaNow - existingQuota.windowStartedAt >= 60 * 60 * 1000) {
+      mediaQuotas.set(user.id, { windowStartedAt: quotaNow, requestCount: 0 });
+    }
+
+    const userQuota = mediaQuotas.get(user.id)!;
+    if (userQuota.requestCount >= MEDIA_MAX_ANIMATIONS_PER_USER_PER_HOUR) {
+      observabilityMetrics.mediaOutages.quotaRejected += 1;
+      return res.status(429).json({
+        error: 'Hourly Studio quota reached. Please try again later.',
+        code: 'MEDIA_QUOTA_EXCEEDED',
+        retryable: true,
+        quota: {
+          limitPerHour: MEDIA_MAX_ANIMATIONS_PER_USER_PER_HOUR,
+          remaining: 0
+        }
+      });
+    }
+
+    const imageBase64 = String(req.body?.imageBase64 || '');
+    const prompt = String(req.body?.prompt || '').trim();
+    if (!imageBase64) {
+      return res.status(400).json({ error: 'imageBase64 is required.', code: 'MEDIA_INVALID_IMAGE' });
+    }
+    if (!prompt) {
+      return res.status(400).json({ error: 'prompt is required for animation.', code: 'MEDIA_INVALID_PROMPT' });
+    }
+
+    const imageMatch = dataUriRegex.exec(imageBase64);
+    const mimeType = imageMatch?.groups?.mime || '';
+    const inlineData = imageMatch?.groups?.data || '';
+    if (!mimeType || !inlineData || !/^image\/(png|jpeg|jpg|webp)$/i.test(mimeType)) {
+      return res.status(400).json({
+        error: 'imageBase64 must be a valid data URI (PNG/JPEG/WEBP).',
+        code: 'MEDIA_INVALID_IMAGE'
+      });
+    }
+
+    const providerOperation = await mediaClient.models.generateVideos({
+      model: MEDIA_MODEL,
+      source: {
+        prompt,
+        image: {
+          imageBytes: inlineData,
+          mimeType
+        }
+      },
+      config: {
+        numberOfVideos: 1,
+        aspectRatio: '16:9'
+      }
+    });
+
+    userQuota.requestCount += 1;
+    const operationName = providerOperation.name || `op_${Date.now()}_${user.id}`;
+    mediaOperations.set(operationName, {
+      ownerId: user.id,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + MEDIA_OPERATION_TTL_MS,
+      status: providerOperation.done ? 'done' : 'in_progress',
+      providerOperation,
+      uri: providerOperation.response?.generatedVideos?.[0]?.video?.uri,
+      pollCount: 0
+    });
+
+    return res.json({
+      operationName,
+      quota: {
+        limitPerHour: MEDIA_MAX_ANIMATIONS_PER_USER_PER_HOUR,
+        remaining: Math.max(0, MEDIA_MAX_ANIMATIONS_PER_USER_PER_HOUR - userQuota.requestCount)
+      }
+    });
+  } catch (err: any) {
+    observabilityMetrics.mediaOutages.providerFailures += 1;
+    return res.status(502).json({
+      error: `Media provider failed to start generation: ${err?.message || 'Unknown provider error'}`,
+      code: 'MEDIA_PROVIDER_FAILURE',
+      retryable: true
+    });
+  } finally {
+    recordLatency(observabilityMetrics.media['/api/media/animate'], Date.now() - startedAt);
+  }
+};
+app.post(['/api/media/animate', '/media/animate'], mediaAnimateHandler);
+
+const mediaPollHandler = async (req: Request, res: Response) => {
+  const startedAt = Date.now();
+  try {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+
+    pruneExpiredMediaOperations();
+
+    const operationName = String(req.query.operationName || '');
+    if (!operationName) {
+      return res.status(400).json({ error: 'operationName query parameter is required.', code: 'MEDIA_OPERATION_REQUIRED' });
+    }
+
+    const operation = mediaOperations.get(operationName);
+    if (!operation) {
+      return res.status(410).json({ error: 'Operation not found or expired.', code: 'MEDIA_OPERATION_EXPIRED' });
+    }
+    if (operation.ownerId !== user.id) {
+      return res.status(403).json({ error: 'Forbidden.', code: 'MEDIA_OPERATION_FORBIDDEN' });
+    }
+
+    if (operation.lastPolledAt && Date.now() - operation.lastPolledAt < MEDIA_MIN_POLL_INTERVAL_MS) {
+      observabilityMetrics.mediaOutages.pollRateLimited += 1;
+      return res.status(429).json({
+        error: `Polling too frequently. Wait at least ${MEDIA_MIN_POLL_INTERVAL_MS / 1000}s between polls.`,
+        code: 'MEDIA_POLL_RATE_LIMITED',
+        retryable: true
+      });
+    }
+
+    operation.lastPolledAt = Date.now();
+    operation.pollCount += 1;
+    if (operation.pollCount > MEDIA_MAX_POLLS_PER_OPERATION) {
+      operation.status = 'error';
+      operation.error = 'Media operation exceeded maximum polls and was terminated.';
+      observabilityMetrics.mediaOutages.pollRateLimited += 1;
+      return res.status(429).json({ done: true, error: operation.error, code: 'MEDIA_POLL_BUDGET_EXCEEDED' });
+    }
+
+    if (operation.status === 'error') {
+      return res.json({ done: true, error: operation.error || 'Generation failed.', code: 'MEDIA_OPERATION_FAILED' });
+    }
+
+    if (operation.status === 'done') {
+      if (!operation.uri) {
+        return res.json({ done: true, error: 'Generation completed without a video URI.', code: 'MEDIA_OPERATION_NO_URI' });
+      }
+      return res.json({ done: true, uri: operation.uri });
+    }
+
+    if (!mediaClient) {
+      operation.status = 'error';
+      operation.error = 'Studio media provider is temporarily unavailable.';
+      observabilityMetrics.mediaOutages.providerUnavailable += 1;
+      return res.status(503).json({ done: true, error: operation.error, code: 'MEDIA_PROVIDER_UNAVAILABLE' });
+    }
+
+    const latestOperation = await mediaClient.operations.getVideosOperation({
+      operation: operation.providerOperation
+    });
+
+    operation.providerOperation = latestOperation;
+    operation.expiresAt = Date.now() + MEDIA_OPERATION_TTL_MS;
+
+    if (!latestOperation.done) {
+      return res.json({ done: false });
+    }
+
+    const providerError = latestOperation.error?.message ? String(latestOperation.error.message) : '';
+    if (providerError) {
+      operation.status = 'error';
+      operation.error = providerError;
+      observabilityMetrics.mediaOutages.providerFailures += 1;
+      return res.status(502).json({ done: true, error: providerError, code: 'MEDIA_PROVIDER_FAILURE' });
+    }
+
+    const uri = latestOperation.response?.generatedVideos?.[0]?.video?.uri;
+    if (!uri) {
+      operation.status = 'error';
+      operation.error = 'Provider returned no video URI.';
+      return res.status(502).json({ done: true, error: operation.error, code: 'MEDIA_PROVIDER_EMPTY_RESPONSE' });
+    }
+
+    operation.status = 'done';
+    operation.uri = uri;
+    return res.json({ done: true, uri });
+  } catch (err: any) {
+    observabilityMetrics.mediaOutages.providerFailures += 1;
+    return res.status(502).json({
+      done: true,
+      error: err?.message || 'Failed to poll media provider.',
+      code: 'MEDIA_PROVIDER_FAILURE'
+    });
+  } finally {
+    recordLatency(observabilityMetrics.media['/api/media/poll'], Date.now() - startedAt);
+  }
+};
+app.get(['/api/media/poll', '/media/poll'], mediaPollHandler);
+
+const observabilityMetricsHandler = async (req: Request, res: Response) => {
+  try {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+    if (user.role !== 'admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    return res.json({
+      media: {
+        '/api/media/animate': summarizeLatency(observabilityMetrics.media['/api/media/animate']),
+        '/api/media/poll': summarizeLatency(observabilityMetrics.media['/api/media/poll'])
+      },
+      mediaOutages: observabilityMetrics.mediaOutages,
+      mediaGuardrails: {
+        maxAnimationsPerUserPerHour: MEDIA_MAX_ANIMATIONS_PER_USER_PER_HOUR,
+        minPollIntervalMs: MEDIA_MIN_POLL_INTERVAL_MS,
+        maxPollsPerOperation: MEDIA_MAX_POLLS_PER_OPERATION,
+        operationTtlMs: MEDIA_OPERATION_TTL_MS
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load observability metrics.' });
+  }
+};
+app.get(['/api/admin/observability/metrics', '/admin/observability/metrics'], observabilityMetricsHandler);
 
 const notificationsHandler = async (req: Request, res: Response) => {
   try {
