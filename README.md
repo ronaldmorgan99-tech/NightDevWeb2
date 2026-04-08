@@ -54,6 +54,12 @@ Together, they keep local UI state and remote API data organized, performant, an
 5. Run the app:
    `npm run dev`
 
+## Vercel Deployment Notes
+
+- If frontend and API are deployed on the same Vercel project/domain, leave `VITE_API_BASE_URL` unset so the client uses relative `/api/*` requests and avoids cross-origin CORS issues.
+- Set `VITE_API_BASE_URL` only when the frontend and backend are hosted on different domains.
+- For Node ESM runtime compatibility in Vercel serverless functions, local runtime imports must include `.js` file extensions after TypeScript emit (for example `./db.js`).
+
 ## AI Workflow Files
 
 The repository includes AI collaboration documents that help track context and planned work:

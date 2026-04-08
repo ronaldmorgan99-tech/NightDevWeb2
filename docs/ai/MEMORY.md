@@ -52,13 +52,17 @@
 
 - **Suspense boundaries**: Single top-level Suspense wrapping all routes causes infinite recursion during lazy loading. Use isolated Suspense per route instead.
 - **Vite HMR in Codespaces**: Requires wss:// + forwarded domain + clientPort:443. Mismatch between host and socket port breaks connection.
+- **Vercel preview CORS**: Setting `VITE_API_BASE_URL` to the production domain causes preview deployments to cross-origin fetch production APIs and fail CORS preflight. For same-project Vercel API routes, leave `VITE_API_BASE_URL` unset.
 - **Environment loading**: Server expects .env.local. SQLite path detection must check DATABASE_URL format (contains '://') not endpoint.
 - **Bundle size**: Lazy loading alone isn't enough - need individual Suspense boundaries per route to prevent re-render cascades.
 - **Test database**: Must use separate path (tmp/test.db) and create tmp/ directory before tests run.
 - **Socket.IO CORS**: Origin '*' OK for dev, but expand HTTP methods to avoid preflight failures.
 - **Media polling**: Client polls /api/media/poll every 10 seconds, must handle 404/500 gracefully.
+- **Node ESM imports on Vercel**: Serverless runtime fails with `ERR_MODULE_NOT_FOUND` when local imports omit emitted `.js` extensions (for example `./db.js`).
 
 ## Decisions Log
+
+**2026-04-08 (Latest)**: Fixed Vercel function runtime crash by making `src/lib/seed.ts` import `./db.js` (Node ESM requires explicit file extensions at runtime after TypeScript emit). Added deployment note to keep `VITE_API_BASE_URL` unset when frontend/API share the same Vercel origin to avoid preview CORS failures.
 
 **2026-04-02 (Latest)**: Added configurable `VITE_API_BASE_URL` support in `src/lib/api.ts` for split frontend/backend deployments (e.g., Vercel frontend + external API). Also added explicit 404 guidance for `/api/*` failures to surface deployment misconfiguration clearly.
 

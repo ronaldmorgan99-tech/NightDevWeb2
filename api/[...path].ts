@@ -69,6 +69,21 @@ function getTokenPayload(req: Request) {
   }
 }
 
+async function requireAuthUser(req: Request, res: Response) {
+  const payload = getTokenPayload(req);
+  if (!payload?.id) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return null;
+  }
+
+  const user = await db.queryOne<any>('SELECT id, username, role FROM users WHERE id = ?', [payload.id]);
+  if (!user) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return null;
+  }
+  return user;
+}
+
 app.use(async (_req, res, next) => {
   try {
     await ensureDb();
@@ -98,6 +113,19 @@ const loginHandler = async (req: Request, res: Response) => {
   }
 };
 app.post(['/api/auth/login', '/auth/login'], loginHandler);
+
+const logoutHandler = (_req: Request, res: Response) => {
+  res.clearCookie(AUTH_COOKIE_NAME, AUTH_COOKIE_OPTIONS);
+  return res.json({ message: 'Logged out' });
+};
+app.post(['/api/auth/logout', '/auth/logout'], logoutHandler);
+
+const csrfTokenHandler = (_req: Request, res: Response) => {
+  // Serverless API shim currently does not enforce CSRF middleware.
+  // Return a stable shape expected by the frontend to avoid 404s.
+  return res.json({ csrfToken: null });
+};
+app.get(['/api/csrf-token', '/csrf-token'], csrfTokenHandler);
 
 const meHandler = async (req: Request, res: Response) => {
   const payload = getTokenPayload(req);
@@ -223,6 +251,45 @@ const serversHandler = async (_req: Request, res: Response) => {
   }
 };
 app.get(['/api/servers', '/servers'], serversHandler);
+
+const notificationsHandler = async (req: Request, res: Response) => {
+  try {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+    const notifications = await db.query<any>(
+      'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50',
+      [user.id]
+    );
+    return res.json(notifications);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load notifications' });
+  }
+};
+app.get(['/api/notifications', '/notifications'], notificationsHandler);
+
+const notificationReadHandler = async (req: Request, res: Response) => {
+  try {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+    await db.execute('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?', [req.params.id, user.id]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to update notification' });
+  }
+};
+app.patch(['/api/notifications/:id/read', '/notifications/:id/read'], notificationReadHandler);
+
+const notificationsReadAllHandler = async (req: Request, res: Response) => {
+  try {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+    await db.execute('UPDATE notifications SET is_read = 1 WHERE user_id = ?', [user.id]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to update notifications' });
+  }
+};
+app.post(['/api/notifications/read-all', '/notifications/read-all'], notificationsReadAllHandler);
 
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: 'Not Found' });
