@@ -1,5 +1,6 @@
 # NightDevWeb2 Backlog
 
+Updated on 2026-04-08
 Last reviewed: 2026-04-08
 
 ## Document Governance
@@ -76,10 +77,18 @@ Last reviewed: 2026-04-08
 - Implement rate limiting on auth endpoints
 
 ### CI/CD Pipeline
-- **Priority**: High  
-- Wire test:integration into CI (currently runs locally only)
-- Add lint + build checks to PR workflow
-- Set up automated security scanning
+- **Priority**: High
+- **Workflow Reference**: `.github/workflows/ci.yml`
+
+**Completed (verified in CI)**
+- `npm run lint` runs in the `validate` job.
+- `npm run build` runs in the `validate` job.
+- `npm run test:integration` runs in the `validate` job with failure artifacts.
+
+**Remaining**
+- Add automated security scans (dependency + SAST) to CI.
+- Add coverage collection and enforce minimum coverage gates.
+- Define flaky-test policy (retry strategy, quarantine rules, and reporting).
 
 ### Performance Monitoring
 - **Priority**: Medium
