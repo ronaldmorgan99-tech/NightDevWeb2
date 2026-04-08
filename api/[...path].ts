@@ -147,6 +147,74 @@ const meHandler = async (req: Request, res: Response) => {
 };
 app.get(['/api/auth/me', '/auth/me'], meHandler);
 
+const userProfileHandler = async (req: Request, res: Response) => {
+  try {
+    const user = await db.queryOne<any>(
+      'SELECT id, username, role, avatar_url, banner_url, bio, created_at, last_active FROM users WHERE id = ?',
+      [req.params.id]
+    );
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    return res.json(user);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load user profile' });
+  }
+};
+app.get(['/api/users/:id', '/users/:id'], userProfileHandler);
+
+const userGameStatsHandler = async (req: Request, res: Response) => {
+  try {
+    const stats = await db.query<any>('SELECT * FROM game_stats WHERE user_id = ?', [req.params.id]);
+    return res.json(stats);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load game stats' });
+  }
+};
+app.get(['/api/users/:id/game-stats', '/users/:id/game-stats'], userGameStatsHandler);
+
+const userGameTransactionsHandler = async (req: Request, res: Response) => {
+  try {
+    const transactions = await db.query<any>(
+      'SELECT * FROM game_transactions WHERE user_id = ? ORDER BY created_at DESC',
+      [req.params.id]
+    );
+    return res.json(transactions);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load game transactions' });
+  }
+};
+app.get(['/api/users/:id/game-transactions', '/users/:id/game-transactions'], userGameTransactionsHandler);
+
+const userGameMatchesHandler = async (req: Request, res: Response) => {
+  try {
+    const matches = await db.query<any>('SELECT * FROM game_matches WHERE user_id = ? ORDER BY created_at DESC', [req.params.id]);
+    return res.json(matches);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load game matches' });
+  }
+};
+app.get(['/api/users/:id/game-matches', '/users/:id/game-matches'], userGameMatchesHandler);
+
+const wealthLeaderboardHandler = async (_req: Request, res: Response) => {
+  try {
+    const leaderboard = await db.query<any>(`
+      SELECT u.username, u.avatar_url, SUM(gs.total_wealth) as total_wealth
+      FROM users u
+      JOIN game_stats gs ON u.id = gs.user_id
+      GROUP BY u.id
+      ORDER BY total_wealth DESC
+      LIMIT 10
+    `);
+    return res.json(leaderboard);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load wealth leaderboard' });
+  }
+};
+app.get(['/api/leaderboards/wealth', '/leaderboards/wealth'], wealthLeaderboardHandler);
+
 const forumCategoriesHandler = async (_req: Request, res: Response) => {
   try {
     const categories = await db.query<any>('SELECT * FROM forum_categories ORDER BY display_order ASC');
