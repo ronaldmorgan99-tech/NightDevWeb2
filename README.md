@@ -46,6 +46,7 @@ Together, they keep local UI state and remote API data organized, performant, an
    `cp .env.example .env.local`
 3. Set required values in `.env.local`:
    - `JWT_SECRET` (required): secret used by auth token code in `server.ts`.
+   - `NODE_ENV` (required): `development` locally, `production` in deployed environments.
    - `VITE_ENABLE_STUDIO` (recommended): set to `true` to enable `/studio`, or `false` to show the coming soon page.
 4. Optional values:
    - `GEMINI_API_KEY`: only required when media generation APIs are enabled/implemented.
@@ -54,6 +55,14 @@ Together, they keep local UI state and remote API data organized, performant, an
 5. Run the app:
    `npm run dev`
 
+### Auth/CORS deployment security defaults
+
+- **Same-origin deploy (frontend + API on one origin)**  
+  Leave `CLIENT_ORIGIN` unset. Cookies are sent with `SameSite=Lax`, and no cross-origin credential headers are emitted.
+- **Split-origin deploy (frontend and API on different origins)**  
+  Set `CLIENT_ORIGIN` to the frontend origin (or a comma-separated list, for example `https://app.example.com,https://admin.example.com`).  
+  In production this enables credentialed CORS responses and sets auth cookies as `SameSite=None; Secure`.
+
 ## Vercel Deployment Notes
 
 If you deploy this repo to Vercel with API routes enabled, make sure the following are configured:
@@ -61,6 +70,7 @@ If you deploy this repo to Vercel with API routes enabled, make sure the followi
 - `JWT_SECRET` (required, minimum 32 characters)
 - `NODE_ENV=production`
 - `DATABASE_URL` (recommended for persistent production data; if omitted on Vercel, SQLite falls back to `/tmp` and data is ephemeral)
+- `CLIENT_ORIGIN` (required for split-origin deployments; comma-separated allowlist of trusted frontend origins)
 
 ### Expected default logins (fresh database)
 
