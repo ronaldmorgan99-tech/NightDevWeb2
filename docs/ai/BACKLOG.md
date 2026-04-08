@@ -31,9 +31,9 @@ Last reviewed: 2026-04-08
 - **Definition of Done**: Decision documented in README + admin operations docs, with ownership and re-open criteria.
 
 ### Production Media Provider Setup
-- **Status**: Deferred (dependent on Studio relaunch)
-- **Details**: `GEMINI_API_KEY` provisioning is intentionally postponed until media routes are production-ready.
-- **Definition of Done**: Provision key only when `/api/media/animate` and `/api/media/poll` are implemented, validated, and monitored.
+- **Status**: ⚠️ In progress (implementation complete, release gated)
+- **Details**: `/api/media/animate` + `/api/media/poll` implemented with quota/poll guardrails and observability counters. Frontend now has provider-failure fallback UX.
+- **Definition of Done**: Complete production validation, verify `/api/admin/observability/metrics` dashboards/alerts, then enable `VITE_ENABLE_STUDIO=true` with rollback drill.
 
 ### Bundle Optimization & Code Splitting
 - **Status**: ✅ Implemented
@@ -114,9 +114,19 @@ Last reviewed: 2026-04-08
 ### Media API Dependency
 - **Risk Level**: High
 - Single provider (Gemini) creates vendor lock-in
-- No fallback if API quota exceeded or service down
-- Rate limiting not implemented
-- **Mitigation**: Add provider abstraction layer, implement request queuing
+- Fallback UX now exists for provider outage/quota errors, but multi-provider failover is not yet implemented
+- Initial rate limiting/guardrails implemented; thresholds still need production tuning
+- **Mitigation**: Add provider abstraction layer, implement request queuing, and review guardrail thresholds after one week of production telemetry
+
+## Studio Go/No-Go Gate (April 2026)
+
+| Check | Status | Owner |
+| --- | --- | --- |
+| Media routes (`/api/media/animate`, `/api/media/poll`) implemented and locally validated | ✅ | Platform Engineering |
+| Provider outage + quota fallback UX in Studio page | ✅ | Frontend Engineering |
+| Monitoring endpoint includes media latency/failure/guardrail counters | ✅ | Platform Engineering |
+| Production provisioning, alert wiring, and rollback drill complete | ⏳ Pending | Platform Engineering + Admin Operations |
+| Enable discoverability (`VITE_ENABLE_STUDIO=true`) | 🚫 Blocked on previous row | Platform Engineering |
 
 ### Real-time Scaling
 - **Risk Level**: Medium
