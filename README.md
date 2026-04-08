@@ -164,6 +164,11 @@ Rollback guidance:
 - If incident impact is active, first rollback app version, then rollback config changes independently to isolate cause.
 - After rollback, re-run the post-deploy verification checklist before restoring traffic.
 
+## Contributing
+
+- Pull requests must use `.github/pull_request_template.md`. Complete every checklist section before requesting review.
+- If your change affects release/deploy behavior, update `docs/ai/MEMORY.md` and/or `docs/ai/BACKLOG.md` as part of the PR.
+
 ## AI Workflow Files
 
 The repository includes AI collaboration documents that help track context and planned work:
