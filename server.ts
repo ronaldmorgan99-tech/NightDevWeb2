@@ -210,25 +210,67 @@ type LatencyMetrics = {
   maxMs: number;
 };
 
+type ApiMetrics = {
+  totalRequests: number;
+  errorCount: number;
+  statusCounts: Record<string, number>;
+  byRoute: Record<string, { requests: number; errors: number; latency: LatencyMetrics }>;
+};
+
+type AuthFlowMetrics = {
+  registerAttempts: number;
+  registerSuccess: number;
+  registerFailure: number;
+  loginAttempts: number;
+  loginSuccess: number;
+  loginFailure: number;
+  meChecks: number;
+  meUnauthorized: number;
+};
+
 type SocketMetrics = {
   authFailures: number;
   connections: number;
   disconnects: number;
   connectionErrors: number;
   activeConnections: number;
+  roomCount: number;
+  roomMemberships: number;
+  maxRoomOccupancy: number;
 };
 
+const createLatencyMetric = (): LatencyMetrics => ({ count: 0, totalMs: 0, minMs: Number.POSITIVE_INFINITY, maxMs: 0 });
+
 const observabilityMetrics = {
+  api: {
+    totalRequests: 0,
+    errorCount: 0,
+    statusCounts: {},
+    byRoute: {}
+  } as ApiMetrics,
+  auth: {
+    registerAttempts: 0,
+    registerSuccess: 0,
+    registerFailure: 0,
+    loginAttempts: 0,
+    loginSuccess: 0,
+    loginFailure: 0,
+    meChecks: 0,
+    meUnauthorized: 0
+  } as AuthFlowMetrics,
   media: {
-    '/api/media/animate': { count: 0, totalMs: 0, minMs: Number.POSITIVE_INFINITY, maxMs: 0 } as LatencyMetrics,
-    '/api/media/poll': { count: 0, totalMs: 0, minMs: Number.POSITIVE_INFINITY, maxMs: 0 } as LatencyMetrics
+    '/api/media/animate': createLatencyMetric(),
+    '/api/media/poll': createLatencyMetric()
   },
   socket: {
     authFailures: 0,
     connections: 0,
     disconnects: 0,
     connectionErrors: 0,
-    activeConnections: 0
+    activeConnections: 0,
+    roomCount: 0,
+    roomMemberships: 0,
+    maxRoomOccupancy: 0
   } as SocketMetrics
 };
 
@@ -245,6 +287,44 @@ const summarizeLatency = (metric: LatencyMetrics) => ({
   minMs: metric.count > 0 ? Number(metric.minMs.toFixed(2)) : 0,
   maxMs: Number(metric.maxMs.toFixed(2))
 });
+
+const getOrCreateRouteMetric = (routeKey: string) => {
+  if (!observabilityMetrics.api.byRoute[routeKey]) {
+    observabilityMetrics.api.byRoute[routeKey] = {
+      requests: 0,
+      errors: 0,
+      latency: createLatencyMetric()
+    };
+  }
+
+  return observabilityMetrics.api.byRoute[routeKey];
+};
+
+const summarizeApiMetrics = () => {
+  const errorRate = observabilityMetrics.api.totalRequests > 0
+    ? Number(((observabilityMetrics.api.errorCount / observabilityMetrics.api.totalRequests) * 100).toFixed(2))
+    : 0;
+
+  const byRoute = Object.fromEntries(
+    Object.entries(observabilityMetrics.api.byRoute).map(([route, metric]) => [
+      route,
+      {
+        requests: metric.requests,
+        errors: metric.errors,
+        errorRatePct: metric.requests > 0 ? Number(((metric.errors / metric.requests) * 100).toFixed(2)) : 0,
+        latency: summarizeLatency(metric.latency)
+      }
+    ])
+  );
+
+  return {
+    totalRequests: observabilityMetrics.api.totalRequests,
+    errorCount: observabilityMetrics.api.errorCount,
+    errorRatePct: errorRate,
+    statusCounts: observabilityMetrics.api.statusCounts,
+    byRoute
+  };
+};
 
 async function start() {
   console.log('--- STARTING NIGHTRESPAWN SERVER ---');
@@ -299,13 +379,12 @@ async function start() {
     if (req.method === 'OPTIONS') {
       return res.sendStatus(204);
     }
-  app.use((req, res, next) => {
-    const shouldLog = req.path.startsWith('/api/auth')
-      || req.path.startsWith('/api/settings')
-      || req.path.startsWith('/api/admin/settings')
-      || req.path.startsWith('/api/media');
 
-    if (!shouldLog) {
+    next();
+  });
+
+  app.use((req, res, next) => {
+    if (!req.path.startsWith('/api')) {
       return next();
     }
 
@@ -315,15 +394,44 @@ async function start() {
 
     res.on('finish', () => {
       const durationMs = Number(process.hrtime.bigint() - startHr) / 1_000_000;
+      const routePattern = req.route?.path;
+      const routePath = typeof routePattern === 'string' ? routePattern : req.path;
+      const routeKey = `${req.method} ${routePath}`;
       const userId = req.path.startsWith('/api/auth') || req.path.startsWith('/api/media') ? getUserFromToken(req)?.id ?? null : null;
+
+      observabilityMetrics.api.totalRequests += 1;
+      observabilityMetrics.api.statusCounts[String(res.statusCode)] = (observabilityMetrics.api.statusCounts[String(res.statusCode)] || 0) + 1;
+
+      const routeMetric = getOrCreateRouteMetric(routeKey);
+      routeMetric.requests += 1;
+      recordLatency(routeMetric.latency, durationMs);
+
+      if (res.statusCode >= 400) {
+        observabilityMetrics.api.errorCount += 1;
+        routeMetric.errors += 1;
+      }
+
       logStructured('info', 'http.request', {
         requestId,
         method: req.method,
         path: req.path,
+        route: routePath,
         statusCode: res.statusCode,
         durationMs: Number(durationMs.toFixed(2)),
         userId
       });
+
+      if (res.statusCode >= 500) {
+        void captureException(new Error(`HTTP ${res.statusCode} response`), {
+          scope: 'api_route',
+          requestId,
+          method: req.method,
+          path: req.path,
+          route: routePath,
+          statusCode: res.statusCode,
+          userId
+        });
+      }
     });
 
     next();
@@ -481,6 +589,29 @@ async function start() {
 
   setInterval(pruneExpiredMediaOperations, 60_000).unref();
 
+  const updateSocketRoomLoad = () => {
+    let roomCount = 0;
+    let roomMemberships = 0;
+    let maxRoomOccupancy = 0;
+
+    for (const [roomName, roomSockets] of io.sockets.adapter.rooms) {
+      if (io.sockets.sockets.has(roomName)) {
+        continue;
+      }
+      const size = roomSockets.size;
+      roomCount += 1;
+      roomMemberships += size;
+      maxRoomOccupancy = Math.max(maxRoomOccupancy, size);
+    }
+
+    observabilityMetrics.socket.roomCount = roomCount;
+    observabilityMetrics.socket.roomMemberships = roomMemberships;
+    observabilityMetrics.socket.maxRoomOccupancy = maxRoomOccupancy;
+  };
+
+  io.of('/').adapter.on('join-room', () => updateSocketRoomLoad());
+  io.of('/').adapter.on('leave-room', () => updateSocketRoomLoad());
+
   io.on('connection', (socket) => {
     const userId = socket.data.user.id;
     const currentSockets = userSockets.get(userId) || new Set<string>();
@@ -488,6 +619,7 @@ async function start() {
     userSockets.set(userId, currentSockets);
     observabilityMetrics.socket.connections += 1;
     observabilityMetrics.socket.activeConnections += 1;
+    updateSocketRoomLoad();
     logStructured('info', 'socket.connected', {
       userId,
       socketId: socket.id,
@@ -520,6 +652,7 @@ async function start() {
       }
       observabilityMetrics.socket.disconnects += 1;
       observabilityMetrics.socket.activeConnections = Math.max(0, observabilityMetrics.socket.activeConnections - 1);
+      updateSocketRoomLoad();
       logStructured('info', 'socket.disconnected', {
         userId,
         socketId: socket.id,
@@ -531,12 +664,20 @@ async function start() {
   // --- AUTH MIDDLEWARE ---
   const authenticate = (req: any, res: any, next: any) => {
     const token = req.cookies[AUTH_COOKIE_NAME];
-    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+    if (!token) {
+      if (req.path === '/api/auth/me') {
+        observabilityMetrics.auth.meUnauthorized += 1;
+      }
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
       req.user = decoded;
       next();
     } catch (err) {
+      if (req.path === '/api/auth/me') {
+        observabilityMetrics.auth.meUnauthorized += 1;
+      }
       res.status(401).json({ error: 'Invalid token' });
     }
   };
@@ -635,8 +776,10 @@ async function start() {
 
   // Auth
   app.post('/api/auth/register', async (req, res) => {
+    observabilityMetrics.auth.registerAttempts += 1;
     const parsedPayload = authRegisterSchema.safeParse(req.body);
     if (!parsedPayload.success) {
+      observabilityMetrics.auth.registerFailure += 1;
       return res.status(400).json({ error: 'A valid email address is required.' });
     }
     const { username, email, password } = parsedPayload.data;
@@ -651,6 +794,7 @@ async function start() {
       );
 
       if (!user) {
+        observabilityMetrics.auth.registerFailure += 1;
         return res.status(500).json({ error: 'Failed to load registered user' });
       }
 
@@ -667,36 +811,47 @@ async function start() {
       );
 
       res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
+      observabilityMetrics.auth.registerSuccess += 1;
       res.json({ user: { id: user.id, username: user.username, email: user.email, role: user.role } });
     } catch (err: any) {
+      observabilityMetrics.auth.registerFailure += 1;
+      void captureException(err, { scope: 'auth', flow: 'register' });
       res.status(400).json({ error: err.message });
     }
   });
 
   app.post('/api/auth/login', async (req, res) => {
+    observabilityMetrics.auth.loginAttempts += 1;
     const parsedPayload = authLoginSchema.safeParse(req.body);
     if (!parsedPayload.success) {
+      observabilityMetrics.auth.loginFailure += 1;
       return res.status(400).json({ error: 'Invalid login payload' });
     }
     const { username, password } = parsedPayload.data;
     try {
       const user = await db.queryOne<any>('SELECT * FROM users WHERE username = ?', [username]);
       if (!user || !bcrypt.compareSync(password, user.password)) {
+        observabilityMetrics.auth.loginFailure += 1;
         return res.status(401).json({ error: 'Invalid credentials' });
       }
       const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
       res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
+      observabilityMetrics.auth.loginSuccess += 1;
       res.json({ user: { id: user.id, username: user.username, email: user.email, role: user.role } });
     } catch (err: any) {
+      observabilityMetrics.auth.loginFailure += 1;
+      void captureException(err, { scope: 'auth', flow: 'login' });
       res.status(500).json({ error: err.message });
     }
   });
 
   app.get('/api/auth/me', authenticate, csrfProtection, async (req: any, res) => {
+    observabilityMetrics.auth.meChecks += 1;
     try {
       const user = await db.queryOne<any>('SELECT id, username, email, role, avatar_url, banner_url, bio, created_at, last_active FROM users WHERE id = ?', [req.user.id]);
       res.json({ user, csrfToken: req.csrfToken() });
     } catch (err: any) {
+      void captureException(err, { scope: 'auth', flow: 'me' });
       res.status(500).json({ error: err.message });
     }
   });
@@ -2353,6 +2508,8 @@ async function start() {
 
   app.get('/api/admin/observability/metrics', authenticate, isAdmin, (_req, res) => {
     res.json({
+      api: summarizeApiMetrics(),
+      auth: observabilityMetrics.auth,
       media: {
         '/api/media/animate': summarizeLatency(observabilityMetrics.media['/api/media/animate']),
         '/api/media/poll': summarizeLatency(observabilityMetrics.media['/api/media/poll'])

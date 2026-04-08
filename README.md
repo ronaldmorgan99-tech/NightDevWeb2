@@ -145,6 +145,9 @@ Run these checks immediately after every production release:
 4. Static asset integrity:
    - Main JS/CSS bundles return `200` (not HTML fallback).
    - Browser console has no MIME-type errors such as `text/html` for module scripts.
+5. Telemetry smoke check:
+   - Trigger one authenticated API request and verify it appears in observability metrics/logs.
+   - Confirm frontend telemetry delivery via `/api/telemetry/client-error` (or error tracking webhook in production).
 
 ### 5) Rollback and incident notes (404/500/CORS regressions)
 

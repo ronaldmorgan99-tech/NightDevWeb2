@@ -9,11 +9,25 @@ type ErrorBoundaryState = {
   hasError: boolean;
 };
 
+type ExceptionContext = Record<string, unknown>;
+
+type ApiExceptionPayload = {
+  input: string;
+  method: string;
+  status?: number;
+  message: string;
+  durationMs?: number;
+};
+
 const telemetryEndpoint = '/api/telemetry/client-error';
 const telemetryWebhook = (import.meta as any).env?.VITE_ERROR_TRACKING_WEBHOOK as string | undefined;
 
 const postClientError = (payload: Record<string, unknown>) => {
-  const body = JSON.stringify(payload);
+  const body = JSON.stringify({
+    timestamp: new Date().toISOString(),
+    route: typeof window !== 'undefined' ? window.location.pathname : undefined,
+    ...payload
+  });
 
   if (telemetryWebhook) {
     void fetch(telemetryWebhook, {
@@ -30,6 +44,31 @@ const postClientError = (payload: Record<string, unknown>) => {
     body,
     keepalive: true
   }).catch(() => undefined);
+};
+
+export const captureFrontendException = (error: unknown, context: ExceptionContext = {}) => {
+  const normalizedError = error instanceof Error ? error : new Error(String(error));
+  postClientError({
+    type: 'frontend.exception',
+    message: normalizedError.message,
+    stack: normalizedError.stack,
+    context,
+    url: typeof window !== 'undefined' ? window.location.href : undefined
+  });
+};
+
+export const captureFrontendApiException = ({ input, method, status, message, durationMs }: ApiExceptionPayload) => {
+  postClientError({
+    type: 'frontend.api_exception',
+    request: {
+      input,
+      method,
+      status,
+      durationMs
+    },
+    message,
+    url: typeof window !== 'undefined' ? window.location.href : undefined
+  });
 };
 
 export const initializeFrontendMonitoring = () => {
@@ -65,12 +104,9 @@ export class FrontendErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    postClientError({
+    captureFrontendException(error, {
       type: 'react.error_boundary',
-      message: error.message,
-      stack: error.stack,
-      componentStack: errorInfo.componentStack,
-      url: window.location.href
+      componentStack: errorInfo.componentStack
     });
   }
 

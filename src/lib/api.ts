@@ -1,3 +1,5 @@
+import { captureFrontendApiException } from './monitoring';
+
 export interface ApiFetchOptions extends RequestInit {
   json?: any;
 }
@@ -16,6 +18,16 @@ function resolveRequestInput(input: RequestInfo): RequestInfo {
 
   return `${apiBaseUrl}${input}`;
 }
+
+const inputToString = (input: RequestInfo) => {
+  if (typeof input === 'string') {
+    return input;
+  }
+  if (input instanceof URL) {
+    return input.toString();
+  }
+  return input.url;
+};
 
 export async function apiFetch(input: RequestInfo, init: ApiFetchOptions = {}): Promise<Response> {
   const requestInput = resolveRequestInput(input);
@@ -37,8 +49,30 @@ export async function apiFetch(input: RequestInfo, init: ApiFetchOptions = {}): 
     }
   }
 
-  return nativeFetch(requestInput, { ...init, headers });
-  return nativeFetch(input, { ...init, headers });
+  const startedAt = performance.now();
+  try {
+    const response = await nativeFetch(requestInput, { ...init, headers });
+
+    if (!response.ok) {
+      captureFrontendApiException({
+        input: inputToString(requestInput),
+        method,
+        status: response.status,
+        message: `API request failed with status ${response.status}`,
+        durationMs: Number((performance.now() - startedAt).toFixed(2))
+      });
+    }
+
+    return response;
+  } catch (error) {
+    captureFrontendApiException({
+      input: inputToString(requestInput),
+      method,
+      message: error instanceof Error ? error.message : String(error),
+      durationMs: Number((performance.now() - startedAt).toFixed(2))
+    });
+    throw error;
+  }
 }
 
 export async function apiJson<T>(input: RequestInfo, init: ApiFetchOptions = {}): Promise<T> {

@@ -32,6 +32,7 @@ app.use((req, _res, next) => {
 const JWT_SECRET = process.env.JWT_SECRET || '';
 const AUTH_COOKIE_NAME = 'token';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const ERROR_TRACKING_WEBHOOK = process.env.ERROR_TRACKING_WEBHOOK || '';
 
 const AUTH_COOKIE_OPTIONS: CookieOptions = {
   httpOnly: true,
@@ -65,6 +66,64 @@ async function ensureDb() {
   }
   await bootPromise;
 }
+
+const captureException = async (error: unknown, context: Record<string, unknown> = {}) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(JSON.stringify({ event: 'serverless.exception', message, context }));
+
+  if (!ERROR_TRACKING_WEBHOOK) {
+    return;
+  }
+
+  try {
+    await fetch(ERROR_TRACKING_WEBHOOK, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        environment: process.env.NODE_ENV,
+        message,
+        stack: error instanceof Error ? error.stack : undefined,
+        context
+      })
+    });
+  } catch (webhookError) {
+    console.warn('Failed to send exception webhook:', webhookError);
+  }
+};
+
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api')) {
+    return next();
+  }
+
+  const start = process.hrtime.bigint();
+  res.on('finish', () => {
+    const durationMs = Number(process.hrtime.bigint() - start) / 1_000_000;
+    const statusCode = res.statusCode;
+    const routePath = typeof req.route?.path === 'string' ? req.route.path : req.path;
+
+    console.log(JSON.stringify({
+      event: 'serverless.http.request',
+      method: req.method,
+      path: req.path,
+      route: routePath,
+      statusCode,
+      durationMs: Number(durationMs.toFixed(2))
+    }));
+
+    if (statusCode >= 500) {
+      void captureException(new Error(`HTTP ${statusCode} response`), {
+        scope: 'serverless_api',
+        method: req.method,
+        path: req.path,
+        route: routePath,
+        statusCode
+      });
+    }
+  });
+
+  next();
+});
 
 function getTokenPayload(req: Request) {
   const token = req.cookies[AUTH_COOKIE_NAME];
@@ -116,6 +175,7 @@ const loginHandler = async (req: Request, res: Response) => {
     res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
     return res.json({ user: { id: user.id, username: user.username, email: user.email, role: user.role } });
   } catch (err: any) {
+    await captureException(err, { scope: 'auth', flow: 'login' });
     return res.status(500).json({ error: err?.message || 'Login failed' });
   }
 };
@@ -133,6 +193,15 @@ const csrfTokenHandler = (_req: Request, res: Response) => {
   return res.json({ csrfToken: null });
 };
 app.get(['/api/csrf-token', '/csrf-token'], csrfTokenHandler);
+
+app.post(['/api/telemetry/client-error', '/telemetry/client-error'], async (req: Request, res: Response) => {
+  await captureException(req.body?.message || 'Unknown client error', {
+    scope: 'frontend',
+    payload: req.body || {}
+  });
+
+  return res.status(202).json({ accepted: true });
+});
 
 const meHandler = async (req: Request, res: Response) => {
   const payload = getTokenPayload(req);
