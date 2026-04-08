@@ -130,7 +130,7 @@ app.get(['/api/csrf-token', '/csrf-token'], csrfTokenHandler);
 const meHandler = async (req: Request, res: Response) => {
   const payload = getTokenPayload(req);
   if (!payload?.id) {
-    return res.status(401).json({ error: 'Not authenticated' });
+    return res.json({ user: null, csrfToken: null });
   }
   try {
     const user = await db.queryOne<any>(
@@ -138,7 +138,7 @@ const meHandler = async (req: Request, res: Response) => {
       [payload.id]
     );
     if (!user) {
-      return res.status(401).json({ error: 'Not authenticated' });
+      return res.json({ user: null, csrfToken: null });
     }
     return res.json({ user, csrfToken: null });
   } catch (err: any) {
