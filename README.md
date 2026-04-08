@@ -46,9 +46,8 @@ Together, they keep local UI state and remote API data organized, performant, an
    `cp .env.example .env.local`
 3. Set required values in `.env.local`:
    - `JWT_SECRET` (required): secret used by auth token code in `server.ts`.
-   - `VITE_ENABLE_STUDIO` (recommended): set to `true` to enable `/studio`, or `false` to show the coming soon page.
+   - `VITE_ENABLE_STUDIO` is currently ignored in this release because `/studio` is not shipping in the April 2026 cycle.
 4. Optional values:
-   - `GEMINI_API_KEY`: only required when media generation APIs are enabled/implemented.
    - `APP_URL`: used in hosted environments for callback/self links.
    - `VITE_API_BASE_URL`: set this when frontend and API are hosted on different domains (example: `https://api.yourdomain.com`). If omitted, frontend calls relative `/api/*` paths on the current origin.
 5. Run the app:
@@ -58,6 +57,17 @@ Together, they keep local UI state and remote API data organized, performant, an
 
 Use this section before deploying to any production environment (Vercel, container platform, VM, etc.).
 
+- `JWT_SECRET` (required, minimum 32 characters)
+- `NODE_ENV=production`
+- `DATABASE_URL` (recommended for persistent production data; if omitted on Vercel, SQLite falls back to `/tmp` and data is ephemeral)
+- Do **not** provision `GEMINI_API_KEY` for this cycle. Media generation endpoints are intentionally not exposed to users in production until Studio support is re-opened.
+
+## Studio Feature Support Status (April 2026)
+
+- **Decision**: `/studio` is **not shipping** this cycle.
+- **User experience**: Visiting `/studio` now redirects to `/` to avoid dead-end “coming soon” flows.
+- **Operational ownership**: Platform Engineering owns route-gating and deploy behavior; Admin Operations owns support communications and release notes.
+- **Re-open criteria**: backend media routes implemented and validated (`/api/media/animate`, `/api/media/poll`), provider outage fallback UX, and production runbook updates.
 ### 1) Required environment variables
 
 | Variable | Required | What it controls | Production expectation |
