@@ -60,10 +60,11 @@ Together, they keep local UI state and remote API data organized, performant, an
 ### Auth/CORS deployment security defaults
 
 - **Same-origin deploy (frontend + API on one origin)**  
-  Leave `CLIENT_ORIGIN` unset. Cookies are sent with `SameSite=Lax`, and no cross-origin credential headers are emitted.
+  Leave both `CLIENT_ORIGIN` and `VITE_API_BASE_URL` unset. Cookies are sent with `SameSite=Lax`, Socket.IO does not allow credentialed cross-origin handshakes, and the frontend calls relative `/api/*`.
 - **Split-origin deploy (frontend and API on different origins)**  
   Set `CLIENT_ORIGIN` to the frontend origin (or a comma-separated list, for example `https://app.example.com,https://admin.example.com`).  
-  In production this enables credentialed CORS responses and sets auth cookies as `SameSite=None; Secure`.
+  Set `VITE_API_BASE_URL` to the API origin (for example `https://api.example.com`). In production this enables credentialed CORS responses and sets auth cookies as `SameSite=None; Secure`.
+  Socket.IO CORS uses the same `CLIENT_ORIGIN` allowlist (comma-separated entries are supported).
 
 ## Vercel Deployment Notes
 ## Production Deployment Checklist
@@ -74,6 +75,10 @@ Use this section before deploying to any production environment (Vercel, contain
 - `NODE_ENV=production`
 - `DATABASE_URL` (recommended for persistent production data; if omitted on Vercel, SQLite falls back to `/tmp` and data is ephemeral)
 - `CLIENT_ORIGIN` (required for split-origin deployments; comma-separated allowlist of trusted frontend origins)
+- `AUTH_RATE_LIMIT_CREDENTIAL_WINDOW_MS` (optional; default `600000` / 10 minutes)
+- `AUTH_RATE_LIMIT_CREDENTIAL_MAX` (optional; default `8` requests per window for login/register)
+- `AUTH_RATE_LIMIT_SESSION_WINDOW_MS` (optional; default `300000` / 5 minutes)
+- `AUTH_RATE_LIMIT_SESSION_MAX` (optional; default `30` requests per window for `auth/me` + auth session endpoints)
 
 ### Expected default logins (fresh database)
 
@@ -107,7 +112,12 @@ These users are ensured at API bootstrap for serverless deployments.
 | `JWT_SECRET` | Yes | Signing/verification for auth JWTs. | Use a long random value (minimum 32 chars). Rotating this logs out existing sessions. |
 | `DATABASE_URL` | Yes (for persistent production) | Primary production database connection string. | Point to a persistent managed DB. Avoid ephemeral local files for production. |
 | `NODE_ENV` | Yes | Runtime mode and production behavior. | Set to `production`. |
+| `CLIENT_ORIGIN` | Depends on deployment model | CORS + Socket.IO allowlist for trusted frontend origins. | **Unset** for same-origin deploys; **set** to one or more frontend origins for split-origin deploys. |
 | `VITE_API_BASE_URL` | Depends on deployment model | Frontend API target for `/api/*` calls. | **Unset** for same-origin deploys; **set** for split-domain deploys (for example `https://api.example.com`). |
+| `AUTH_RATE_LIMIT_CREDENTIAL_WINDOW_MS` | No | Auth credential endpoint limiter window in ms. | Default `600000` (10 minutes). |
+| `AUTH_RATE_LIMIT_CREDENTIAL_MAX` | No | Max credential requests allowed per IP within credential window. | Default `8` requests (login/register). |
+| `AUTH_RATE_LIMIT_SESSION_WINDOW_MS` | No | Auth session endpoint limiter window in ms. | Default `300000` (5 minutes). |
+| `AUTH_RATE_LIMIT_SESSION_MAX` | No | Max auth session requests allowed per IP within session window. | Default `30` requests (`/api/auth/me`, logout/session checks). |
 | `GEMINI_API_KEY` | Required only if AI media/features are enabled | Access key for Gemini-powered functionality. | Set in production if those features are enabled; otherwise leave unset/disabled. |
 
 ### 2) Choose deployment model (same-origin vs split-deployment)
@@ -120,9 +130,9 @@ These users are ensured at API bootstrap for serverless deployments.
 #### Explicit examples
 
 - **Same-origin example**:  
-  `NODE_ENV=production`, `JWT_SECRET=<strong-random-secret>`, `DATABASE_URL=<persistent-db-url>`, and **no** `VITE_API_BASE_URL`.
+  `NODE_ENV=production`, `JWT_SECRET=<strong-random-secret>`, `DATABASE_URL=<persistent-db-url>`, and **no** `CLIENT_ORIGIN`/`VITE_API_BASE_URL`.
 - **Split-deployment example**:  
-  `NODE_ENV=production`, `JWT_SECRET=<strong-random-secret>`, `DATABASE_URL=<persistent-db-url>`, `VITE_API_BASE_URL=https://api.example.com`.
+  `NODE_ENV=production`, `JWT_SECRET=<strong-random-secret>`, `DATABASE_URL=<persistent-db-url>`, `CLIENT_ORIGIN=https://app.example.com,https://admin.example.com`, `VITE_API_BASE_URL=https://api.example.com`.
 
 ### 3) Database bootstrap and seed expectations (fresh deployment)
 
@@ -170,6 +180,13 @@ Rollback guidance:
 
 - Pull requests must use `.github/pull_request_template.md`. Complete every checklist section before requesting review.
 - If your change affects release/deploy behavior, update `docs/ai/MEMORY.md` and/or `docs/ai/BACKLOG.md` as part of the PR.
+
+### CI flaky-test handling policy
+
+- **Retry policy**: CI retries integration tests once before marking the job as failed, to filter out transient environment noise.
+- **Quarantine policy**: If a test is confirmed flaky, quarantine it with a clearly labeled temporary skip, an owner, and a tracking issue/ticket.
+- **Reporting policy**: Every flaky failure must upload logs/artifacts and be documented in the related PR so maintainers can triage trend and impact.
+- **Exit criteria**: Quarantined tests must include explicit follow-up work and be unquarantined once the root cause is fixed.
 
 ## AI Workflow Files
 

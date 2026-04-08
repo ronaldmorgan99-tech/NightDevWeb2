@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { GoogleGenAI, type GenerateVideosOperation } from '@google/genai';
+import { z } from 'zod';
 import db, { initDb } from '../src/lib/db.js';
 import { seedDb } from '../src/lib/seed.js';
 import {
@@ -39,13 +40,32 @@ const MEDIA_MAX_ANIMATIONS_PER_USER_PER_HOUR = 5;
 const MEDIA_MIN_POLL_INTERVAL_MS = 5_000;
 const MEDIA_MAX_POLLS_PER_OPERATION = 120;
 const dataUriRegex = /^data:(?<mime>[^;]+);base64,(?<data>.+)$/;
+const CLIENT_ORIGINS = String(process.env.CLIENT_ORIGIN || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const HAS_SPLIT_ORIGIN_DEPLOYMENT = CLIENT_ORIGINS.length > 0;
 
 const AUTH_COOKIE_OPTIONS: CookieOptions = {
   httpOnly: true,
   secure: IS_PRODUCTION,
-  sameSite: IS_PRODUCTION ? 'none' : 'lax',
+  sameSite: IS_PRODUCTION && HAS_SPLIT_ORIGIN_DEPLOYMENT ? 'none' : 'lax',
   path: '/'
 };
+const parseEnvNumber = (value: string | undefined, fallback: number) => {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+const AUTH_RATE_LIMIT_CREDENTIAL_WINDOW_MS = parseEnvNumber(process.env.AUTH_RATE_LIMIT_CREDENTIAL_WINDOW_MS, 10 * 60 * 1000);
+const AUTH_RATE_LIMIT_CREDENTIAL_MAX = parseEnvNumber(process.env.AUTH_RATE_LIMIT_CREDENTIAL_MAX, 8);
+const AUTH_RATE_LIMIT_SESSION_WINDOW_MS = parseEnvNumber(process.env.AUTH_RATE_LIMIT_SESSION_WINDOW_MS, 5 * 60 * 1000);
+const AUTH_RATE_LIMIT_SESSION_MAX = parseEnvNumber(process.env.AUTH_RATE_LIMIT_SESSION_MAX, 30);
+
+const authLoginSchema = z.object({
+  username: z.string().trim().min(1).max(64),
+  password: z.string().min(1).max(128)
+});
 
 let bootPromise: Promise<void> | null = null;
 const mediaClient = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
@@ -165,6 +185,31 @@ async function requireAuthUser(req: Request, res: Response) {
   return user;
 }
 
+const validateBody = <T>(schema: z.ZodSchema<T>) => (req: Request, res: Response, next: express.NextFunction) => {
+  const parsedPayload = schema.safeParse(req.body);
+  if (!parsedPayload.success) {
+    return res.status(400).json({ error: parsedPayload.error.issues[0]?.message || 'Invalid request payload' });
+  }
+  req.body = parsedPayload.data;
+  next();
+};
+
+const createRateLimit = (windowMs: number, maxRequests: number, errorMessage: string) => {
+  const requests = new Map<string, number[]>();
+  return (req: Request, res: Response, next: express.NextFunction) => {
+    const now = Date.now();
+    const key = req.ip || req.socket.remoteAddress || 'unknown';
+    const timestamps = (requests.get(key) || []).filter((timestamp) => now - timestamp < windowMs);
+    timestamps.push(now);
+    requests.set(key, timestamps);
+
+    if (timestamps.length > maxRequests) {
+      return res.status(429).json({ error: errorMessage });
+    }
+    next();
+  };
+};
+
 app.use(async (_req, res, next) => {
   try {
     await ensureDb();
@@ -173,6 +218,38 @@ app.use(async (_req, res, next) => {
     res.status(500).json({ error: err?.message || 'Database initialization failed.' });
   }
 });
+
+const corsMethods = ['GET', 'POST', 'OPTIONS', 'HEAD', 'PUT', 'DELETE', 'PATCH'].join(', ');
+const corsHeaders = ['Content-Type', 'X-CSRF-Token'].join(', ');
+app.use((req, res, next) => {
+  const requestOrigin = req.headers.origin;
+  if (requestOrigin && CLIENT_ORIGINS.includes(requestOrigin)) {
+    res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+
+  res.setHeader('Access-Control-Allow-Methods', corsMethods);
+  res.setHeader('Access-Control-Allow-Headers', corsHeaders);
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
+const strictCredentialRateLimit = createRateLimit(
+  AUTH_RATE_LIMIT_CREDENTIAL_WINDOW_MS,
+  AUTH_RATE_LIMIT_CREDENTIAL_MAX,
+  'Too many credential attempts. Please try again in 10 minutes.'
+);
+const authSessionRateLimit = createRateLimit(
+  AUTH_RATE_LIMIT_SESSION_WINDOW_MS,
+  AUTH_RATE_LIMIT_SESSION_MAX,
+  'Too many authentication requests. Please slow down.'
+);
+app.use(['/api/auth/login', '/auth/login'], strictCredentialRateLimit);
+app.use(['/api/auth/me', '/auth/me', '/api/auth/logout', '/auth/logout'], authSessionRateLimit);
 
 const loginHandler = async (req: Request, res: Response) => {
   if (!JWT_SECRET || JWT_SECRET.length < 32) {
@@ -193,7 +270,7 @@ const loginHandler = async (req: Request, res: Response) => {
     return res.status(500).json({ error: err?.message || 'Login failed' });
   }
 };
-app.post(['/api/auth/login', '/auth/login'], loginHandler);
+app.post(['/api/auth/login', '/auth/login'], validateBody(authLoginSchema), loginHandler);
 
 const logoutHandler = (_req: Request, res: Response) => {
   res.clearCookie(AUTH_COOKIE_NAME, AUTH_COOKIE_OPTIONS);
