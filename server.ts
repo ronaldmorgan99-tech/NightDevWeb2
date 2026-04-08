@@ -24,6 +24,7 @@ const JWT_SECRET = process.env.JWT_SECRET || '';
 
 const AUTH_COOKIE_NAME = 'token';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const ERROR_TRACKING_WEBHOOK = process.env.ERROR_TRACKING_WEBHOOK || '';
 
 const AUTH_COOKIE_OPTIONS: CookieOptions = {
   httpOnly: true,
@@ -94,10 +95,109 @@ function sanitizeProxyEnvironment() {
   }
 }
 
+type LogLevel = 'info' | 'warn' | 'error';
+type StructuredLogContext = Record<string, string | number | boolean | null | undefined>;
+
+const logStructured = (level: LogLevel, event: string, context: StructuredLogContext = {}) => {
+  const payload = {
+    timestamp: new Date().toISOString(),
+    level,
+    event,
+    ...context
+  };
+  const serialized = JSON.stringify(payload);
+  if (level === 'error') {
+    console.error(serialized);
+    return;
+  }
+  if (level === 'warn') {
+    console.warn(serialized);
+    return;
+  }
+  console.log(serialized);
+};
+
+const captureException = async (error: unknown, context: Record<string, unknown> = {}) => {
+  const normalizedMessage = error instanceof Error ? error.message : String(error);
+  logStructured('error', 'exception.captured', {
+    message: normalizedMessage,
+    context: JSON.stringify(context)
+  });
+
+  if (!ERROR_TRACKING_WEBHOOK) {
+    return;
+  }
+
+  try {
+    await fetch(ERROR_TRACKING_WEBHOOK, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        environment: process.env.NODE_ENV,
+        message: normalizedMessage,
+        stack: error instanceof Error ? error.stack : undefined,
+        context
+      })
+    });
+  } catch (webhookError) {
+    logStructured('warn', 'exception.webhook_failed', {
+      message: webhookError instanceof Error ? webhookError.message : String(webhookError)
+    });
+  }
+};
+
+type LatencyMetrics = {
+  count: number;
+  totalMs: number;
+  minMs: number;
+  maxMs: number;
+};
+
+type SocketMetrics = {
+  authFailures: number;
+  connections: number;
+  disconnects: number;
+  connectionErrors: number;
+  activeConnections: number;
+};
+
+const observabilityMetrics = {
+  media: {
+    '/api/media/animate': { count: 0, totalMs: 0, minMs: Number.POSITIVE_INFINITY, maxMs: 0 } as LatencyMetrics,
+    '/api/media/poll': { count: 0, totalMs: 0, minMs: Number.POSITIVE_INFINITY, maxMs: 0 } as LatencyMetrics
+  },
+  socket: {
+    authFailures: 0,
+    connections: 0,
+    disconnects: 0,
+    connectionErrors: 0,
+    activeConnections: 0
+  } as SocketMetrics
+};
+
+const recordLatency = (metric: LatencyMetrics, durationMs: number) => {
+  metric.count += 1;
+  metric.totalMs += durationMs;
+  metric.minMs = Math.min(metric.minMs, durationMs);
+  metric.maxMs = Math.max(metric.maxMs, durationMs);
+};
+
+const summarizeLatency = (metric: LatencyMetrics) => ({
+  count: metric.count,
+  avgMs: metric.count > 0 ? Number((metric.totalMs / metric.count).toFixed(2)) : 0,
+  minMs: metric.count > 0 ? Number(metric.minMs.toFixed(2)) : 0,
+  maxMs: Number(metric.maxMs.toFixed(2))
+});
+
 async function start() {
   console.log('--- STARTING NIGHTRESPAWN SERVER ---');
   validateEnv();
   sanitizeProxyEnvironment();
+  if (ERROR_TRACKING_WEBHOOK) {
+    logStructured('info', 'error_tracking.initialized', { environment: process.env.NODE_ENV || 'unknown' });
+  } else {
+    logStructured('warn', 'error_tracking.not_configured');
+  }
 
   // Startup order is deterministic: create/validate schema first, then seed/reset data.
   try {
@@ -123,6 +223,36 @@ async function start() {
 
   app.use(express.json({ limit: '50mb' }));
   app.use(cookieParser());
+
+  app.use((req, res, next) => {
+    const shouldLog = req.path.startsWith('/api/auth')
+      || req.path.startsWith('/api/settings')
+      || req.path.startsWith('/api/admin/settings')
+      || req.path.startsWith('/api/media');
+
+    if (!shouldLog) {
+      return next();
+    }
+
+    const startHr = process.hrtime.bigint();
+    const requestId = req.headers['x-request-id'] ? String(req.headers['x-request-id']) : `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    res.setHeader('x-request-id', requestId);
+
+    res.on('finish', () => {
+      const durationMs = Number(process.hrtime.bigint() - startHr) / 1_000_000;
+      const userId = req.path.startsWith('/api/auth') || req.path.startsWith('/api/media') ? getUserFromToken(req)?.id ?? null : null;
+      logStructured('info', 'http.request', {
+        requestId,
+        method: req.method,
+        path: req.path,
+        statusCode: res.statusCode,
+        durationMs: Number(durationMs.toFixed(2)),
+        userId
+      });
+    });
+
+    next();
+  });
 
   const csrfProtection = csurf({
     cookie: {
@@ -153,16 +283,39 @@ async function start() {
   // --- SOCKET.IO AUTH ---
   io.use((socket, next) => {
     const cookie = socket.handshake.headers.cookie;
-    if (!cookie) return next(new Error('Authentication error'));
+    if (!cookie) {
+      observabilityMetrics.socket.authFailures += 1;
+      logStructured('warn', 'socket.auth.failed', {
+        socketId: socket.id,
+        reason: 'missing_cookie'
+      });
+      return next(new Error('Authentication error'));
+    }
     
     const token = cookie.split('; ').find(row => row.startsWith(`${AUTH_COOKIE_NAME}=`))?.split('=')[1];
-    if (!token) return next(new Error('Authentication error'));
+    if (!token) {
+      observabilityMetrics.socket.authFailures += 1;
+      logStructured('warn', 'socket.auth.failed', {
+        socketId: socket.id,
+        reason: 'missing_token'
+      });
+      return next(new Error('Authentication error'));
+    }
 
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as any;
       socket.data.user = decoded;
+      logStructured('info', 'socket.auth.succeeded', {
+        socketId: socket.id,
+        userId: decoded?.id ?? null
+      });
       next();
     } catch (err) {
+      observabilityMetrics.socket.authFailures += 1;
+      logStructured('warn', 'socket.auth.failed', {
+        socketId: socket.id,
+        reason: 'invalid_token'
+      });
       next(new Error('Authentication error'));
     }
   });
@@ -239,7 +392,27 @@ async function start() {
     const currentSockets = userSockets.get(userId) || new Set<string>();
     currentSockets.add(socket.id);
     userSockets.set(userId, currentSockets);
-    console.log(`User ${userId} connected via socket [${socket.id}]`);
+    observabilityMetrics.socket.connections += 1;
+    observabilityMetrics.socket.activeConnections += 1;
+    logStructured('info', 'socket.connected', {
+      userId,
+      socketId: socket.id,
+      activeConnections: observabilityMetrics.socket.activeConnections
+    });
+
+    socket.on('error', (err: Error) => {
+      observabilityMetrics.socket.connectionErrors += 1;
+      void captureException(err, {
+        scope: 'socket',
+        socketId: socket.id,
+        userId
+      });
+      logStructured('error', 'socket.error', {
+        userId,
+        socketId: socket.id,
+        message: err.message
+      });
+    });
 
     socket.on('disconnect', () => {
       const userSet = userSockets.get(userId);
@@ -251,7 +424,13 @@ async function start() {
           userSockets.set(userId, userSet);
         }
       }
-      console.log(`User ${userId} disconnected from socket [${socket.id}]`);
+      observabilityMetrics.socket.disconnects += 1;
+      observabilityMetrics.socket.activeConnections = Math.max(0, observabilityMetrics.socket.activeConnections - 1);
+      logStructured('info', 'socket.disconnected', {
+        userId,
+        socketId: socket.id,
+        activeConnections: observabilityMetrics.socket.activeConnections
+      });
     });
   });
 
@@ -340,6 +519,25 @@ async function start() {
   };
 
   // --- API ROUTES ---
+
+  app.post('/api/telemetry/client-error', async (req, res) => {
+    const payload = req.body || {};
+    logStructured('error', 'frontend.exception', {
+      type: String(payload.type || 'unknown'),
+      message: String(payload.message || 'Unknown client error'),
+      source: String(payload.source || ''),
+      url: String(payload.url || ''),
+      line: Number(payload.line || 0),
+      column: Number(payload.column || 0)
+    });
+
+    await captureException(payload.message || 'Unknown client error', {
+      scope: 'frontend',
+      payload
+    });
+
+    res.status(202).json({ accepted: true });
+  });
 
   // Auth
   app.post('/api/auth/register', async (req, res) => {
@@ -1908,6 +2106,7 @@ async function start() {
 
   // --- MEDIA ---
   app.post('/api/media/animate', authenticate, async (req: any, res) => {
+    const startedAt = Date.now();
     if (!mediaClient) {
       return res.status(503).json({ error: 'Media provider is not configured. Missing GEMINI_API_KEY.' });
     }
@@ -1963,12 +2162,22 @@ async function start() {
       res.json({ operationName });
     } catch (err: any) {
       console.error('Media provider animate error:', err);
+      void captureException(err, { scope: 'media', endpoint: '/api/media/animate', userId: req.user.id });
       const providerMessage = err?.message || 'Unknown media provider error';
       res.status(502).json({ error: `Media provider failed to start generation: ${providerMessage}` });
+    } finally {
+      const durationMs = Date.now() - startedAt;
+      recordLatency(observabilityMetrics.media['/api/media/animate'], durationMs);
+      logStructured('info', 'media.latency', {
+        endpoint: '/api/media/animate',
+        durationMs,
+        ...summarizeLatency(observabilityMetrics.media['/api/media/animate'])
+      });
     }
   });
 
   app.get('/api/media/poll', authenticate, async (req: any, res) => {
+    const startedAt = Date.now();
     pruneExpiredMediaOperations();
 
     const operationName = String(req.query.operationName || '');
@@ -2028,18 +2237,44 @@ async function start() {
       return res.json({ done: true, uri });
     } catch (err: any) {
       console.error('Media provider poll error:', err);
+      void captureException(err, { scope: 'media', endpoint: '/api/media/poll', userId: req.user.id });
       operation.status = 'error';
       operation.error = err?.message || 'Failed to poll media provider.';
       return res.status(502).json({ done: true, error: operation.error });
+    } finally {
+      const durationMs = Date.now() - startedAt;
+      recordLatency(observabilityMetrics.media['/api/media/poll'], durationMs);
+      logStructured('info', 'media.latency', {
+        endpoint: '/api/media/poll',
+        durationMs,
+        ...summarizeLatency(observabilityMetrics.media['/api/media/poll'])
+      });
     }
+  });
+
+  app.get('/api/admin/observability/metrics', authenticate, isAdmin, (_req, res) => {
+    res.json({
+      media: {
+        '/api/media/animate': summarizeLatency(observabilityMetrics.media['/api/media/animate']),
+        '/api/media/poll': summarizeLatency(observabilityMetrics.media['/api/media/poll'])
+      },
+      socket: observabilityMetrics.socket
+    });
   });
 
   // Error handling for CSRF and other failures
   app.use((err: any, req: any, res: any, next: any) => {
     if (err.code === 'EBADCSRFTOKEN') {
+      void captureException(err, { scope: 'csrf' });
       return res.status(403).json({ success: false, error: 'Invalid CSRF token', code: 'CSRF_INVALID_TOKEN' });
     }
 
+    void captureException(err, {
+      scope: 'express',
+      path: req.path,
+      method: req.method,
+      userId: req?.user?.id ?? null
+    });
     console.error('Unhandled error:', err);
     return res.status(500).json({ success: false, error: err?.message || 'Server error', code: 'INTERNAL_SERVER_ERROR' });
   });
@@ -2085,5 +2320,18 @@ async function start() {
 }
 
 start().catch(err => {
+  void captureException(err, { scope: 'startup' });
   console.error('Fatal server error:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  void captureException(reason, { scope: 'process.unhandled_rejection' });
+  logStructured('error', 'process.unhandled_rejection', {
+    reason: reason instanceof Error ? reason.message : String(reason)
+  });
+});
+
+process.on('uncaughtException', (err) => {
+  void captureException(err, { scope: 'process.uncaught_exception' });
+  logStructured('error', 'process.uncaught_exception', { message: err.message });
 });
