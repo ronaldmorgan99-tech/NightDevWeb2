@@ -53,3 +53,11 @@ Together, they keep local UI state and remote API data organized, performant, an
    - `VITE_API_BASE_URL`: set this when frontend and API are hosted on different domains (example: `https://api.yourdomain.com`). If omitted, frontend calls relative `/api/*` paths on the current origin.
 5. Run the app:
    `npm run dev`
+
+## AI Workflow Files
+
+The repository includes AI collaboration documents that help track context and planned work:
+
+- `skills/release-readiness/SKILL.md` — reusable workflow guidance for release-readiness checks.
+- `docs/ai/MEMORY.md` — persistent project memory and key context for future sessions.
+- `docs/ai/BACKLOG.md` — prioritized backlog items and follow-up tasks.
