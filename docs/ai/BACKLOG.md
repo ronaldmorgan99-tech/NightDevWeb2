@@ -1,6 +1,20 @@
 # NightDevWeb2 Backlog
 
 Updated on 2026-04-08
+Last reviewed: 2026-04-08
+
+## Document Governance
+
+- **Owner**: Platform Engineering backlog steward (primary) with Product + Admin Operations providing prioritization input.
+- **Required update triggers**:
+  - Post-incident update when incidents create follow-up actions or change task priority.
+  - Post-release update to reflect shipped work, regressions, and carry-over tasks.
+  - Architecture change update when technical direction changes feature scope, sequencing, or risks.
+- **Review cadence**: Review weekly and at each sprint planning session.
+- **Archive format**:
+  - In `## Now`, any item marked complete for more than 30 days must be moved to `docs/ai/archive/BACKLOG_ARCHIVE.md`.
+  - Archive entries must include: original section, completion date, and `Archived on: YYYY-MM-DD`.
+  - Keep archive grouped by quarter headings (`## YYYY-QN`) to make retrieval easier.
 
 ## Now (Current Sprint)
 
