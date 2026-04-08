@@ -1,5 +1,20 @@
 # NightDevWeb2 Memory
 
+Last reviewed: 2026-04-08
+
+## Document Governance
+
+- **Owner**: Platform Engineering (primary) with Admin Operations as contributing reviewers for release communications.
+- **Required update triggers**:
+  - Post-incident review for any production issue touching auth, deploy routing, CORS, or data integrity.
+  - Post-release review after each production deployment.
+  - Architecture change review whenever routes, API bootstrap, data layer, auth model, or deployment topology changes.
+- **Review cadence**: Review weekly and additionally during each sprint retrospective.
+- **Archive format**:
+  - Keep active context in this file.
+  - Move outdated decisions and gotchas older than 30 days to `docs/ai/archive/MEMORY_ARCHIVE.md` under month-based headings (`## YYYY-MM`).
+  - Preserve each archived entry with its original date and add `Archived on: YYYY-MM-DD`.
+
 ## Architecture Map
 
 ### Frontend Routes (src/App.tsx)
