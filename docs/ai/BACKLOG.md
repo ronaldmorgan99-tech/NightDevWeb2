@@ -33,6 +33,9 @@
 - **Status**: ✅ Core fixes implemented
 - **Details**: Added Vercel filesystem-first routing for static assets and stabilized serverless API bootstrap with idempotent default auth-user creation.
 - **Definition of Done**: Maintain green deploys where `/api/settings`, `/api/servers`, and `/api/auth/login` return expected responses (200/401, not 404/500) after redeploy.
+- **Status**: ⚠️ In progress
+- **Details**: Frontend supports `VITE_API_BASE_URL` for split deployment. For same-origin Vercel API routes, keep `VITE_API_BASE_URL` unset to avoid preview-to-production CORS failures. Serverless runtime also requires explicit emitted `.js` import extensions in Node ESM paths.
+- **Definition of Done**: Vercel project has working API origin configured, `/api/settings` and `/api/auth/login` return 200/401 (not 404) in production.
 
 ### Integration Testing
 - **Status**: ✅ Implemented

@@ -81,7 +81,12 @@ const NavArrow = ({ direction, onClick, disabled, className }: {
         />
         
         {/* Holographic Noise/Grain */}
-        <div className="absolute inset-0 opacity-[0.05] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
+        <div
+          className="absolute inset-0 opacity-[0.05] pointer-events-none"
+          style={{
+            backgroundImage: "var(--noise-overlay)"
+          }}
+        />
       </motion.div>
 
       <motion.div
