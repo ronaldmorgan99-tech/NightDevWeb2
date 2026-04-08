@@ -6,8 +6,8 @@ description: Multi-agent workflow definitions for NightDevWeb2 project
 # NightDevWeb2 Agents
 
 ## Stack Summary
-- **Frontend**: React 18 + TypeScript + Vite + Tailwind CSS + TanStack Query
-- **Backend**: Node.js + Express + SQLite + Socket.IO + JWT auth
+- **Frontend**: React 19 + TypeScript + Vite + Tailwind CSS + TanStack Query
+- **Backend**: Node.js + Express + SQLite (local) + MySQL (production) + Socket.IO + JWT auth
 - **Testing**: Node test runner + regression tests
 - **Deployment**: Vite build + Express server
 
@@ -29,6 +29,7 @@ description: Multi-agent workflow definitions for NightDevWeb2 project
 - **Plan before coding**: Break down tasks into small, verifiable steps
 - **Small diffs**: Make incremental changes with clear commit messages
 - **Validation**: Run relevant tests/checks after each change
+- **Docs consistency check**: When changing core dependencies, update AGENTS.md and README.md stack sections in the same PR
 - **Security**: Never expose secrets, validate inputs, use HTTPS in production
 
 ## Output Format Conventions
