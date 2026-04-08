@@ -171,6 +171,13 @@ Rollback guidance:
 - Pull requests must use `.github/pull_request_template.md`. Complete every checklist section before requesting review.
 - If your change affects release/deploy behavior, update `docs/ai/MEMORY.md` and/or `docs/ai/BACKLOG.md` as part of the PR.
 
+### CI flaky-test handling policy
+
+- **Retry policy**: CI retries integration tests once before marking the job as failed, to filter out transient environment noise.
+- **Quarantine policy**: If a test is confirmed flaky, quarantine it with a clearly labeled temporary skip, an owner, and a tracking issue/ticket.
+- **Reporting policy**: Every flaky failure must upload logs/artifacts and be documented in the related PR so maintainers can triage trend and impact.
+- **Exit criteria**: Quarantined tests must include explicit follow-up work and be unquarantined once the root cause is fixed.
+
 ## AI Workflow Files
 
 The repository includes AI collaboration documents that help track context and planned work:

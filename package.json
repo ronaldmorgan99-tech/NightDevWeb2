@@ -11,7 +11,8 @@
     "lint": "tsc --noEmit",
     "test": "node --test test/regression.test.js",
     "test:regression": "node --test test/regression.test.js",
-    "test:integration": "node regression-tests.js"
+    "test:integration": "node regression-tests.js",
+    "test:unit:coverage": "node --experimental-test-coverage --test test/regression.test.js"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
