@@ -1,51 +1,70 @@
-# Observability, Alert Thresholds, and Incident Triage
+# Observability, Dashboards, Alert Thresholds, and Incident Triage
 
 ## Scope
-This document defines the baseline monitoring/alerting for:
+This document defines baseline monitoring and incident response for:
 
-- Auth endpoints (`/api/auth/*`)
-- Settings endpoints (`/api/settings`, `/api/admin/settings`)
+- API reliability and latency (`/api/*`)
+- Auth flows (`/api/auth/register`, `/api/auth/login`, `/api/auth/me`)
 - Media endpoints (`/api/media/*`)
-- Socket.IO connection lifecycle
+- Socket.IO connection lifecycle + room load
+- Frontend route-level and API-level exceptions
 
 ## Signals
 
 | Area | Signal | Source |
 | --- | --- | --- |
-| Auth/settings/media API | Structured request logs with `requestId`, status, duration, and optional user id | `server.ts` request logging middleware |
-| Media jobs | Latency aggregates for `/api/media/animate` and `/api/media/poll` | `/api/admin/observability/metrics` |
-| Socket lifecycle | Auth failures, total connects/disconnects, active connections, socket errors | `/api/admin/observability/metrics` + structured logs |
-| Runtime exceptions | Backend and frontend exception capture | Webhook-based error tracking + server telemetry endpoint |
+| API reliability | Request counts, status buckets, route latency, error rate | `GET /api/admin/observability/metrics` (`api` block) + structured `http.request` logs |
+| Auth flows | Register/login attempts, success/failure, `/api/auth/me` unauthorized checks | `GET /api/admin/observability/metrics` (`auth` block) |
+| Media jobs | Latency aggregates for `/api/media/animate` and `/api/media/poll` | `GET /api/admin/observability/metrics` (`media` block) |
+| Socket lifecycle | Auth failures, connect/disconnect/error counts, active connections | `GET /api/admin/observability/metrics` (`socket` block) + structured logs |
+| Socket room load | Room count, room memberships, max room occupancy | `GET /api/admin/observability/metrics` (`socket` block) |
+| Runtime exceptions | Backend route-level exceptions + frontend route/API exceptions | Error tracking webhook + `/api/telemetry/client-error` |
+
+## Dashboard Definitions
+
+| Dashboard | Panels |
+| --- | --- |
+| **API Health** | `api.totalRequests`, `api.errorRatePct`, `api.statusCounts.5xx`, top `api.byRoute[*].latency.avgMs`, top `api.byRoute[*].errorRatePct` |
+| **Auth Funnel** | `auth.registerAttempts/success/failure`, `auth.loginAttempts/success/failure`, `auth.meUnauthorized` |
+| **Realtime Socket Health** | `socket.connections`, `socket.disconnects`, `socket.connectionErrors`, `socket.activeConnections`, `socket.authFailures`, `socket.roomCount`, `socket.roomMemberships`, `socket.maxRoomOccupancy` |
+| **Frontend + Backend Exceptions** | Count by `payload.type` (`frontend.api_exception`, `window.error`, `react.error_boundary`) and backend `exception.captured` trend |
 
 ## Initial Alert Thresholds
 
 | Alert | Condition | Severity | Suggested action |
 | --- | --- | --- | --- |
-| Auth failure spike | `socket.authFailures` or `/api/auth/*` 401/403 responses > 50 in 5 min | P2 | Verify auth cookies/JWT secret/session rollout issues |
-| Media latency degradation | `/api/media/animate` avg latency > 8,000ms for 10 min | P2 | Check Gemini provider health and job queue behavior |
-| Media hard failures | `/api/media/*` 5xx rate > 5% for 10 min | P1 | Check provider credentials and API error details |
-| Socket instability | `connectionErrors` > 20 in 5 min or disconnect/connect ratio > 1.5 for 10 min | P2 | Inspect network disruptions and recent deploys |
-| Unhandled exception burst | > 10 backend or frontend unhandled exceptions in 5 min | P1 | Triage latest release and stack traces immediately |
+| API 5xx rate spike | `api.errorRatePct > 5%` for 10 minutes or `statusCounts.500+` > 25 in 5 minutes | P1 | Triage top failing routes, rollback recent changes if needed |
+| API latency degradation | Any critical route `api.byRoute[*].latency.avgMs > 1200ms` for 10 minutes | P2 | Check DB load, recent query changes, and upstream provider health |
+| Login failures surge | `auth.loginFailure / auth.loginAttempts > 0.2` for 10 minutes | P1 | Validate auth cookies, JWT secret, and rate limit behavior |
+| Registration failures surge | `auth.registerFailure / auth.registerAttempts > 0.15` for 10 minutes | P2 | Validate schema changes, DB writes, and email side-effects |
+| `/api/auth/me` unauthorized spike | `auth.meUnauthorized > 100` in 10 minutes | P2 | Investigate token expiry, cookie domain/sameSite settings |
+| Socket instability | `socket.connectionErrors > 20` in 5 minutes OR `disconnects / connections > 1.5` for 10 minutes | P2 | Inspect network quality and deployment events |
+| Socket room overload | `socket.maxRoomOccupancy > 1000` OR `socket.roomMemberships` growth > 3x in 10 minutes | P2 | Check for runaway subscriptions and room cleanup bugs |
+| Exception burst | Frontend + backend unhandled exceptions > 10 in 5 minutes | P1 | Triage recent deploy and impacted routes/pages |
 
-## Lightweight Incident Triage Runbook
+## Incident Runbook
 
-1. **Acknowledge and classify**
-   - Assign severity (P1/P2/P3).
-   - Mark start time and impacted area (auth/settings/media/socket/frontend).
-2. **Scope impact quickly (5-10 min)**
-   - Review structured logs for affected endpoints and `requestId` patterns.
-   - Check `/api/admin/observability/metrics` for media/socket trend shifts.
-   - Review webhook/error tracker events and newest stack traces.
-3. **Stabilize**
-   - If caused by deploy: rollback or disable the feature flag/config.
-   - If provider issue: return degraded response with clear client message.
-4. **Mitigate + communicate**
-   - Post status in team channel every 15 minutes while active.
-   - Document temporary mitigation and customer-facing impact.
-5. **Close and follow-up**
-   - Record root cause, trigger, and corrective actions.
-   - Add a regression test or monitor adjustment before closing.
+1. **Acknowledge and classify (0-5 min)**
+   - Assign severity (P1/P2/P3) and incident commander.
+   - Capture exact start timestamp and impacted surface (API/auth/socket/frontend).
+2. **Scope impact (5-10 min)**
+   - Check `GET /api/admin/observability/metrics` for deviations.
+   - Pull recent structured logs by `requestId`, route, and status.
+   - Review error tracker payloads for stack traces and affected route/page.
+3. **Stabilize service (10-20 min)**
+   - Roll back recent deploy/config if correlation is clear.
+   - Disable/feature-flag problematic paths if rollback is not immediate.
+   - For provider incidents, serve degraded but explicit error responses.
+4. **Mitigate and communicate (ongoing)**
+   - Post status updates every 15 minutes while active.
+   - Log user impact, temporary mitigations, and ETA.
+5. **Recover and verify (before close)**
+   - Confirm alerts have cleared for at least 30 minutes.
+   - Confirm smoke checks pass, including telemetry health.
+6. **Post-incident follow-up (within 48h)**
+   - Document root cause, trigger, timeline, and action items.
+   - Add a regression test and/or monitoring refinement in the next PR.
 
 ## Notes
-- Keep thresholds conservative first; tune after one week of production data.
-- Use `x-request-id` to correlate frontend reports with backend logs.
+- Start with conservative thresholds, then tune after one week of production traffic.
+- Always correlate frontend telemetry and backend logs with `x-request-id` when available.
