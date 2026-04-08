@@ -24,14 +24,58 @@ const JWT_SECRET = process.env.JWT_SECRET || '';
 
 const AUTH_COOKIE_NAME = 'token';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const CLIENT_ORIGINS = String(process.env.CLIENT_ORIGIN || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const HAS_SPLIT_ORIGIN_DEPLOYMENT = CLIENT_ORIGINS.length > 0;
 const ERROR_TRACKING_WEBHOOK = process.env.ERROR_TRACKING_WEBHOOK || '';
 
 const AUTH_COOKIE_OPTIONS: CookieOptions = {
   httpOnly: true,
   secure: IS_PRODUCTION,
-  sameSite: IS_PRODUCTION ? 'none' : 'lax',
+  sameSite: IS_PRODUCTION && HAS_SPLIT_ORIGIN_DEPLOYMENT ? 'none' : 'lax',
   path: '/'
 };
+
+const authRegisterSchema = z.object({
+  username: z.string().trim().min(3).max(32),
+  email: z.string().trim().toLowerCase().email().max(320),
+  password: z.string().min(8).max(128)
+});
+
+const authLoginSchema = z.object({
+  username: z.string().trim().min(1).max(64),
+  password: z.string().min(1).max(128)
+});
+
+const profileUpdateSchema = z.object({
+  avatar_url: z.string().trim().max(2048).optional(),
+  banner_url: z.string().trim().max(2048).optional(),
+  bio: z.string().trim().max(500).optional(),
+  username: z.string().trim().min(3).max(32).optional(),
+  email: z.string().trim().toLowerCase().email().max(320).optional(),
+  currentPassword: z.string().max(128).optional(),
+  newPassword: z.string().min(8).max(128).optional()
+}).superRefine((payload, ctx) => {
+  if (payload.newPassword && !payload.currentPassword) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['currentPassword'],
+      message: 'Current password required to set new password'
+    });
+  }
+});
+
+const adminSettingsItemSchema = z.object({
+  key: z.string().trim().min(1).max(100),
+  value: z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(z.any()), z.record(z.string(), z.any())])
+});
+
+const adminSettingsUpdateSchema = z.union([
+  z.array(adminSettingsItemSchema),
+  z.object({ settings: z.array(adminSettingsItemSchema) })
+]);
 
 function validateEnv() {
   if (!JWT_SECRET || JWT_SECRET.length < 32) {
@@ -48,6 +92,19 @@ function validateEnv() {
 
   if (process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL is required in production.');
+  }
+
+  if (CLIENT_ORIGINS.length > 0) {
+    for (const origin of CLIENT_ORIGINS) {
+      try {
+        const parsed = new URL(origin);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          throw new Error(`CLIENT_ORIGIN contains unsupported protocol: ${origin}`);
+        }
+      } catch {
+        throw new Error(`CLIENT_ORIGIN contains an invalid URL origin: ${origin}`);
+      }
+    }
   }
 
   // Validate payment configuration
@@ -212,10 +269,12 @@ async function start() {
   }
 
   const app = express();
+  app.set('trust proxy', 1);
   const server = http.createServer(app);
   const io = new Server(server, {
     cors: {
-      origin: '*',
+      origin: CLIENT_ORIGINS.length > 0 ? CLIENT_ORIGINS : false,
+      credentials: HAS_SPLIT_ORIGIN_DEPLOYMENT,
       methods: ['GET', 'POST', 'OPTIONS', 'HEAD', 'PUT', 'DELETE', 'PATCH']
     }
   });
@@ -224,6 +283,22 @@ async function start() {
   app.use(express.json({ limit: '50mb' }));
   app.use(cookieParser());
 
+  const corsMethods = ['GET', 'POST', 'OPTIONS', 'HEAD', 'PUT', 'DELETE', 'PATCH'].join(', ');
+  const corsHeaders = ['Content-Type', 'X-CSRF-Token'].join(', ');
+  app.use((req, res, next) => {
+    const requestOrigin = req.headers.origin;
+    if (requestOrigin && CLIENT_ORIGINS.includes(requestOrigin)) {
+      res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
+
+    res.setHeader('Access-Control-Allow-Methods', corsMethods);
+    res.setHeader('Access-Control-Allow-Headers', corsHeaders);
+
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
   app.use((req, res, next) => {
     const shouldLog = req.path.startsWith('/api/auth')
       || req.path.startsWith('/api/settings')
@@ -253,6 +328,25 @@ async function start() {
 
     next();
   });
+
+  const createRateLimit = (windowMs: number, maxRequests: number) => {
+    const requests = new Map<string, number[]>();
+    return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+      const now = Date.now();
+      const key = req.ip || req.socket.remoteAddress || 'unknown';
+      const timestamps = (requests.get(key) || []).filter((timestamp) => now - timestamp < windowMs);
+      timestamps.push(now);
+      requests.set(key, timestamps);
+
+      if (timestamps.length > maxRequests) {
+        return res.status(429).json({ error: 'Too many authentication attempts. Please try again later.' });
+      }
+      next();
+    };
+  };
+
+  const authRateLimit = createRateLimit(10 * 60 * 1000, 20);
+  app.use(['/api/auth/login', '/api/auth/register'], authRateLimit);
 
   const csrfProtection = csurf({
     cookie: {
@@ -541,17 +635,15 @@ async function start() {
 
   // Auth
   app.post('/api/auth/register', async (req, res) => {
-    const { username, email, password } = req.body;
-    const normalizedEmail = String(email || '').trim().toLowerCase();
-    const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail);
-
-    if (!isValidEmail) {
+    const parsedPayload = authRegisterSchema.safeParse(req.body);
+    if (!parsedPayload.success) {
       return res.status(400).json({ error: 'A valid email address is required.' });
     }
+    const { username, email, password } = parsedPayload.data;
 
     try {
       const hashedPassword = bcrypt.hashSync(password, 10);
-      await db.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)', [username, normalizedEmail, hashedPassword]);
+      await db.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)', [username, email, hashedPassword]);
 
       const user = await db.queryOne<any>(
         'SELECT id, username, email, role FROM users WHERE username = ?',
@@ -582,7 +674,11 @@ async function start() {
   });
 
   app.post('/api/auth/login', async (req, res) => {
-    const { username, password } = req.body;
+    const parsedPayload = authLoginSchema.safeParse(req.body);
+    if (!parsedPayload.success) {
+      return res.status(400).json({ error: 'Invalid login payload' });
+    }
+    const { username, password } = parsedPayload.data;
     try {
       const user = await db.queryOne<any>('SELECT * FROM users WHERE username = ?', [username]);
       if (!user || !bcrypt.compareSync(password, user.password)) {
@@ -606,7 +702,11 @@ async function start() {
   });
 
   app.patch('/api/auth/me', authenticate, async (req: any, res) => {
-    const { avatar_url, banner_url, bio, username, email, currentPassword, newPassword } = req.body;
+    const parsedPayload = profileUpdateSchema.safeParse(req.body);
+    if (!parsedPayload.success) {
+      return res.status(400).json({ error: parsedPayload.error.issues[0]?.message || 'Invalid profile payload' });
+    }
+    const { avatar_url, banner_url, bio, username, email, currentPassword, newPassword } = parsedPayload.data;
     try {
       const updates: string[] = [];
       const params: any[] = [];
@@ -624,11 +724,6 @@ async function start() {
 
       // Handle email update
       if (email !== undefined && email !== '') {
-        // Validate email format
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-          return res.status(400).json({ error: 'Invalid email format' });
-        }
         // Check if email is already taken (by another user)
         const existingUser = await db.queryOne<any>('SELECT id FROM users WHERE email = ? AND id != ?', [email, req.user.id]);
         if (existingUser) {
@@ -640,10 +735,6 @@ async function start() {
 
       // Handle password update
       if (newPassword !== undefined && newPassword !== '') {
-        if (!currentPassword) {
-          return res.status(400).json({ error: 'Current password required to set new password' });
-        }
-        
         // Verify current password
         const user = await db.queryOne<any>('SELECT password FROM users WHERE id = ?', [req.user.id]);
         const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
@@ -1751,10 +1842,18 @@ async function start() {
   });
 
   app.post('/api/admin/settings', authenticate, isAdmin, async (req, res) => {
-    const settings = Array.isArray(req.body) ? req.body : req.body?.settings || [];
+    const parsedPayload = adminSettingsUpdateSchema.safeParse(req.body);
+    if (!parsedPayload.success) {
+      return res.status(400).json({ error: parsedPayload.error.issues[0]?.message || 'Invalid settings payload' });
+    }
+
+    const settings = Array.isArray(parsedPayload.data) ? parsedPayload.data : parsedPayload.data.settings;
     try {
       for (const setting of settings) {
-        await db.execute('UPDATE site_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?', [setting.value, setting.key]);
+        await db.execute(
+          'UPDATE site_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?',
+          [typeof setting.value === 'string' ? setting.value.trim() : JSON.stringify(setting.value), setting.key]
+        );
       }
 
       const networkServersSetting = settings.find((setting: any) => setting.key === 'network_servers');

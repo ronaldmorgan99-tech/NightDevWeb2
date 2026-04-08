@@ -46,6 +46,8 @@ Together, they keep local UI state and remote API data organized, performant, an
    `cp .env.example .env.local`
 3. Set required values in `.env.local`:
    - `JWT_SECRET` (required): secret used by auth token code in `server.ts`.
+   - `NODE_ENV` (required): `development` locally, `production` in deployed environments.
+   - `VITE_ENABLE_STUDIO` (recommended): set to `true` to enable `/studio`, or `false` to show the coming soon page.
    - `VITE_ENABLE_STUDIO` is currently ignored in this release because `/studio` is not shipping in the April 2026 cycle.
 4. Optional values:
    - `APP_URL`: used in hosted environments for callback/self links.
@@ -53,6 +55,15 @@ Together, they keep local UI state and remote API data organized, performant, an
 5. Run the app:
    `npm run dev`
 
+### Auth/CORS deployment security defaults
+
+- **Same-origin deploy (frontend + API on one origin)**  
+  Leave `CLIENT_ORIGIN` unset. Cookies are sent with `SameSite=Lax`, and no cross-origin credential headers are emitted.
+- **Split-origin deploy (frontend and API on different origins)**  
+  Set `CLIENT_ORIGIN` to the frontend origin (or a comma-separated list, for example `https://app.example.com,https://admin.example.com`).  
+  In production this enables credentialed CORS responses and sets auth cookies as `SameSite=None; Secure`.
+
+## Vercel Deployment Notes
 ## Production Deployment Checklist
 
 Use this section before deploying to any production environment (Vercel, container platform, VM, etc.).
@@ -60,6 +71,25 @@ Use this section before deploying to any production environment (Vercel, contain
 - `JWT_SECRET` (required, minimum 32 characters)
 - `NODE_ENV=production`
 - `DATABASE_URL` (recommended for persistent production data; if omitted on Vercel, SQLite falls back to `/tmp` and data is ephemeral)
+- `CLIENT_ORIGIN` (required for split-origin deployments; comma-separated allowlist of trusted frontend origins)
+
+### Expected default logins (fresh database)
+
+- `admin` / `password`
+- `member` / `password`
+
+These users are ensured at API bootstrap for serverless deployments.
+
+### Common production errors
+
+- **`Failed to load module script ... MIME type text/html`**  
+  Usually means static assets were rewritten to `index.html`. Confirm Vercel routes preserve filesystem assets before SPA fallback.
+
+- **`/api/* 500` on first load/login**  
+  Usually indicates missing/invalid environment variables (especially `JWT_SECRET`) or database initialization failure in the serverless runtime.
+- If frontend and API are deployed on the same Vercel project/domain, leave `VITE_API_BASE_URL` unset so the client uses relative `/api/*` requests and avoids cross-origin CORS issues.
+- Set `VITE_API_BASE_URL` only when the frontend and backend are hosted on different domains.
+- For Node ESM runtime compatibility in Vercel serverless functions, local runtime imports must include `.js` file extensions after TypeScript emit (for example `./db.js`).
 - Do **not** provision `GEMINI_API_KEY` for this cycle. Media generation endpoints are intentionally not exposed to users in production until Studio support is re-opened.
 
 ## Studio Feature Support Status (April 2026)
