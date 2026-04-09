@@ -415,6 +415,32 @@ const userProfileHandler = async (req: Request, res: Response) => {
 };
 app.get(['/api/users/:id', '/users/:id'], userProfileHandler);
 
+const membersHandler = async (req: Request, res: Response) => {
+  const rawSearch = typeof req.query.search === 'string' ? req.query.search : '';
+  const search = rawSearch.trim();
+
+  try {
+    const members = search
+      ? await db.query<any>(
+          `SELECT id, username, role, avatar_url, last_active, created_at
+           FROM users
+           WHERE username LIKE ?
+           ORDER BY last_active DESC, created_at DESC`,
+          [`%${search}%`]
+        )
+      : await db.query<any>(
+          `SELECT id, username, role, avatar_url, last_active, created_at
+           FROM users
+           ORDER BY last_active DESC, created_at DESC`
+        );
+
+    return res.json(members);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load members' });
+  }
+};
+app.get(['/api/members', '/members'], membersHandler);
+
 const userGameStatsHandler = async (req: Request, res: Response) => {
   try {
     const stats = await db.query<any>('SELECT * FROM game_stats WHERE user_id = ?', [req.params.id]);
