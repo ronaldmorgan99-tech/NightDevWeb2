@@ -1,7 +1,7 @@
 # NightDevWeb2 Backlog
 
-Updated on 2026-04-08
-Last reviewed: 2026-04-08
+Updated on 2026-04-09
+Last reviewed: 2026-04-09
 
 ## Document Governance
 
@@ -79,16 +79,20 @@ Last reviewed: 2026-04-08
 ### CI/CD Pipeline
 - **Priority**: High
 - **Workflow Reference**: `.github/workflows/ci.yml`
+- **Source of truth note**: Treat `.github/workflows/ci.yml` as canonical when backlog checklists drift.
 
 **Completed (verified in CI)**
 - `npm run lint` runs in the `validate` job.
 - `npm run build` runs in the `validate` job.
-- `npm run test:integration` runs in the `validate` job with failure artifacts.
+- `npm run test:integration` runs in the `validate` job.
+- Dependency vulnerability scanning runs via `npm audit --audit-level=high` (`dependency-scan` job).
+- SAST scanning runs via CodeQL (`sast` job).
+- Coverage collection is enabled for integration + unit tests and uploaded as artifacts.
+- Flaky/failure behavior is implemented: one retry for integration tests, upload failure logs/database artifact after second failure, then fail the workflow.
 
 **Remaining**
-- Add automated security scans (dependency + SAST) to CI.
-- Add coverage collection and enforce minimum coverage gates.
-- Define flaky-test policy (retry strategy, quarantine rules, and reporting).
+- Enforce an explicit integration coverage threshold (or a combined integration+unit gate) instead of only enforcing the unit-test threshold.
+- Formalize flaky-test quarantine/reporting automation beyond inline workflow comments.
 
 ### Performance Monitoring
 - **Priority**: Medium
