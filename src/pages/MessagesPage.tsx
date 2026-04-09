@@ -111,7 +111,8 @@ export default function MessagesPage() {
         const res = await fetch(`/api/members?search=${userSearch}`);
         if (res.ok) {
           const data = await res.json();
-          setSearchResults(data.filter((u: any) => u.id !== user?.id));
+          const members = Array.isArray(data) ? data : [];
+          setSearchResults(members.filter((u: any) => u.id !== user?.id));
         }
       } catch (err) {
         console.error('Failed to search users:', err);

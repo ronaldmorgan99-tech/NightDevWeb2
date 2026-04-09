@@ -18,7 +18,15 @@ const MembersPage: React.FC = () => {
   
   const { data: members, isLoading } = useQuery<Member[]>({
     queryKey: ['members'],
-    queryFn: () => fetch('/api/members').then(res => res.json())
+    queryFn: async () => {
+      const res = await fetch('/api/members');
+      if (!res.ok) {
+        throw new Error('Failed to load members');
+      }
+
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    }
   });
 
   const filteredMembers = members?.filter(m => 
