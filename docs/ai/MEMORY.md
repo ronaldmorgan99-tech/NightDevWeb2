@@ -1,6 +1,6 @@
 # NightDevWeb2 Memory
 
-Last reviewed: 2026-04-08
+Last reviewed: 2026-04-09
 
 ## Document Governance
 
@@ -74,9 +74,11 @@ Last reviewed: 2026-04-08
 - **Socket.IO CORS**: Origin '*' OK for dev, but expand HTTP methods to avoid preflight failures.
 - **Media polling**: Client polls /api/media/poll every 10 seconds, must handle 404/500 gracefully.
 - **Node ESM imports on Vercel**: Serverless runtime fails with `ERR_MODULE_NOT_FOUND` when local imports omit emitted `.js` extensions (for example `./db.js`).
+- **CI source of truth**: Treat `.github/workflows/ci.yml` as canonical for pipeline behavior (security scans, retries, coverage, artifacts) when docs diverge.
 
 ## Decisions Log
 
+**2026-04-09 (Latest)**: Reconciled AI docs with CI reality. `docs/ai/BACKLOG.md` CI/CD status now matches `.github/workflows/ci.yml` (dependency scan, CodeQL SAST, coverage artifacts, retry + failure artifact behavior marked complete; only true gaps remain).
 **2026-04-07 (Latest)**: Stabilized Vercel deployment behavior by:
 - adding `handle: filesystem` before SPA fallback in `vercel.json` so built assets are not rewritten to HTML,
 - replacing full `seedDb()` execution in serverless API bootstrap with idempotent default-auth-user initialization (`admin`/`member`) after `initDb()` in `api/[...path].ts`.
