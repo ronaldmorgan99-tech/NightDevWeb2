@@ -57,8 +57,14 @@ function spawnServerWithEnv(extraEnv) {
   const requestedPort = Number(extraEnv.PORT || (4500 + Math.floor(Math.random() * 1000)));
   return new Promise((resolve, reject) => {
     const proc = spawn('npx', ['tsx', 'server.ts'], {
-      env: { ...process.env, JWT_SECRET, PORT: String(requestedPort), ...extraEnv },
-      env: { ...process.env, NODE_ENV: 'development', JWT_SECRET, PORT: String(PORT), DATABASE_URL: resolveTestDbPath() },
+      env: {
+        ...process.env,
+        NODE_ENV: 'development',
+        JWT_SECRET,
+        PORT: String(requestedPort),
+        DATABASE_URL: resolveTestDbPath(),
+        ...extraEnv
+      },
       stdio: ['ignore', 'pipe', 'pipe']
     });
 
@@ -158,6 +164,8 @@ async function verifyCookieAndCorsProfiles() {
     splitOriginServer.kill('SIGTERM');
     await sleep(500);
   }
+}
+
 function resolveTestDbPath() {
   return process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || path.join('tmp', 'test.db');
 }
