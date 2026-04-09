@@ -12,7 +12,8 @@
     "test": "node --test test/regression.test.js",
     "test:regression": "node --test test/regression.test.js",
     "test:integration": "node regression-tests.js",
-    "test:unit:coverage": "node --experimental-test-coverage --test test/regression.test.js"
+    "test:unit:coverage": "node --experimental-test-coverage --test test/regression.test.js",
+    "smoke:postdeploy": "bash scripts/post-deploy-smoke.sh"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

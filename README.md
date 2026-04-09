@@ -147,11 +147,18 @@ These users are ensured at API bootstrap for serverless deployments.
 
 Run these checks immediately after every production release:
 
-1. `GET /api/settings` returns a successful response and expected configuration payload.
-2. `GET /api/auth/me`:
-   - Returns unauthenticated response before login.
-   - Returns authenticated user payload after login.
-3. Login flow works end-to-end (load login page → submit credentials → session persists on refresh).
+```bash
+BASE_URL="https://<your-production-origin>" \
+SMOKE_USER="admin" \
+SMOKE_PASSWORD="<smoke-user-password>" \
+npm run smoke:postdeploy
+```
+
+Scripted smoke validation covers:
+
+1. `GET /api/settings` returns `200`.
+2. `GET /api/auth/me` returns `401` before login and `200` after login.
+3. Authenticated flow check: `GET /api/admin/observability/metrics` returns `200` after login.
 4. Static asset integrity:
    - Main JS/CSS bundles return `200` (not HTML fallback).
    - Browser console has no MIME-type errors such as `text/html` for module scripts.
@@ -178,6 +185,20 @@ Rollback guidance:
 - Keep the previous known-good build and environment config versioned.
 - If incident impact is active, first rollback app version, then rollback config changes independently to isolate cause.
 - After rollback, re-run the post-deploy verification checklist before restoring traffic.
+
+#### Studio media enablement rollback drill (`VITE_ENABLE_STUDIO=true`)
+
+- **Owner**: Platform Engineering primary on-call (execution) + Admin Operations incident commander (communications).
+- **Trigger**: Any of these after Studio discoverability is enabled:
+  - Media provider failure alert fires (`/api/media/*` 502 surge).
+  - Quota/guardrail alert fires at critical threshold (`429` surge).
+  - Studio route causes sustained API degradation or user-facing outage.
+- **Disable path**:
+  1. Set `VITE_ENABLE_STUDIO=false` in production environment configuration.
+  2. Redeploy/restart the frontend artifact so `/studio` is no longer discoverable.
+  3. Verify `/studio` redirects/returns non-discoverable state as expected.
+  4. Run `npm run smoke:postdeploy` against production and confirm `/api/settings`, `/api/auth/me`, and authenticated metrics flow are healthy.
+  5. Record rollback timestamp, incident owner, and next re-enable criteria in release notes/runbook.
 
 ## Contributing
 

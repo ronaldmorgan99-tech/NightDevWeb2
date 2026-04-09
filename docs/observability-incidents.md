@@ -42,6 +42,19 @@ This document defines baseline monitoring and incident response for:
 | Socket room overload | `socket.maxRoomOccupancy > 1000` OR `socket.roomMemberships` growth > 3x in 10 minutes | P2 | Check for runaway subscriptions and room cleanup bugs |
 | Exception burst | Frontend + backend unhandled exceptions > 10 in 5 minutes | P1 | Triage recent deploy and impacted routes/pages |
 
+## Media Counter Alert Thresholds (`/api/admin/observability/metrics`)
+
+Use these thresholds to wire paging alerts before enabling Studio discoverability in production. The endpoint exposes media latency directly in `media.*.avgMs/maxMs` and exposes media error/quota behavior via API route status counters under `api.byRoute` and `api.statusCounts`.
+
+| Counter type | Metric path(s) | Trigger | Severity | Owner |
+| --- | --- | --- | --- | --- |
+| Media latency warning | `media['/api/media/animate'].avgMs`, `media['/api/media/poll'].avgMs` | `animate.avgMs > 12000` **or** `poll.avgMs > 3500` for 10 minutes | P2 | Platform Engineering |
+| Media latency critical | `media['/api/media/animate'].maxMs`, `media['/api/media/poll'].maxMs` | `animate.maxMs > 45000` **or** `poll.maxMs > 10000` for 5 minutes | P1 | Platform Engineering |
+| Media error rate warning | `api.byRoute['/api/media/animate'].errorRatePct`, `api.byRoute['/api/media/poll'].errorRatePct` | Either route `errorRatePct > 5%` with at least 20 requests in 10 minutes | P2 | Platform Engineering |
+| Media provider failure critical | `api.statusCounts['502']` + media route error-rate trend | `502` responses from media routes > 15 in 5 minutes | P1 | Platform Engineering + Admin Operations |
+| Media quota/guardrail warning | `api.statusCounts['429']`, `api.byRoute['/api/media/animate'].errors`, `api.byRoute['/api/media/poll'].errors` | `429` responses on media routes > 30 in 10 minutes | P2 | Platform Engineering + Trust & Safety |
+| Media quota/guardrail critical | same as above | `429` responses on media routes > 75 in 10 minutes, or >25% of media traffic | P1 | Platform Engineering + Trust & Safety |
+
 ## Incident Runbook
 
 1. **Acknowledge and classify (0-5 min)**

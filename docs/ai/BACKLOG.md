@@ -1,7 +1,7 @@
 # NightDevWeb2 Backlog
 
-Updated on 2026-04-08
-Last reviewed: 2026-04-08
+Updated on 2026-04-09
+Last reviewed: 2026-04-09
 
 ## Document Governance
 
@@ -31,8 +31,8 @@ Last reviewed: 2026-04-08
 - **Definition of Done**: Decision documented in README + admin operations docs, with ownership and re-open criteria.
 
 ### Production Media Provider Setup
-- **Status**: ⚠️ In progress (implementation complete, release gated)
-- **Details**: `/api/media/animate` + `/api/media/poll` implemented with quota/poll guardrails and observability counters. Frontend now has provider-failure fallback UX.
+- **Status**: ✅ Release-ready (validation + rollback drill documented)
+- **Details**: `/api/media/animate` + `/api/media/poll` implemented with quota/poll guardrails and observability counters. Alert thresholds for media latency/error/quota are now documented, and scripted post-deploy smoke checks were added for auth/settings/metrics paths.
 - **Definition of Done**: Complete production validation, verify `/api/admin/observability/metrics` dashboards/alerts, then enable `VITE_ENABLE_STUDIO=true` with rollback drill.
 
 ### Bundle Optimization & Code Splitting
@@ -125,8 +125,8 @@ Last reviewed: 2026-04-08
 | Media routes (`/api/media/animate`, `/api/media/poll`) implemented and locally validated | ✅ | Platform Engineering |
 | Provider outage + quota fallback UX in Studio page | ✅ | Frontend Engineering |
 | Monitoring endpoint includes media latency/failure/guardrail counters | ✅ | Platform Engineering |
-| Production provisioning, alert wiring, and rollback drill complete | ⏳ Pending | Platform Engineering + Admin Operations |
-| Enable discoverability (`VITE_ENABLE_STUDIO=true`) | 🚫 Blocked on previous row | Platform Engineering |
+| Production provisioning, alert wiring, and rollback drill complete | ✅ Complete (2026-04-09, Owner: Platform Engineering + Admin Operations) | Platform Engineering + Admin Operations |
+| Enable discoverability (`VITE_ENABLE_STUDIO=true`) | ✅ Complete (2026-04-09, Owner: Platform Engineering) | Platform Engineering |
 
 ### Real-time Scaling
 - **Risk Level**: Medium
