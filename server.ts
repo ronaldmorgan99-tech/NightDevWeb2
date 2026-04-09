@@ -854,16 +854,9 @@ async function start() {
   });
 
   // Auth
-  app.post('/api/auth/register', async (req, res) => {
-    observabilityMetrics.auth.registerAttempts += 1;
-    const parsedPayload = authRegisterSchema.safeParse(req.body);
-    if (!parsedPayload.success) {
-      observabilityMetrics.auth.registerFailure += 1;
-      return res.status(400).json({ error: 'A valid email address is required.' });
-    }
-    const { username, email, password } = parsedPayload.data;
   app.post('/api/auth/register', validateBody(authRegisterSchema), async (req, res) => {
     const { username, email, password } = req.body;
+    observabilityMetrics.auth.registerAttempts += 1;
 
     try {
       const hashedPassword = bcrypt.hashSync(password, 10);
@@ -901,16 +894,9 @@ async function start() {
     }
   });
 
-  app.post('/api/auth/login', async (req, res) => {
-    observabilityMetrics.auth.loginAttempts += 1;
-    const parsedPayload = authLoginSchema.safeParse(req.body);
-    if (!parsedPayload.success) {
-      observabilityMetrics.auth.loginFailure += 1;
-      return res.status(400).json({ error: 'Invalid login payload' });
-    }
-    const { username, password } = parsedPayload.data;
   app.post('/api/auth/login', validateBody(authLoginSchema), async (req, res) => {
     const { username, password } = req.body;
+    observabilityMetrics.auth.loginAttempts += 1;
     try {
       const user = await db.queryOne<any>('SELECT * FROM users WHERE username = ?', [username]);
       if (!user || !bcrypt.compareSync(password, user.password)) {
