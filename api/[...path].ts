@@ -81,6 +81,19 @@ const postCreateSchema = z.object({
   thread_id: z.coerce.number().int().positive(),
   content: z.string().trim().min(1)
 });
+const supportTicketCreateSchema = z.object({
+  subject: z.string().trim().min(3).max(200),
+  priority: z.enum(['low', 'medium', 'high']).optional().default('medium'),
+  message: z.string().trim().min(1),
+  ticket_type: z.enum(['user', 'admin']).optional().default('user')
+});
+const ticketMessageSchema = z.object({
+  message: z.string().trim().min(1)
+});
+const directMessageSchema = z.object({
+  receiver_id: z.coerce.number().int().positive(),
+  content: z.string().trim().min(1)
+});
 
 const discordWidgetMemberSchema = z.object({
   id: z.string().optional(),
@@ -882,6 +895,159 @@ const postCreateHandler = async (req: Request, res: Response) => {
   }
 };
 app.post(['/api/posts', '/posts'], validateBody(postCreateSchema), postCreateHandler);
+
+const ticketsListHandler = async (req: Request, res: Response) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+
+  try {
+    const tickets = await db.query<any>('SELECT * FROM tickets WHERE user_id = ? ORDER BY created_at DESC', [user.id]);
+    return res.json(tickets);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load tickets' });
+  }
+};
+app.get(['/api/tickets', '/tickets'], ticketsListHandler);
+
+const ticketCreateHandler = async (req: Request, res: Response) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+
+  const { subject, priority, message, ticket_type } = req.body as z.infer<typeof supportTicketCreateSchema>;
+  try {
+    const result = await db.execute(
+      'INSERT INTO tickets (user_id, subject, priority, ticket_type) VALUES (?, ?, ?, ?)',
+      [user.id, subject, priority, ticket_type]
+    );
+    const ticketId = result.lastInsertRowid || result.insertId;
+    await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [ticketId, user.id, message]);
+    return res.status(201).json({ success: true, id: ticketId });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to create ticket' });
+  }
+};
+app.post(['/api/tickets', '/tickets'], validateBody(supportTicketCreateSchema), ticketCreateHandler);
+
+const ticketDetailHandler = async (req: Request, res: Response) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+
+  try {
+    const ticket = await db.queryOne<any>(`
+      SELECT t.*, u.username as author_name, u.avatar_url as author_avatar
+      FROM tickets t
+      JOIN users u ON t.user_id = u.id
+      WHERE t.id = ? AND t.user_id = ?
+    `, [req.params.id, user.id]);
+
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+
+    const messages = await db.query<any>(`
+      SELECT tm.*, u.username as author_name, u.avatar_url as author_avatar, u.role as author_role
+      FROM ticket_messages tm
+      JOIN users u ON tm.user_id = u.id
+      WHERE tm.ticket_id = ?
+      ORDER BY tm.created_at ASC
+    `, [req.params.id]);
+
+    return res.json({ ticket, messages });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load ticket' });
+  }
+};
+app.get(['/api/tickets/:id', '/tickets/:id'], ticketDetailHandler);
+
+const ticketMessageCreateHandler = async (req: Request, res: Response) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+
+  const { message } = req.body as z.infer<typeof ticketMessageSchema>;
+  try {
+    const ticket = await db.queryOne<any>('SELECT * FROM tickets WHERE id = ? AND user_id = ?', [req.params.id, user.id]);
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+
+    await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [req.params.id, user.id, message]);
+    await db.execute("UPDATE tickets SET status = 'pending' WHERE id = ?", [req.params.id]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to post ticket message' });
+  }
+};
+app.post(['/api/tickets/:id/messages', '/tickets/:id/messages'], validateBody(ticketMessageSchema), ticketMessageCreateHandler);
+
+const messageConversationsHandler = async (req: Request, res: Response) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+
+  try {
+    const conversations = await db.query<any>(`
+      SELECT
+        u.id, u.username, u.avatar_url,
+        m.content as last_message, m.created_at as last_message_at,
+        (SELECT COUNT(*) FROM messages WHERE sender_id = u.id AND receiver_id = ? AND is_read = 0) as unread_count
+      FROM users u
+      JOIN (
+        SELECT
+          CASE WHEN sender_id = ? THEN receiver_id ELSE sender_id END as other_user_id,
+          MAX(created_at) as max_date
+        FROM messages
+        WHERE sender_id = ? OR receiver_id = ?
+        GROUP BY other_user_id
+      ) latest ON u.id = latest.other_user_id
+      JOIN messages m ON (
+        (m.sender_id = ? AND m.receiver_id = u.id) OR (m.sender_id = u.id AND m.receiver_id = ?)
+      ) AND m.created_at = latest.max_date
+      ORDER BY last_message_at DESC
+    `, [user.id, user.id, user.id, user.id, user.id, user.id]);
+
+    return res.json(conversations);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load conversations' });
+  }
+};
+app.get(['/api/messages/conversations', '/messages/conversations'], messageConversationsHandler);
+
+const messagesByUserHandler = async (req: Request, res: Response) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+
+  try {
+    const messages = await db.query<any>(`
+      SELECT * FROM messages
+      WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+      ORDER BY created_at ASC
+    `, [user.id, req.params.userId, req.params.userId, user.id]);
+
+    await db.execute('UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ?', [req.params.userId, user.id]);
+    return res.json(messages);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load messages' });
+  }
+};
+app.get(['/api/messages/:userId', '/messages/:userId'], messagesByUserHandler);
+
+const messageCreateHandler = async (req: Request, res: Response) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+
+  const { receiver_id, content } = req.body as z.infer<typeof directMessageSchema>;
+  try {
+    const result = await db.execute('INSERT INTO messages (sender_id, receiver_id, content) VALUES (?, ?, ?)', [user.id, receiver_id, content]);
+    const messageId = result.lastInsertRowid || result.insertId;
+    const message = await db.queryOne<any>('SELECT * FROM messages WHERE id = ?', [messageId]);
+    if (!message) {
+      return res.status(500).json({ error: 'Failed to retrieve created message' });
+    }
+    return res.status(201).json(message);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to send message' });
+  }
+};
+app.post(['/api/messages', '/messages'], validateBody(directMessageSchema), messageCreateHandler);
 
 const communityStatsHandler = async (_req: Request, res: Response) => {
   try {
