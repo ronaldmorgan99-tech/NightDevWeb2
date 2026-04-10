@@ -1,0 +1,92 @@
+name: Staging Post-Deploy Verification
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Optional staging base URL override (for example https://staging.example.com)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-postdeploy:
+    name: Run staging smoke verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'deployment_status' &&
+        github.event.deployment.environment == 'staging' &&
+        github.event.deployment_status.state == 'success'
+      )
+    env:
+      BASE_URL: ${{ inputs.base_url != '' && inputs.base_url || secrets.STAGING_BASE_URL }}
+      SMOKE_USER: ${{ secrets.STAGING_SMOKE_USER }}
+      SMOKE_PASSWORD: ${{ secrets.STAGING_SMOKE_PASSWORD }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate required staging secrets and env wiring
+        run: |
+          missing=0
+
+          if [ -z "${BASE_URL:-}" ]; then
+            echo "::error::Missing BASE_URL. Provide workflow_dispatch input 'base_url' or set secret STAGING_BASE_URL."
+            missing=1
+          fi
+
+          if [ -z "${SMOKE_USER:-}" ]; then
+            echo "::error::Missing SMOKE_USER. Set secret STAGING_SMOKE_USER."
+            missing=1
+          fi
+
+          if [ -z "${SMOKE_PASSWORD:-}" ]; then
+            echo "::error::Missing SMOKE_PASSWORD. Set secret STAGING_SMOKE_PASSWORD."
+            missing=1
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::Required staging verification secrets are not fully configured."
+            exit 1
+          fi
+
+          echo "Using BASE_URL=${BASE_URL}"
+
+      - name: Run post-deploy smoke checks
+        id: smoke
+        continue-on-error: true
+        run: |
+          npm run smoke:postdeploy 2>&1 | tee smoke-postdeploy.log
+          exit_code=${PIPESTATUS[0]}
+          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload smoke logs on failure
+        if: steps.smoke.outputs.exit_code != '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-smoke-postdeploy-logs
+          path: smoke-postdeploy.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Fail workflow when smoke verification fails
+        if: steps.smoke.outputs.exit_code != '0'
+        run: |
+          echo "::error::Staging post-deploy smoke verification failed. Review artifact 'staging-smoke-postdeploy-logs'."
+          exit 1
