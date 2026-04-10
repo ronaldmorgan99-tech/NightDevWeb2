@@ -1,6 +1,6 @@
 # NightDevWeb2 Memory
 
-Last reviewed: 2026-04-09
+Last reviewed: 2026-04-10
 
 ## Document Governance
 
@@ -75,9 +75,11 @@ Last reviewed: 2026-04-09
 - **Media polling**: Client polls /api/media/poll every 10 seconds, must handle 404/500 gracefully.
 - **Node ESM imports on Vercel**: Serverless runtime fails with `ERR_MODULE_NOT_FOUND` when local imports omit emitted `.js` extensions (for example `./db.js`).
 - **CI source of truth**: Treat `.github/workflows/ci.yml` as canonical for pipeline behavior (security scans, retries, coverage, artifacts) when docs diverge.
+- **CI integration coverage gate**: Coverage threshold enforcement consumes existing V8 artifacts in `coverage/integration` (via `NODE_V8_COVERAGE`) rather than rerunning tests; missing or malformed V8 output will fail the gate.
 
 ## Decisions Log
 
+**2026-04-10 (Latest)**: Documented two release-process decisions to keep docs aligned with runtime behavior: (1) CI enforces an explicit integration coverage threshold from existing V8 output in `coverage/integration` in `.github/workflows/ci.yml`; (2) `README.md` now serves as the consolidated production deployment runbook/checklist for environment requirements, verification, and rollback guidance.
 **2026-04-09 (Latest)**: Reconciled AI docs with CI reality. `docs/ai/BACKLOG.md` CI/CD status now matches `.github/workflows/ci.yml` (dependency scan, CodeQL SAST, coverage artifacts, retry + failure artifact behavior marked complete; only true gaps remain).
 **2026-04-07 (Latest)**: Stabilized Vercel deployment behavior by:
 - adding `handle: filesystem` before SPA fallback in `vercel.json` so built assets are not rewritten to HTML,
