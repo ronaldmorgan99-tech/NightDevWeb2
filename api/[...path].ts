@@ -62,10 +62,24 @@ const AUTH_RATE_LIMIT_CREDENTIAL_WINDOW_MS = parseEnvNumber(process.env.AUTH_RAT
 const AUTH_RATE_LIMIT_CREDENTIAL_MAX = parseEnvNumber(process.env.AUTH_RATE_LIMIT_CREDENTIAL_MAX, 8);
 const AUTH_RATE_LIMIT_SESSION_WINDOW_MS = parseEnvNumber(process.env.AUTH_RATE_LIMIT_SESSION_WINDOW_MS, 5 * 60 * 1000);
 const AUTH_RATE_LIMIT_SESSION_MAX = parseEnvNumber(process.env.AUTH_RATE_LIMIT_SESSION_MAX, 30);
+const ROLE_WEIGHT: Record<string, number> = {
+  admin: 3,
+  moderator: 2,
+  member: 1
+};
 
 const authLoginSchema = z.object({
   username: z.string().trim().min(1).max(64),
   password: z.string().min(1).max(128)
+});
+const threadCreateSchema = z.object({
+  forum_id: z.coerce.number().int().positive(),
+  title: z.string().trim().min(3).max(200),
+  content: z.string().trim().min(1)
+});
+const postCreateSchema = z.object({
+  thread_id: z.coerce.number().int().positive(),
+  content: z.string().trim().min(1)
 });
 
 const discordWidgetMemberSchema = z.object({
@@ -289,6 +303,12 @@ const validateBody = <T>(schema: z.ZodSchema<T>) => (req: Request, res: Response
   }
   req.body = parsedPayload.data;
   next();
+};
+
+const meetsMinRole = (userRole: string, minRole: string) => {
+  const userWeight = ROLE_WEIGHT[userRole] ?? 0;
+  const minWeight = ROLE_WEIGHT[minRole] ?? 0;
+  return userWeight >= minWeight;
 };
 
 const createRateLimit = (windowMs: number, maxRequests: number, errorMessage: string) => {
@@ -728,6 +748,140 @@ const forumCategoriesHandler = async (_req: Request, res: Response) => {
   }
 };
 app.get(['/api/forums/categories', '/forums/categories'], forumCategoriesHandler);
+
+const forumDetailHandler = async (req: Request, res: Response) => {
+  try {
+    const forum = await db.queryOne<any>('SELECT * FROM forums WHERE id = ?', [req.params.id]);
+    if (!forum) {
+      return res.status(404).json({ error: 'Forum not found' });
+    }
+
+    const threads = await db.query<any>(`
+      SELECT
+        t.*,
+        u.username as author_name,
+        COUNT(p.id) as post_count
+      FROM threads t
+      JOIN users u ON t.author_id = u.id
+      LEFT JOIN posts p ON p.thread_id = t.id
+      WHERE t.forum_id = ?
+      GROUP BY t.id, u.username
+      ORDER BY t.is_pinned DESC, t.created_at DESC
+    `, [req.params.id]);
+
+    return res.json({ forum, threads });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load forum' });
+  }
+};
+app.get(['/api/forums/:id', '/forums/:id'], forumDetailHandler);
+
+const threadListHandler = async (req: Request, res: Response) => {
+  const { categoryId } = req.query;
+  const normalizedCategoryId = typeof categoryId === 'string' && categoryId.trim() !== '' ? categoryId.trim() : null;
+
+  try {
+    const threads = await db.query<any>(`
+      SELECT
+        t.id,
+        t.title,
+        t.views,
+        t.created_at as createdAt,
+        u.username as author,
+        (SELECT COUNT(*) - 1 FROM posts p WHERE p.thread_id = t.id) as replies
+      FROM threads t
+      JOIN users u ON u.id = t.author_id
+      JOIN forums f ON f.id = t.forum_id
+      WHERE (? IS NULL OR f.category_id = ?)
+      ORDER BY t.is_pinned DESC, t.updated_at DESC
+    `, [normalizedCategoryId, normalizedCategoryId]);
+
+    return res.json(threads);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load threads' });
+  }
+};
+app.get(['/api/threads', '/threads'], threadListHandler);
+
+const threadDetailHandler = async (req: Request, res: Response) => {
+  try {
+    const thread = await db.queryOne<any>(`
+      SELECT t.*, u.username as author_name, f.name as forum_name
+      FROM threads t
+      JOIN users u ON t.author_id = u.id
+      JOIN forums f ON t.forum_id = f.id
+      WHERE t.id = ?
+    `, [req.params.id]);
+    if (!thread) {
+      return res.status(404).json({ error: 'Thread not found' });
+    }
+
+    const posts = await db.query<any>(`
+      SELECT p.*, u.username as author_name, u.avatar_url as author_avatar, u.role as author_role
+      FROM posts p
+      JOIN users u ON p.author_id = u.id
+      WHERE p.thread_id = ?
+      ORDER BY p.created_at ASC
+    `, [req.params.id]);
+
+    return res.json({ thread, posts });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load thread' });
+  }
+};
+app.get(['/api/threads/:id', '/threads/:id'], threadDetailHandler);
+
+const threadCreateHandler = async (req: Request, res: Response) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+
+  const { forum_id, title, content } = req.body as z.infer<typeof threadCreateSchema>;
+  try {
+    const forum = await db.queryOne<any>('SELECT id, min_role_to_thread FROM forums WHERE id = ?', [forum_id]);
+    if (!forum) {
+      return res.status(404).json({ error: 'Forum not found' });
+    }
+    if (!meetsMinRole(user.role, forum.min_role_to_thread)) {
+      return res.status(403).json({ error: 'You do not have permission to create threads in this forum' });
+    }
+
+    const result = await db.execute('INSERT INTO threads (forum_id, author_id, title) VALUES (?, ?, ?)', [forum_id, user.id, title]);
+    const threadId = result.lastInsertRowid || result.insertId;
+    await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [threadId, user.id, content]);
+    return res.json({ id: threadId });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to create thread' });
+  }
+};
+app.post(['/api/threads', '/threads'], validateBody(threadCreateSchema), threadCreateHandler);
+
+const postCreateHandler = async (req: Request, res: Response) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+
+  const { thread_id, content } = req.body as z.infer<typeof postCreateSchema>;
+  try {
+    const thread = await db.queryOne<any>(`
+      SELECT t.id, f.min_role_to_thread
+      FROM threads t
+      JOIN forums f ON t.forum_id = f.id
+      WHERE t.id = ?
+    `, [thread_id]);
+    if (!thread) {
+      return res.status(404).json({ error: 'Thread not found' });
+    }
+    if (!meetsMinRole(user.role, thread.min_role_to_thread)) {
+      return res.status(403).json({ error: 'You do not have permission to post in this forum' });
+    }
+
+    await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [thread_id, user.id, content]);
+    await db.execute('UPDATE threads SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [thread_id]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to create post' });
+  }
+};
+app.post(['/api/posts', '/posts'], validateBody(postCreateSchema), postCreateHandler);
 
 const communityStatsHandler = async (_req: Request, res: Response) => {
   try {
