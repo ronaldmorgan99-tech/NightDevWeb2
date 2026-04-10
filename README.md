@@ -145,7 +145,21 @@ These users are ensured at API bootstrap for serverless deployments.
 
 ### 4) Post-deploy verification checklist
 
-Run these checks immediately after every production release:
+Run these checks immediately after every production release.
+
+#### GitHub Actions (staging post-deploy)
+
+Use `.github/workflows/staging-verify.yml` to validate staging automatically after successful deployment events (`deployment_status` with environment `staging`) or manually via `workflow_dispatch`.
+
+Required secrets for this workflow:
+
+- `STAGING_BASE_URL` (required unless manually overridden with the workflow `base_url` input)
+- `STAGING_SMOKE_USER`
+- `STAGING_SMOKE_PASSWORD`
+
+The workflow executes `npm run smoke:postdeploy` against staging and uploads `staging-smoke-postdeploy-logs` when verification fails.
+
+#### Manual CLI smoke check
 
 ```bash
 BASE_URL="https://<your-production-origin>" \

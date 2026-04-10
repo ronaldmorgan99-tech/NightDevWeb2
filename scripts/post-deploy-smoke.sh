@@ -56,11 +56,27 @@ request() {
   HTTP_CODE=$(printf '%s' "$response" | tail -n1)
 }
 
+endpoint_failure_hint() {
+  local label="$1"
+  case "$label" in
+    "/api/settings")
+      echo "Hint: verify runtime config/bootstrap (DATABASE_URL, JWT_SECRET, and app startup health)." >&2
+      ;;
+    "/api/auth/me before login"|"/api/auth/me after login")
+      echo "Hint: verify auth cookie/JWT config and smoke credentials (SMOKE_USER/SMOKE_PASSWORD)." >&2
+      ;;
+    "/api/admin/observability/metrics")
+      echo "Hint: verify admin auth path and observability metrics route permissions/handlers." >&2
+      ;;
+  esac
+}
+
 assert_status() {
   local expected="$1"
   local label="$2"
   if [[ "$HTTP_CODE" != "$expected" ]]; then
     echo "✗ $label expected HTTP $expected, got $HTTP_CODE" >&2
+    endpoint_failure_hint "$label"
     echo "Response body: $HTTP_BODY" >&2
     exit 1
   fi
@@ -87,6 +103,7 @@ assert_status 200 "/api/auth/me after login"
 csrf_token=$(printf '%s' "$HTTP_BODY" | json_field 'csrfToken')
 if [[ -z "$csrf_token" ]]; then
   echo "✗ /api/auth/me response missing csrfToken" >&2
+  echo "Hint: verify auth/me response shape and CSRF middleware wiring." >&2
   exit 1
 fi
 
