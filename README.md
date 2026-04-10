@@ -212,6 +212,11 @@ Rollback guidance:
 - **Reporting policy**: Every flaky failure must upload logs/artifacts and be documented in the related PR so maintainers can triage trend and impact.
 - **Exit criteria**: Quarantined tests must include explicit follow-up work and be unquarantined once the root cause is fixed.
 
+### CI coverage requirements
+
+- **Unit coverage gate**: `validate` enforces minimum unit test line coverage via `COVERAGE_THRESHOLD` (default `75`).
+- **Integration coverage gate**: `validate` enforces minimum integration test line coverage from `coverage/integration` via `INTEGRATION_COVERAGE_THRESHOLD` (default `65`) without rerunning integration tests.
+
 ## AI Workflow Files
 
 The repository includes AI collaboration documents that help track context and planned work:
