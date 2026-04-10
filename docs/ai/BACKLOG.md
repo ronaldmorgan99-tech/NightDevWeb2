@@ -60,14 +60,18 @@ Last reviewed: 2026-04-10
 
 ## Next (Next Sprint)
 
-### Deployment Documentation
-- **Priority**: High
-- Add explicit deployment section to README with:
+### Completed (this sprint)
+
+#### Deployment Documentation
+- **Status**: ✅ Completed (2026-04-10)
+- Added explicit deployment section to README covering:
   - Environment variables breakdown (DATABASE_URL, JWT_SECRET, GEMINI_API_KEY, etc.)
   - Database migration and seeding steps
   - HTTPS/secrets management
   - Health check endpoints and monitoring
   - Vite HMR configuration for production domains
+
+### Pending
 
 ### Security Hardening
 - **Priority**: High
