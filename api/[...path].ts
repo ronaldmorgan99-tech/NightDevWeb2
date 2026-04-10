@@ -193,16 +193,31 @@ const captureException = async (error: unknown, context: Record<string, unknown>
   }
 
   try {
-    await fetch(ERROR_TRACKING_WEBHOOK, {
+    const payload = {
+      environment: process.env.NODE_ENV,
+      message,
+      stack: error instanceof Error ? error.stack : undefined,
+      context
+    };
+    const response = await fetch(ERROR_TRACKING_WEBHOOK, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        environment: process.env.NODE_ENV,
-        message,
-        stack: error instanceof Error ? error.stack : undefined,
-        context
+        content: `[${process.env.NODE_ENV || 'unknown'}] ${message}`.slice(0, 1900),
+        ...payload
       })
     });
+    if (!response.ok) {
+      const failureBody = await response.text().catch(() => '');
+      console.warn(
+        JSON.stringify({
+          event: 'serverless.exception.webhook_rejected',
+          status: response.status,
+          statusText: response.statusText || '',
+          body: failureBody.slice(0, 500)
+        })
+      );
+    }
   } catch (webhookError) {
     console.warn('Failed to send exception webhook:', webhookError);
   }
