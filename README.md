@@ -66,85 +66,60 @@ Together, they keep local UI state and remote API data organized, performant, an
   Set `VITE_API_BASE_URL` to the API origin (for example `https://api.example.com`). In production this enables credentialed CORS responses and sets auth cookies as `SameSite=None; Secure`.
   Socket.IO CORS uses the same `CLIENT_ORIGIN` allowlist (comma-separated entries are supported).
 
-## Vercel Deployment Notes
-## Production Deployment Checklist
+## Production Deployment Runbook
 
-Use this section before deploying to any production environment (Vercel, container platform, VM, etc.).
+Use this runbook before every production deployment (Vercel, containers, or VM-based hosting).
 
-- `JWT_SECRET` (required, minimum 32 characters)
-- `NODE_ENV=production`
-- `DATABASE_URL` (recommended for persistent production data; if omitted on Vercel, SQLite falls back to `/tmp` and data is ephemeral)
-- `CLIENT_ORIGIN` (required for split-origin deployments; comma-separated allowlist of trusted frontend origins)
-- `AUTH_RATE_LIMIT_CREDENTIAL_WINDOW_MS` (optional; default `600000` / 10 minutes)
-- `AUTH_RATE_LIMIT_CREDENTIAL_MAX` (optional; default `8` requests per window for login/register)
-- `AUTH_RATE_LIMIT_SESSION_WINDOW_MS` (optional; default `300000` / 5 minutes)
-- `AUTH_RATE_LIMIT_SESSION_MAX` (optional; default `30` requests per window for `auth/me` + auth session endpoints)
+### 1) Deployment model decision (same-origin vs split-deployment)
 
-### Expected default logins (fresh database)
-
-- `admin` / `password`
-- `member` / `password`
-
-These users are ensured at API bootstrap for serverless deployments.
-
-### Common production errors
-
-- **`Failed to load module script ... MIME type text/html`**  
-  Usually means static assets were rewritten to `index.html`. Confirm Vercel routes preserve filesystem assets before SPA fallback.
-
-- **`/api/* 500` on first load/login**  
-  Usually indicates missing/invalid environment variables (especially `JWT_SECRET`) or database initialization failure in the serverless runtime.
-- If frontend and API are deployed on the same Vercel project/domain, leave `VITE_API_BASE_URL` unset so the client uses relative `/api/*` requests and avoids cross-origin CORS issues.
-- Set `VITE_API_BASE_URL` only when the frontend and backend are hosted on different domains.
-- For Node ESM runtime compatibility in Vercel serverless functions, local runtime imports must include `.js` file extensions after TypeScript emit (for example `./db.js`).
-- Do **not** provision `GEMINI_API_KEY` for this cycle. Media generation endpoints are intentionally not exposed to users in production until Studio support is re-opened.
-
-## Studio Feature Support Status (April 2026)
-
-- **Decision**: `/studio` is **not shipping** this cycle.
-- **User experience**: Visiting `/studio` now redirects to `/` to avoid dead-end “coming soon” flows.
-- **Operational ownership**: Platform Engineering owns route-gating and deploy behavior; Admin Operations owns support communications and release notes.
-- **Re-open criteria**: backend media routes implemented and validated (`/api/media/animate`, `/api/media/poll`), provider outage fallback UX, and production runbook updates.
-### 1) Required environment variables
-
-| Variable | Required | What it controls | Production expectation |
-| --- | --- | --- | --- |
-| `JWT_SECRET` | Yes | Signing/verification for auth JWTs. | Use a long random value (minimum 32 chars). Rotating this logs out existing sessions. |
-| `DATABASE_URL` | Yes (for persistent production) | Primary production database connection string. | Point to a persistent managed DB. Avoid ephemeral local files for production. |
-| `NODE_ENV` | Yes | Runtime mode and production behavior. | Set to `production`. |
-| `CLIENT_ORIGIN` | Depends on deployment model | CORS + Socket.IO allowlist for trusted frontend origins. | **Unset** for same-origin deploys; **set** to one or more frontend origins for split-origin deploys. |
-| `VITE_API_BASE_URL` | Depends on deployment model | Frontend API target for `/api/*` calls. | **Unset** for same-origin deploys; **set** for split-domain deploys (for example `https://api.example.com`). |
-| `AUTH_RATE_LIMIT_CREDENTIAL_WINDOW_MS` | No | Auth credential endpoint limiter window in ms. | Default `600000` (10 minutes). |
-| `AUTH_RATE_LIMIT_CREDENTIAL_MAX` | No | Max credential requests allowed per IP within credential window. | Default `8` requests (login/register). |
-| `AUTH_RATE_LIMIT_SESSION_WINDOW_MS` | No | Auth session endpoint limiter window in ms. | Default `300000` (5 minutes). |
-| `AUTH_RATE_LIMIT_SESSION_MAX` | No | Max auth session requests allowed per IP within session window. | Default `30` requests (`/api/auth/me`, logout/session checks). |
-| `GEMINI_API_KEY` | Required only if AI media/features are enabled | Access key for Gemini-powered functionality. | Set in production if those features are enabled; otherwise leave unset/disabled. |
-
-### 2) Choose deployment model (same-origin vs split-deployment)
-
-| Deployment model | When to choose it | `VITE_API_BASE_URL` | CORS complexity | Example |
+| Deployment model | When to choose it | `VITE_API_BASE_URL` | `CLIENT_ORIGIN` | CORS complexity |
 | --- | --- | --- | --- | --- |
-| Same-origin (recommended default) | Frontend and API are served from the same domain/project. | Leave **unset** so client uses relative `/api/*`. | Low | App + API on `https://app.example.com`, client calls `https://app.example.com/api/*`. |
-| Split-deployment | Frontend and API are deployed to different domains or infrastructure tiers. | Set to full API origin, e.g. `https://api.example.com`. | Higher (must configure allowed origins/credentials). | Frontend at `https://www.example.com`, API at `https://api.example.com`. |
+| Same-origin (recommended default) | Frontend and API are served from one domain/project. | Leave **unset** (frontend uses relative `/api/*`). | Leave **unset**. | Low |
+| Split-deployment | Frontend and API are on different domains/infrastructure tiers. | Set to full API origin (example: `https://api.example.com`). | Set to one or more allowed frontend origins (comma-separated). | Medium/High |
 
-#### Explicit examples
+### 2) Required production environment variables
 
-- **Same-origin example**:  
-  `NODE_ENV=production`, `JWT_SECRET=<strong-random-secret>`, `DATABASE_URL=<persistent-db-url>`, and **no** `CLIENT_ORIGIN`/`VITE_API_BASE_URL`.
-- **Split-deployment example**:  
-  `NODE_ENV=production`, `JWT_SECRET=<strong-random-secret>`, `DATABASE_URL=<persistent-db-url>`, `CLIENT_ORIGIN=https://app.example.com,https://admin.example.com`, `VITE_API_BASE_URL=https://api.example.com`.
+| Variable | Required | What it controls | Production guidance |
+| --- | --- | --- | --- |
+| `NODE_ENV` | Yes | Runtime behavior and security defaults | Set to `production`. |
+| `JWT_SECRET` | Yes | JWT signing/verification | Minimum 32 random characters; rotate via secret manager. |
+| `DATABASE_URL` | Yes (for persistent data) | Primary production DB connection | Use managed MySQL/Postgres-equivalent persistent DB URL; avoid ephemeral files. |
+| `CLIENT_ORIGIN` | Same-origin: No, Split: Yes | CORS + Socket.IO origin allowlist | For split deployments, set trusted HTTPS origins only. |
+| `VITE_API_BASE_URL` | Same-origin: No, Split: Yes | Frontend API target | For split deployments, set canonical API URL with HTTPS. |
+| `AUTH_RATE_LIMIT_CREDENTIAL_WINDOW_MS` | No | Login/register limiter window | Defaults to `600000` (10 minutes). |
+| `AUTH_RATE_LIMIT_CREDENTIAL_MAX` | No | Login/register max requests per window | Defaults to `8`. |
+| `AUTH_RATE_LIMIT_SESSION_WINDOW_MS` | No | Session endpoint limiter window | Defaults to `300000` (5 minutes). |
+| `AUTH_RATE_LIMIT_SESSION_MAX` | No | Session endpoint max requests per window | Defaults to `30`. |
+| `GEMINI_API_KEY` | Feature-gated | Gemini-backed media features | Keep unset while Studio remains disabled for this cycle. |
 
-### 3) Database bootstrap and seed expectations (fresh deployment)
+### 3) Database bootstrap and seed expectations
 
-- On a fresh database, the app initializes required schema/tables at startup/bootstrap.
-- Default development accounts are seeded for first-run access:
+- The app performs schema/bootstrap work at startup for fresh databases.
+- Default bootstrap users are created on first run:
   - `admin` / `password`
   - `member` / `password`
-- Treat these as bootstrap credentials only; change passwords or replace/remove seeded users immediately in production.
-- If bootstrap fails, expect early `/api/*` errors (typically `500`) during first login/settings requests.
+- Treat bootstrap credentials as temporary only. Rotate passwords (or remove accounts) immediately after deployment.
+- If bootstrap fails, expect early `500` responses on `/api/settings` or `/api/auth/*` until DB connectivity/configuration is corrected.
 
-### 4) Post-deploy verification checklist
+### 4) HTTPS + secrets management requirements
 
+- Enforce HTTPS end-to-end in production (frontend origin, API origin, and reverse proxy/CDN).
+- Store all production secrets in platform secret management (never commit to repository files).
+- Minimum secrets/config controls:
+  - `JWT_SECRET` must be random and unique per environment (dev/staging/prod).
+  - DB credentials must be rotated on incident response and personnel changes.
+  - Split-origin cookies require secure transport (`SameSite=None; Secure`) and trusted origin allowlists.
+- Keep `.env.local` for local development only; never re-use local/test credentials in production.
+
+### 5) Vite HMR and production domain guidance
+
+- HMR is a development-only concern; do not expose or depend on HMR websocket settings in production traffic.
+- In production, serve built assets from `npm run build` output and ensure asset routes are not rewritten to `index.html`.
+- For development on hosted domains/codespaces, configure HMR explicitly via environment-specific settings (for example `DISABLE_HMR` and host/protocol adjustments) without carrying those overrides into production deploy config.
+
+### 6) Post-deploy verification and health checks
+
+Run this after each production deployment:
 Run these checks immediately after every production release.
 
 #### GitHub Actions (staging post-deploy)
@@ -168,51 +143,46 @@ SMOKE_PASSWORD="<smoke-user-password>" \
 npm run smoke:postdeploy
 ```
 
-Scripted smoke validation covers:
+Minimum expected results:
 
 1. `GET /api/settings` returns `200`.
-2. `GET /api/auth/me` returns `401` before login and `200` after login.
-3. Authenticated flow check: `GET /api/admin/observability/metrics` returns `200` after login.
-4. Static asset integrity:
-   - Main JS/CSS bundles return `200` (not HTML fallback).
-   - Browser console has no MIME-type errors such as `text/html` for module scripts.
-5. Telemetry smoke check:
-   - Trigger one authenticated API request and verify it appears in observability metrics/logs.
-   - Confirm frontend telemetry delivery via `/api/telemetry/client-error` (or error tracking webhook in production).
+2. `GET /api/auth/me` returns `401` pre-login and `200` post-login.
+3. `GET /api/admin/observability/metrics` returns `200` after auth.
+4. Main JS/CSS assets return `200` with correct MIME types (no HTML fallback for module scripts).
+5. At least one authenticated request is visible in observability metrics/log pipelines.
 
-### 5) Rollback and incident notes (404/500/CORS regressions)
+### 7) Common production failures + triage order
 
-If a deployment regresses, check in this order first:
+1. **404 errors**
+   - Verify static file routing precedence (assets before SPA fallback).
+   - Verify deployment artifact revision and CDN cache invalidation.
+2. **500 errors**
+   - Verify `JWT_SECRET`, `DATABASE_URL`, `NODE_ENV`, and feature-gated secrets.
+   - Review startup/bootstrap logs for DB or initialization failures.
+3. **CORS/auth-cookie errors**
+   - Reconfirm same-origin vs split-deployment choice.
+   - In split mode, ensure `CLIENT_ORIGIN` and `VITE_API_BASE_URL` match real deployed origins.
 
-1. **404 regressions**
-   - Verify static file routing precedence (assets must resolve before SPA fallback to `index.html`).
-   - Confirm build artifacts were uploaded and cache/CDN is serving the latest revision.
-2. **500 regressions**
-   - Validate runtime env vars (`JWT_SECRET`, `DATABASE_URL`, `NODE_ENV`, and `GEMINI_API_KEY` if applicable).
-   - Check DB connectivity/migrations/bootstrap logs for startup failures.
-3. **CORS regressions**
-   - Confirm whether deployment is same-origin or split-deployment.
-   - For split deployments, verify `VITE_API_BASE_URL` matches the real API origin and server CORS allowlist includes the frontend origin.
+### 8) Rollback procedure
 
-Rollback guidance:
+1. Roll back application revision to last known-good deploy.
+2. Roll back configuration changes separately (if needed) to isolate bad config vs bad artifact.
+3. Re-run smoke checks before restoring full traffic.
+4. Record incident owner, rollback timestamp, and re-release criteria in release notes/runbook.
 
-- Keep the previous known-good build and environment config versioned.
-- If incident impact is active, first rollback app version, then rollback config changes independently to isolate cause.
-- After rollback, re-run the post-deploy verification checklist before restoring traffic.
+## Vercel-specific deployment notes
 
-#### Studio media enablement rollback drill (`VITE_ENABLE_STUDIO=true`)
+- If frontend and API share one Vercel project/origin, leave `VITE_API_BASE_URL` unset to avoid cross-origin CORS drift.
+- If split across projects/domains, set `VITE_API_BASE_URL` to the API origin and set `CLIENT_ORIGIN` accordingly.
+- For Node ESM compatibility in serverless runtime, use emitted `.js` import extensions in runtime imports.
+- If static assets load as `text/html`, adjust route ordering so filesystem assets resolve before SPA fallback rewrites.
 
-- **Owner**: Platform Engineering primary on-call (execution) + Admin Operations incident commander (communications).
-- **Trigger**: Any of these after Studio discoverability is enabled:
-  - Media provider failure alert fires (`/api/media/*` 502 surge).
-  - Quota/guardrail alert fires at critical threshold (`429` surge).
-  - Studio route causes sustained API degradation or user-facing outage.
-- **Disable path**:
-  1. Set `VITE_ENABLE_STUDIO=false` in production environment configuration.
-  2. Redeploy/restart the frontend artifact so `/studio` is no longer discoverable.
-  3. Verify `/studio` redirects/returns non-discoverable state as expected.
-  4. Run `npm run smoke:postdeploy` against production and confirm `/api/settings`, `/api/auth/me`, and authenticated metrics flow are healthy.
-  5. Record rollback timestamp, incident owner, and next re-enable criteria in release notes/runbook.
+## Studio Feature Support Status (April 2026)
+
+- **Decision**: `/studio` is **not shipping** this cycle.
+- **User experience**: Visiting `/studio` now redirects to `/` to avoid dead-end “coming soon” flows.
+- **Operational ownership**: Platform Engineering owns route-gating and deploy behavior; Admin Operations owns support communications and release notes.
+- **Re-open criteria**: backend media routes implemented and validated (`/api/media/animate`, `/api/media/poll`), provider outage fallback UX, and production runbook updates.
 
 ## Contributing
 
@@ -225,6 +195,11 @@ Rollback guidance:
 - **Quarantine manifest**: `test/flaky-manifest.json` is the source of truth for quarantined tests. Every entry must include: `id`, `testMatch`, `owner`, `ticket`, and `expiry` (`YYYY-MM-DD`). CI fails fast if any required field is missing or malformed.
 - **Detection/reporting policy**: CI scans integration test logs (`integration-test-attempt-1.log` and retry logs when present) for each manifest `testMatch` value, emits warnings when quarantined tests are hit, and uploads a per-run flaky summary artifact (`flaky-quarantine-summary`) containing JSON + Markdown rollups.
 - **Exit criteria**: Keep quarantine entries only while remediation is active. Remove an entry after the owning team closes its ticket and the test is stable in normal CI execution (no quarantine matcher hits across retries for routine runs).
+
+### CI coverage requirements
+
+- **Unit coverage gate**: `validate` enforces minimum unit test line coverage via `COVERAGE_THRESHOLD` (default `75`).
+- **Integration coverage gate**: `validate` enforces minimum integration test line coverage from `coverage/integration` via `INTEGRATION_COVERAGE_THRESHOLD` (default `65`) without rerunning integration tests.
 
 ### CI coverage requirements
 
