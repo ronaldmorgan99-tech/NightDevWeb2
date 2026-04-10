@@ -92,7 +92,7 @@ Last reviewed: 2026-04-10
 - Flaky/failure behavior is implemented: one retry for integration tests, upload failure logs/database artifact after second failure, then fail the workflow.
 
 **Remaining**
-- Formalize flaky-test quarantine/reporting automation beyond inline workflow comments.
+- _None currently. Re-open when new CI/CD gaps are identified._
 
 ### Performance Monitoring
 - **Priority**: Medium
