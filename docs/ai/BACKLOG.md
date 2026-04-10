@@ -1,7 +1,7 @@
 # NightDevWeb2 Backlog
 
-Updated on 2026-04-09
-Last reviewed: 2026-04-09
+Updated on 2026-04-10
+Last reviewed: 2026-04-10
 
 ## Document Governance
 
@@ -62,12 +62,8 @@ Last reviewed: 2026-04-09
 
 ### Deployment Documentation
 - **Priority**: High
-- Add explicit deployment section to README with:
-  - Environment variables breakdown (DATABASE_URL, JWT_SECRET, GEMINI_API_KEY, etc.)
-  - Database migration and seeding steps
-  - HTTPS/secrets management
-  - Health check endpoints and monitoring
-  - Vite HMR configuration for production domains
+- **Status**: ✅ Completed (2026-04-10)
+- **Details**: README now includes a production deployment runbook covering deployment models, environment-variable requirements, DB bootstrap/seed expectations, HTTPS and secrets-management requirements, post-deploy health/smoke checks, rollback flow, and Vite HMR production-domain guidance.
 
 ### Security Hardening
 - **Priority**: High
@@ -88,10 +84,10 @@ Last reviewed: 2026-04-09
 - Dependency vulnerability scanning runs via `npm audit --audit-level=high` (`dependency-scan` job).
 - SAST scanning runs via CodeQL (`sast` job).
 - Coverage collection is enabled for integration + unit tests and uploaded as artifacts.
+- Integration coverage gating is enforced from existing `coverage/integration` output with an explicit threshold in CI.
 - Flaky/failure behavior is implemented: one retry for integration tests, upload failure logs/database artifact after second failure, then fail the workflow.
 
 **Remaining**
-- Enforce an explicit integration coverage threshold (or a combined integration+unit gate) instead of only enforcing the unit-test threshold.
 - Formalize flaky-test quarantine/reporting automation beyond inline workflow comments.
 
 ### Performance Monitoring

@@ -61,6 +61,7 @@ jobs:
     env:
       NODE_V8_COVERAGE: coverage/integration
       COVERAGE_THRESHOLD: 75
+      INTEGRATION_COVERAGE_THRESHOLD: 65
 
     steps:
       - name: Checkout repository
@@ -125,6 +126,11 @@ jobs:
       # 2) If still failing, upload logs/artifacts and fail fast.
       # 3) For confirmed flakes, quarantine behind a documented skip with owner + ticket,
       #    then track in README "Contributing" until fixed and unquarantined.
+      - name: Reset integration coverage directory
+        run: |
+          rm -rf coverage/integration
+          mkdir -p coverage/integration
+
       - name: Run integration tests with V8 coverage (attempt 1, capture logs)
         id: integration
         continue-on-error: true
@@ -144,6 +150,8 @@ jobs:
           TEST_DATABASE_URL: tmp/test.db
           DATABASE_URL: tmp/test.db
         run: |
+          rm -rf coverage/integration
+          mkdir -p coverage/integration
           npm run test:integration 2>&1 | tee integration-test-attempt-2.log
           exit_code=${PIPESTATUS[0]}
           echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
@@ -155,6 +163,29 @@ jobs:
           node --experimental-test-coverage
           --test-coverage-lines="$COVERAGE_THRESHOLD"
           --test test/regression.test.js
+
+      - name: Enforce integration line coverage threshold from existing V8 output
+        if: steps.integration.outputs.exit_code == '0' || steps.integration_retry.outputs.exit_code == '0'
+        run: |
+          coverage_summary="$(npx --yes c8 report --temp-directory coverage/integration --reporter text-summary)"
+          printf '%s\n' "$coverage_summary"
+
+          actual_lines_coverage="$(
+            printf '%s\n' "$coverage_summary" \
+              | awk -F'[:%]+' '/^Lines/ { gsub(/[[:space:]]/, "", $2); print $2; exit }'
+          )"
+
+          if [ -z "$actual_lines_coverage" ]; then
+            echo "::error::Integration coverage gate failed: unable to parse line coverage from coverage/integration."
+            exit 1
+          fi
+
+          if awk "BEGIN { exit !($actual_lines_coverage + 0 >= $INTEGRATION_COVERAGE_THRESHOLD + 0) }"; then
+            echo "Integration coverage gate passed: expected >= ${INTEGRATION_COVERAGE_THRESHOLD}%, actual ${actual_lines_coverage}%."
+          else
+            echo "::error::Integration coverage gate failed: expected >= ${INTEGRATION_COVERAGE_THRESHOLD}%, actual ${actual_lines_coverage}%."
+            exit 1
+          fi
 
       - name: Upload coverage artifacts
         if: always()
