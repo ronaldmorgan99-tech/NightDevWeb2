@@ -64,6 +64,18 @@ Last reviewed: 2026-04-10
 - **Priority**: High
 - **Status**: ✅ Completed (2026-04-10)
 - **Details**: README now includes a production deployment runbook covering deployment models, environment-variable requirements, DB bootstrap/seed expectations, HTTPS and secrets-management requirements, post-deploy health/smoke checks, rollback flow, and Vite HMR production-domain guidance.
+### Completed (this sprint)
+
+#### Deployment Documentation
+- **Status**: ✅ Completed (2026-04-10)
+- Added explicit deployment section to README covering:
+  - Environment variables breakdown (DATABASE_URL, JWT_SECRET, GEMINI_API_KEY, etc.)
+  - Database migration and seeding steps
+  - HTTPS/secrets management
+  - Health check endpoints and monitoring
+  - Vite HMR configuration for production domains
+
+### Pending
 
 ### Security Hardening
 - **Priority**: High
@@ -89,6 +101,7 @@ Last reviewed: 2026-04-10
 
 **Remaining**
 - Formalize flaky-test quarantine/reporting automation beyond inline workflow comments.
+- _None currently. Re-open when new CI/CD gaps are identified._
 
 ### Performance Monitoring
 - **Priority**: Medium

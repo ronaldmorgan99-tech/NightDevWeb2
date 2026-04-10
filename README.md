@@ -120,6 +120,21 @@ Use this runbook before every production deployment (Vercel, containers, or VM-b
 ### 6) Post-deploy verification and health checks
 
 Run this after each production deployment:
+Run these checks immediately after every production release.
+
+#### GitHub Actions (staging post-deploy)
+
+Use `.github/workflows/staging-verify.yml` to validate staging automatically after successful deployment events (`deployment_status` with environment `staging`) or manually via `workflow_dispatch`.
+
+Required secrets for this workflow:
+
+- `STAGING_BASE_URL` (required unless manually overridden with the workflow `base_url` input)
+- `STAGING_SMOKE_USER`
+- `STAGING_SMOKE_PASSWORD`
+
+The workflow executes `npm run smoke:postdeploy` against staging and uploads `staging-smoke-postdeploy-logs` when verification fails.
+
+#### Manual CLI smoke check
 
 ```bash
 BASE_URL="https://<your-production-origin>" \
@@ -177,9 +192,14 @@ Minimum expected results:
 ### CI flaky-test handling policy
 
 - **Retry policy**: CI retries integration tests once before marking the job as failed, to filter out transient environment noise.
-- **Quarantine policy**: If a test is confirmed flaky, quarantine it with a clearly labeled temporary skip, an owner, and a tracking issue/ticket.
-- **Reporting policy**: Every flaky failure must upload logs/artifacts and be documented in the related PR so maintainers can triage trend and impact.
-- **Exit criteria**: Quarantined tests must include explicit follow-up work and be unquarantined once the root cause is fixed.
+- **Quarantine manifest**: `test/flaky-manifest.json` is the source of truth for quarantined tests. Every entry must include: `id`, `testMatch`, `owner`, `ticket`, and `expiry` (`YYYY-MM-DD`). CI fails fast if any required field is missing or malformed.
+- **Detection/reporting policy**: CI scans integration test logs (`integration-test-attempt-1.log` and retry logs when present) for each manifest `testMatch` value, emits warnings when quarantined tests are hit, and uploads a per-run flaky summary artifact (`flaky-quarantine-summary`) containing JSON + Markdown rollups.
+- **Exit criteria**: Keep quarantine entries only while remediation is active. Remove an entry after the owning team closes its ticket and the test is stable in normal CI execution (no quarantine matcher hits across retries for routine runs).
+
+### CI coverage requirements
+
+- **Unit coverage gate**: `validate` enforces minimum unit test line coverage via `COVERAGE_THRESHOLD` (default `75`).
+- **Integration coverage gate**: `validate` enforces minimum integration test line coverage from `coverage/integration` via `INTEGRATION_COVERAGE_THRESHOLD` (default `65`) without rerunning integration tests.
 
 ### CI coverage requirements
 
