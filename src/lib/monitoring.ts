@@ -33,7 +33,12 @@ const postClientError = (payload: Record<string, unknown>) => {
     void fetch(telemetryWebhook, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body,
+      body: JSON.stringify({
+        content: `[${
+          (import.meta as any).env?.MODE || 'unknown'
+        }] ${String((payload as { message?: unknown }).message || 'Frontend error')}`.slice(0, 1900),
+        ...JSON.parse(body)
+      }),
       keepalive: true
     }).catch(() => undefined);
   }

@@ -53,7 +53,7 @@ export async function apiFetch(input: RequestInfo, init: ApiFetchOptions = {}): 
   try {
     const response = await nativeFetch(requestInput, { ...init, headers });
 
-    if (!response.ok) {
+    if (!response.ok && response.status >= 500) {
       captureFrontendApiException({
         input: inputToString(requestInput),
         method,

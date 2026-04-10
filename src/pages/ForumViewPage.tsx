@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router';
 import { MessageSquare, Clock, User, ChevronRight, Pin, Lock, CheckCircle2, Plus, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
+import { apiJson } from '../lib/api';
 
 interface Thread {
   id: number;
@@ -28,7 +29,7 @@ interface ForumData {
     description: string | null;
     min_role_to_thread: string;
     is_hidden: number;
-  };
+  } | null;
   threads: Thread[];
 }
 
@@ -36,13 +37,14 @@ const ForumViewPage: React.FC = () => {
   const { id } = useParams();
   const { user } = useAuth();
   
-  const { data, isLoading } = useQuery<ForumData>({
+  const { data, isLoading, isError } = useQuery<ForumData>({
     queryKey: ['forum', id],
-    queryFn: () => fetch(`/api/forums/${id}`).then(res => res.json())
+    queryFn: () => apiJson<ForumData>(`/api/forums/${id}`),
+    enabled: !!id
   });
 
   if (isLoading) return <div className="animate-pulse space-y-4"><div className="h-12 w-64 bg-white/5 rounded-lg" /><div className="h-96 bg-white/5 rounded-2xl" /></div>;
-  if (!data) return <div>Forum not found</div>;
+  if (isError || !data?.forum) return <div>Forum not found</div>;
 
   const roles = ['member', 'moderator', 'admin'];
   const userRoleIndex = user ? roles.indexOf(user.role) : -1;
