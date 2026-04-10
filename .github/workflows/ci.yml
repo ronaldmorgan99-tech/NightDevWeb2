@@ -169,7 +169,7 @@ jobs:
       - name: Enforce integration line coverage threshold from existing V8 output
         if: steps.integration.outputs.exit_code == '0' || steps.integration_retry.outputs.exit_code == '0'
         run: |
-          coverage_summary="$(npx --yes c8 report --temp-directory coverage/integration --reporter text-summary)"
+          coverage_summary="$(npx c8 report --temp-directory coverage/integration --reporter text-summary)"
           printf '%s\n' "$coverage_summary"
 
           actual_lines_coverage="$(
