@@ -729,6 +729,33 @@ const forumCategoriesHandler = async (_req: Request, res: Response) => {
 };
 app.get(['/api/forums/categories', '/forums/categories'], forumCategoriesHandler);
 
+const forumDetailHandler = async (req: Request, res: Response) => {
+  try {
+    const forum = await db.queryOne<any>('SELECT * FROM forums WHERE id = ?', [req.params.id]);
+    if (!forum) {
+      return res.status(404).json({ error: 'Forum not found' });
+    }
+
+    const threads = await db.query<any>(`
+      SELECT
+        t.*,
+        u.username as author_name,
+        COUNT(p.id) as post_count
+      FROM threads t
+      JOIN users u ON t.author_id = u.id
+      LEFT JOIN posts p ON p.thread_id = t.id
+      WHERE t.forum_id = ?
+      GROUP BY t.id, u.username
+      ORDER BY t.is_pinned DESC, t.created_at DESC
+    `, [req.params.id]);
+
+    return res.json({ forum, threads });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load forum' });
+  }
+};
+app.get(['/api/forums/:id', '/forums/:id'], forumDetailHandler);
+
 const communityStatsHandler = async (_req: Request, res: Response) => {
   try {
     const [users, threads, posts, servers] = await Promise.all([
