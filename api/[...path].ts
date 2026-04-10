@@ -72,6 +72,11 @@ const authLoginSchema = z.object({
   username: z.string().trim().min(1).max(64),
   password: z.string().min(1).max(128)
 });
+const authRegisterSchema = z.object({
+  username: z.string().trim().min(3).max(32),
+  email: z.string().trim().email(),
+  password: z.string().min(6).max(128)
+});
 const threadCreateSchema = z.object({
   forum_id: z.coerce.number().int().positive(),
   title: z.string().trim().min(3).max(200),
@@ -93,6 +98,11 @@ const ticketMessageSchema = z.object({
 const directMessageSchema = z.object({
   receiver_id: z.coerce.number().int().positive(),
   content: z.string().trim().min(1)
+});
+const reportCreateSchema = z.object({
+  target_type: z.enum(['post', 'thread', 'user']),
+  target_id: z.coerce.number().int().positive(),
+  reason: z.string().trim().min(1)
 });
 
 const discordWidgetMemberSchema = z.object({
@@ -324,6 +334,8 @@ const meetsMinRole = (userRole: string, minRole: string) => {
   return userWeight >= minWeight;
 };
 
+const isStaffRole = (role: string) => role === 'admin' || role === 'moderator';
+
 const createRateLimit = (windowMs: number, maxRequests: number, errorMessage: string) => {
   const requests = new Map<string, number[]>();
   return (req: Request, res: Response, next: express.NextFunction) => {
@@ -378,8 +390,31 @@ const authSessionRateLimit = createRateLimit(
   AUTH_RATE_LIMIT_SESSION_MAX,
   'Too many authentication requests. Please slow down.'
 );
-app.use(['/api/auth/login', '/auth/login'], strictCredentialRateLimit);
+app.use(['/api/auth/login', '/auth/login', '/api/auth/register', '/auth/register'], strictCredentialRateLimit);
 app.use(['/api/auth/me', '/auth/me', '/api/auth/logout', '/auth/logout'], authSessionRateLimit);
+
+const registerHandler = async (req: Request, res: Response) => {
+  if (!JWT_SECRET || JWT_SECRET.length < 32) {
+    return res.status(500).json({ error: 'JWT_SECRET is required and must be at least 32 characters.' });
+  }
+
+  const { username, email, password } = req.body as z.infer<typeof authRegisterSchema>;
+  try {
+    const hashedPassword = bcrypt.hashSync(password, 10);
+    await db.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)', [username, email, hashedPassword]);
+    const user = await db.queryOne<any>('SELECT id, username, email, role FROM users WHERE username = ?', [username]);
+    if (!user) {
+      return res.status(500).json({ error: 'Failed to load registered user' });
+    }
+
+    const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+    res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
+    return res.json({ user: { id: user.id, username: user.username, email: user.email, role: user.role } });
+  } catch (err: any) {
+    return res.status(400).json({ error: err?.message || 'Registration failed' });
+  }
+};
+app.post(['/api/auth/register', '/auth/register'], validateBody(authRegisterSchema), registerHandler);
 
 const loginHandler = async (req: Request, res: Response) => {
   if (!JWT_SECRET || JWT_SECRET.length < 32) {
@@ -895,6 +930,188 @@ const postCreateHandler = async (req: Request, res: Response) => {
   }
 };
 app.post(['/api/posts', '/posts'], validateBody(postCreateSchema), postCreateHandler);
+
+const postUpdateHandler = async (req: Request, res: Response) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+
+  const { content, is_hidden, is_deleted } = req.body || {};
+  try {
+    const post = await db.queryOne<any>('SELECT * FROM posts WHERE id = ?', [req.params.id]);
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found' });
+    }
+
+    const isStaff = isStaffRole(user.role);
+    const isOwner = post.author_id === user.id;
+    if (!isOwner && !isStaff) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    if ((is_hidden !== undefined || is_deleted !== undefined) && !isStaff) {
+      return res.status(403).json({ error: 'Only moderators can hide/delete posts' });
+    }
+
+    const updates: string[] = [];
+    const params: any[] = [];
+    if (content !== undefined) {
+      updates.push('content = ?');
+      params.push(content);
+    }
+    if (is_hidden !== undefined) {
+      updates.push('is_hidden = ?');
+      params.push(is_hidden ? 1 : 0);
+    }
+    if (is_deleted !== undefined) {
+      updates.push('is_deleted = ?');
+      params.push(is_deleted ? 1 : 0);
+    }
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No updates provided' });
+    }
+    updates.push('updated_at = CURRENT_TIMESTAMP');
+    params.push(req.params.id);
+    await db.execute(`UPDATE posts SET ${updates.join(', ')} WHERE id = ?`, params);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to update post' });
+  }
+};
+app.patch(['/api/posts/:id', '/posts/:id'], postUpdateHandler);
+
+const threadUpdateHandler = async (req: Request, res: Response) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+
+  const { is_pinned, is_locked, is_solved, is_hidden } = req.body || {};
+  try {
+    const thread = await db.queryOne<any>('SELECT * FROM threads WHERE id = ?', [req.params.id]);
+    if (!thread) {
+      return res.status(404).json({ error: 'Thread not found' });
+    }
+
+    const isStaff = isStaffRole(user.role);
+    const isOwner = thread.author_id === user.id;
+    if (is_pinned !== undefined && !isStaff) {
+      return res.status(403).json({ error: 'Only moderators can pin/unpin threads' });
+    }
+    if (is_hidden !== undefined && !isStaff) {
+      return res.status(403).json({ error: 'Only moderators can hide/unhide threads' });
+    }
+    if ((is_locked !== undefined || is_solved !== undefined) && !isStaff && !isOwner) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const updates: string[] = [];
+    const params: any[] = [];
+    if (is_pinned !== undefined) {
+      updates.push('is_pinned = ?');
+      params.push(is_pinned ? 1 : 0);
+    }
+    if (is_locked !== undefined) {
+      updates.push('is_locked = ?');
+      params.push(is_locked ? 1 : 0);
+    }
+    if (is_solved !== undefined) {
+      updates.push('is_solved = ?');
+      params.push(is_solved ? 1 : 0);
+    }
+    if (is_hidden !== undefined) {
+      updates.push('is_hidden = ?');
+      params.push(is_hidden ? 1 : 0);
+    }
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No updates provided' });
+    }
+    updates.push('updated_at = CURRENT_TIMESTAMP');
+    params.push(req.params.id);
+    await db.execute(`UPDATE threads SET ${updates.join(', ')} WHERE id = ?`, params);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to update thread' });
+  }
+};
+app.patch(['/api/threads/:id', '/threads/:id'], threadUpdateHandler);
+
+const threadDeleteHandler = async (req: Request, res: Response) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+
+  try {
+    const thread = await db.queryOne<any>('SELECT * FROM threads WHERE id = ?', [req.params.id]);
+    if (!thread) {
+      return res.status(404).json({ error: 'Thread not found' });
+    }
+    const isStaff = isStaffRole(user.role);
+    const isOwner = thread.author_id === user.id;
+    if (!isStaff && !isOwner) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    await db.execute('DELETE FROM posts WHERE thread_id = ?', [req.params.id]);
+    await db.execute('DELETE FROM threads WHERE id = ?', [req.params.id]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to delete thread' });
+  }
+};
+app.delete(['/api/threads/:id', '/threads/:id'], threadDeleteHandler);
+
+const reportCreateHandler = async (req: Request, res: Response) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+
+  const { target_type, target_id, reason } = req.body as z.infer<typeof reportCreateSchema>;
+  try {
+    await db.execute(
+      'INSERT INTO reports (reporter_id, target_type, target_id, reason) VALUES (?, ?, ?, ?)',
+      [user.id, target_type, target_id, reason]
+    );
+    return res.status(201).json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to create report' });
+  }
+};
+app.post(['/api/reports', '/reports'], validateBody(reportCreateSchema), reportCreateHandler);
+
+const ordersCreateHandler = async (req: Request, res: Response) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+
+  try {
+    const cart = await db.queryOne<any>('SELECT id FROM carts WHERE user_id = ?', [user.id]);
+    if (!cart) {
+      return res.status(400).json({ error: 'Cart is empty' });
+    }
+    const items = await db.query<any>(`
+      SELECT ci.product_id, ci.quantity, ci.price, p.name
+      FROM cart_items ci
+      JOIN products p ON ci.product_id = p.id
+      WHERE ci.cart_id = ?
+    `, [cart.id]);
+    if (items.length === 0) {
+      return res.status(400).json({ error: 'Cart is empty' });
+    }
+
+    const totalPrice = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const orderResult = await db.execute(
+      'INSERT INTO orders (user_id, total_amount, status) VALUES (?, ?, ?)',
+      [user.id, totalPrice, 'pending']
+    );
+    const orderId = orderResult.lastInsertRowid || orderResult.insertId;
+    for (const item of items) {
+      await db.execute(
+        'INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase) VALUES (?, ?, ?, ?)',
+        [orderId, item.product_id, item.quantity, item.price]
+      );
+    }
+    await db.execute('DELETE FROM cart_items WHERE cart_id = ?', [cart.id]);
+
+    return res.json({ id: orderId, userId: user.id, totalPrice, itemsCount: items.length, status: 'pending' });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to create order' });
+  }
+};
+app.post(['/api/orders', '/orders'], ordersCreateHandler);
 
 const ticketsListHandler = async (req: Request, res: Response) => {
   const user = await requireAuthUser(req, res);
