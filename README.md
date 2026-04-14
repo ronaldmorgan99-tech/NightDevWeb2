@@ -200,6 +200,8 @@ Minimum expected results:
 
 - Pull requests must use `.github/pull_request_template.md`. Complete every checklist section before requesting review.
 - If your change affects release/deploy behavior, update `docs/ai/MEMORY.md` and/or `docs/ai/BACKLOG.md` as part of the PR.
+- CI validates `Last reviewed: YYYY-MM-DD` in both `docs/ai/MEMORY.md` and `docs/ai/BACKLOG.md` via `scripts/ci/validate-ai-docs-dates.mjs`.
+  Keep both dates valid and no older than 14 days (`AI_DOCS_MAX_AGE_DAYS`) when opening/updating a PR.
 
 ### CI flaky-test handling policy
 
