@@ -21,7 +21,6 @@ import {
   Server,
   Activity,
   Zap,
-  Cpu,
   Globe,
   Monitor,
   Ticket
@@ -29,6 +28,15 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 
 const GlobeIcon = Globe;
+const RECENT_SEARCHES_STORAGE_KEY = 'nightdev-recent-searches';
+const MAX_RECENT_SEARCHES = 6;
+
+type SearchResultItem = {
+  title: string;
+  category: string;
+  path: string;
+  icon: React.ComponentType<{ className?: string }>;
+};
 
 type SidebarServer = {
   id: number;
@@ -107,6 +115,27 @@ const MainLayout: React.FC = () => {
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
+    if (typeof window === 'undefined') {
+      return [];
+    }
+
+    try {
+      const storedSearches = window.localStorage.getItem(RECENT_SEARCHES_STORAGE_KEY);
+      if (!storedSearches) {
+        return [];
+      }
+
+      const parsedSearches = JSON.parse(storedSearches);
+      if (!Array.isArray(parsedSearches)) {
+        return [];
+      }
+
+      return parsedSearches.filter((search): search is string => typeof search === 'string').slice(0, MAX_RECENT_SEARCHES);
+    } catch {
+      return [];
+    }
+  });
   const cardRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -168,6 +197,45 @@ const MainLayout: React.FC = () => {
     ...(isStudioDiscoverable ? [{ label: 'Studio', path: '/studio', icon: Zap }] : []),
   ];
 
+  const searchableItems: SearchResultItem[] = [
+    ...navItems.map((item) => ({
+      title: item.label,
+      category: 'Navigation',
+      path: item.path,
+      icon: item.icon
+    })),
+    { title: 'Settings', category: 'Account', path: '/settings', icon: Settings },
+    { title: 'Rules', category: 'Community', path: '/rules', icon: ShieldCheck },
+  ];
+
+  const filteredSearchResults = searchableItems.filter((item) =>
+    item.title.toLowerCase().includes(searchQuery.toLowerCase().trim())
+  );
+
+  const saveRecentSearch = (rawSearch: string) => {
+    const normalizedSearch = rawSearch.trim();
+    if (!normalizedSearch) {
+      return;
+    }
+
+    setRecentSearches((previousSearches) => {
+      const updatedSearches = [
+        normalizedSearch,
+        ...previousSearches.filter((search) => search.toLowerCase() !== normalizedSearch.toLowerCase())
+      ].slice(0, MAX_RECENT_SEARCHES);
+
+      window.localStorage.setItem(RECENT_SEARCHES_STORAGE_KEY, JSON.stringify(updatedSearches));
+      return updatedSearches;
+    });
+  };
+
+  const navigateToSearchResult = (item: SearchResultItem, query: string) => {
+    saveRecentSearch(query);
+    navigate(item.path);
+    setSearchQuery('');
+    setIsSearchOpen(false);
+  };
+
   const handleLogout = async () => {
     await logout();
     navigate('/login');
@@ -208,6 +276,11 @@ const MainLayout: React.FC = () => {
                   className="flex-1 bg-transparent border-none outline-none text-lg text-white placeholder:text-zinc-600 font-medium"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && filteredSearchResults.length > 0) {
+                      navigateToSearchResult(filteredSearchResults[0], searchQuery);
+                    }
+                  }}
                 />
                 <button 
                   onClick={() => setIsSearchOpen(false)}
@@ -222,15 +295,10 @@ const MainLayout: React.FC = () => {
                   <div className="space-y-4">
                     <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold px-2">Results for "{searchQuery}"</p>
                     <div className="grid gap-2">
-                      {/* Mock Search Results */}
-                      {[
-                        { title: 'Cyberpunk 2077 Modding Guide', category: 'General Discussion', icon: Cpu },
-                        { title: 'New Member: GhostInTheShell', category: 'Members', icon: Users },
-                        { title: 'Neon District Store Update', category: 'Store', icon: ShoppingBag },
-                        { title: 'Server Maintenance Schedule', category: 'Announcements', icon: Activity }
-                      ].filter(item => item.title.toLowerCase().includes(searchQuery.toLowerCase())).map((item, i) => (
+                      {filteredSearchResults.map((item) => (
                         <button 
-                          key={i}
+                          key={`${item.path}-${item.title}`}
+                          onClick={() => navigateToSearchResult(item, searchQuery)}
                           className="w-full flex items-center gap-4 p-4 rounded-xl hover:bg-white/5 transition-all group text-left"
                         >
                           <div className="w-10 h-10 rounded-lg bg-cyber-black flex items-center justify-center border border-white/5 group-hover:border-neon-cyan/30 transition-colors">
@@ -242,12 +310,7 @@ const MainLayout: React.FC = () => {
                           </div>
                         </button>
                       ))}
-                      {searchQuery.length > 0 && [
-                        { title: 'Cyberpunk 2077 Modding Guide', category: 'General Discussion', icon: Cpu },
-                        { title: 'New Member: GhostInTheShell', category: 'Members', icon: Users },
-                        { title: 'Neon District Store Update', category: 'Store', icon: ShoppingBag },
-                        { title: 'Server Maintenance Schedule', category: 'Announcements', icon: Activity }
-                      ].filter(item => item.title.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && (
+                      {filteredSearchResults.length === 0 && (
                         <div className="py-12 text-center">
                           <Search className="w-12 h-12 text-zinc-800 mx-auto mb-4" />
                           <p className="text-zinc-500">No results found for your query.</p>
@@ -279,15 +342,19 @@ const MainLayout: React.FC = () => {
                     <div>
                       <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold px-2 mb-4">Recent Searches</p>
                       <div className="flex flex-wrap gap-2 px-2">
-                        {['Modding', 'Hardware', 'Events', 'Rules'].map(tag => (
-                          <button 
-                            key={tag}
-                            onClick={() => setSearchQuery(tag)}
-                            className="px-3 py-1.5 rounded-full bg-white/5 border border-white/5 text-xs text-zinc-400 hover:text-neon-cyan hover:border-neon-cyan/30 transition-all"
-                          >
-                            {tag}
-                          </button>
-                        ))}
+                        {recentSearches.length > 0 ? (
+                          recentSearches.map((search) => (
+                            <button
+                              key={search}
+                              onClick={() => setSearchQuery(search)}
+                              className="px-3 py-1.5 rounded-full bg-white/5 border border-white/5 text-xs text-zinc-400 hover:text-neon-cyan hover:border-neon-cyan/30 transition-all"
+                            >
+                              {search}
+                            </button>
+                          ))
+                        ) : (
+                          <p className="text-xs text-zinc-500 px-1">No searches yet. Search for something to populate this list.</p>
+                        )}
                       </div>
                     </div>
                   </div>
