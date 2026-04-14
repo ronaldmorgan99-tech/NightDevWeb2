@@ -76,6 +76,7 @@ const AdminStorePage: React.FC = () => {
   });
 
   if (isLoading) return <div className="animate-pulse grid grid-cols-1 md:grid-cols-2 gap-8">{[1, 2, 3, 4].map(i => <div key={i} className="h-48 bg-white/5 rounded-3xl" />)}</div>;
+  const safeProducts = Array.isArray(products) ? products : [];
 
   return (
     <div className="space-y-12">
@@ -94,7 +95,7 @@ const AdminStorePage: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {products?.map((product) => (
+        {safeProducts.map((product) => (
           <motion.div 
             key={product.id}
             initial={{ opacity: 0, y: 20 }}
@@ -140,7 +141,7 @@ const AdminStorePage: React.FC = () => {
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-1.5">
                     <DollarSign className="w-3 h-3 text-neon-cyan" />
-                    <span className="text-lg font-black text-white italic">{product.price.toFixed(2)}</span>
+                    <span className="text-lg font-black text-white italic">{Number(product.price || 0).toFixed(2)}</span>
                   </div>
                   <div className="w-[1px] h-4 bg-white/10" />
                   <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-zinc-500">
@@ -153,6 +154,12 @@ const AdminStorePage: React.FC = () => {
             </div>
           </motion.div>
         ))}
+        {safeProducts.length === 0 && (
+          <div className="col-span-full p-12 text-center cyber-card border-white/5 bg-white/[0.02]">
+            <ShoppingBag className="w-12 h-12 text-zinc-800 mx-auto mb-4 opacity-20" />
+            <p className="text-xs font-black text-zinc-600 uppercase tracking-widest">No products available from API response</p>
+          </div>
+        )}
       </div>
 
       {/* Add Product Modal */}

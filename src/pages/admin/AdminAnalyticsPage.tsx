@@ -1,14 +1,12 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { apiJson } from '../../lib/api';
 import { 
-  BarChart3, 
   Users, 
   MessageSquare, 
-  TrendingUp, 
   DollarSign,
   Activity,
-  ArrowUpRight,
-  ArrowDownRight
+  ArrowUpRight
 } from 'lucide-react';
 import { 
   AreaChart, 
@@ -24,19 +22,33 @@ import {
 } from 'recharts';
 import { motion } from 'motion/react';
 
+interface AnalyticsResponse {
+  stats?: {
+    users?: number;
+    posts?: number;
+    threads?: number;
+    revenue?: number;
+  };
+  registrations?: Array<{ date: string; count: number }>;
+  orders?: Array<{ date: string; revenue: number }>;
+}
+
 const AdminAnalyticsPage: React.FC = () => {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery<AnalyticsResponse | null>({
     queryKey: ['admin-analytics'],
-    queryFn: () => fetch('/api/admin/analytics').then(res => res.json())
+    queryFn: () => apiJson<AnalyticsResponse | null>('/api/admin/analytics')
   });
 
   if (isLoading) return <div className="animate-pulse space-y-8">{[1, 2, 3].map(i => <div key={i} className="h-64 bg-white/5 rounded-3xl" />)}</div>;
+  const statsData = data?.stats ?? {};
+  const registrations = Array.isArray(data?.registrations) ? data!.registrations : [];
+  const orders = Array.isArray(data?.orders) ? data!.orders : [];
 
   const stats = [
-    { label: 'Total Operatives', value: data?.stats.users, icon: Users, color: 'text-neon-cyan', glow: 'neon-glow-cyan' },
-    { label: 'Network Traffic', value: data?.stats.posts, icon: MessageSquare, color: 'text-neon-purple', glow: 'neon-glow-purple' },
-    { label: 'Active Sectors', value: data?.stats.threads, icon: Activity, color: 'text-neon-green', glow: 'neon-glow-green' },
-    { label: 'Black Market Revenue', value: `${data?.stats.revenue.toFixed(2)} CR`, icon: DollarSign, color: 'text-neon-yellow', glow: 'neon-glow-yellow' },
+    { label: 'Total Operatives', value: statsData.users ?? 0, icon: Users, color: 'text-neon-cyan', glow: 'neon-glow-cyan' },
+    { label: 'Network Traffic', value: statsData.posts ?? 0, icon: MessageSquare, color: 'text-neon-purple', glow: 'neon-glow-purple' },
+    { label: 'Active Sectors', value: statsData.threads ?? 0, icon: Activity, color: 'text-neon-green', glow: 'neon-glow-green' },
+    { label: 'Black Market Revenue', value: `${(statsData.revenue ?? 0).toFixed(2)} CR`, icon: DollarSign, color: 'text-neon-yellow', glow: 'neon-glow-yellow' },
   ];
 
   return (
@@ -91,7 +103,7 @@ const AdminAnalyticsPage: React.FC = () => {
           </div>
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data?.registrations}>
+              <AreaChart data={registrations}>
                 <defs>
                   <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#00f3ff" stopOpacity={0.3}/>
@@ -135,7 +147,7 @@ const AdminAnalyticsPage: React.FC = () => {
           </div>
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data?.orders}>
+              <BarChart data={orders}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
                 <XAxis 
                   dataKey="date" 
@@ -149,15 +161,27 @@ const AdminAnalyticsPage: React.FC = () => {
                   itemStyle={{ color: '#39FF14', fontSize: '10px', textTransform: 'uppercase', fontWeight: 'bold' }}
                 />
                 <Bar dataKey="revenue" radius={[4, 4, 0, 0]}>
-                  {data?.orders.map((entry: any, index: number) => (
+                  {orders.map((entry: any, index: number) => (
                     <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#39FF14' : '#39FF1480'} />
                   ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
+          {orders.length === 0 && (
+            <p className="mt-3 text-[10px] font-black text-zinc-600 uppercase tracking-widest text-center">
+              No revenue records available yet
+            </p>
+          )}
         </motion.div>
       </div>
+      {registrations.length === 0 && orders.length === 0 && (
+        <div className="cyber-card border-white/5 p-8 text-center">
+          <p className="text-xs font-black text-zinc-500 uppercase tracking-widest">
+            Analytics uplink returned no chart data. Metrics shown above use safe defaults.
+          </p>
+        </div>
+      )}
     </div>
   );
 };

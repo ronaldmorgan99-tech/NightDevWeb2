@@ -77,14 +77,28 @@ export async function apiFetch(input: RequestInfo, init: ApiFetchOptions = {}): 
 
 export async function apiJson<T>(input: RequestInfo, init: ApiFetchOptions = {}): Promise<T> {
   const res = await apiFetch(input, init);
+  if (res.status === 204 || res.status === 205 || res.headers.get('content-length') === '0') {
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    return null as T;
+  }
+
+  const rawBody = await res.text();
+  const hasBody = rawBody.trim().length > 0;
   const contentType = res.headers.get('content-type') || '';
-  const data = contentType.includes('application/json') ? await res.json() : await res.text();
+  const shouldParseJson = contentType.includes('application/json') && hasBody;
+  const data = shouldParseJson ? JSON.parse(rawBody) : rawBody;
 
   if (!res.ok) {
     if (typeof data === 'string' && data.trim()) {
       throw new Error(data.slice(0, 200));
     }
     throw new Error((data as any)?.error || `HTTP ${res.status}`);
+  }
+
+  if (!hasBody) {
+    return null as T;
   }
 
   if (typeof data === 'string') {

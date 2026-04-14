@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 
 // Mock fetch for testing
-global.fetch = async (url, options = {}) => {
+globalThis.fetch = async (url, options = {}) => {
   // Mock CSRF token endpoint
   if (url.includes('/api/csrf-token')) {
     return {
@@ -22,10 +22,11 @@ global.fetch = async (url, options = {}) => {
   }
 
   if (url.includes('/api/auth/login')) {
+    const encodedToken = btoa('testuser:moderator');
     return {
       ok: true,
       status: 200,
-      json: async () => ({ user: { id: 1, username: 'testuser', email: 'test@example.com' } })
+      json: async () => ({ user: { id: 1, username: 'testuser', email: 'test@example.com', role: 'moderator' }, token: encodedToken })
     };
   }
 
@@ -139,7 +140,7 @@ global.document = {
 };
 
 global.window = {
-  fetch: global.fetch
+  fetch: globalThis.fetch
 };
 
 test('NightDevWeb2 Regression Tests', async (t) => {
@@ -183,6 +184,8 @@ test('NightDevWeb2 Regression Tests', async (t) => {
     const loginData = await loginRes.json();
     assert.strictEqual(loginRes.status, 200);
     assert.ok(loginData.user);
+    assert.strictEqual(loginData.user.role, 'moderator');
+    assert.ok(loginData.token);
 
     // Now test protected endpoint with auth (should work) - commented out for mock testing
     // const authRes = await fetch('/api/auth/me', {
