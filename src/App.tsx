@@ -47,10 +47,11 @@ const CreateThreadPage = lazy(() => import('./pages/CreateThreadPage'));
 const MessagesPage = lazy(() => import('./pages/MessagesPage'));
 const DiscordPage = lazy(() => import('./pages/DiscordPage'));
 const ServersPage = lazy(() => import('./pages/ServersPage'));
+const StudioUnavailablePage = lazy(() => import('./pages/ComingSoonPage'));
 const VeoStudioPage = lazy(() => import('./pages/VeoStudioPage'));
-const ComingSoonPage = lazy(() => import('./pages/ComingSoonPage'));
 
 const queryClient = new QueryClient();
+const isStudioDiscoverable = String(import.meta.env.VITE_ENABLE_STUDIO || '').toLowerCase() === 'true';
 
 const CustomCursor = () => {
   useEffect(() => {
@@ -102,8 +103,6 @@ const CustomCursor = () => {
 };
 
 export default function App() {
-  const isStudioEnabled = (import.meta as any).env.VITE_ENABLE_STUDIO === 'true';
-
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
@@ -128,7 +127,14 @@ export default function App() {
                 <Route path="servers" element={<Suspense fallback={<LoadingFallback />}><ServersPage /></Suspense>} />
                 <Route path="login" element={<Suspense fallback={<LoadingFallback />}><LoginPage /></Suspense>} />
                 <Route path="register" element={<Suspense fallback={<LoadingFallback />}><RegisterPage /></Suspense>} />
-                <Route path="studio" element={isStudioEnabled ? <Suspense fallback={<LoadingFallback />}><VeoStudioPage /></Suspense> : <Suspense fallback={<LoadingFallback />}><ComingSoonPage /></Suspense>} />
+                <Route
+                  path="studio"
+                  element={
+                    <Suspense fallback={<LoadingFallback />}>
+                      {isStudioDiscoverable ? <VeoStudioPage /> : <StudioUnavailablePage />}
+                    </Suspense>
+                  }
+                />
               </Route>
               <Route path="/admin" element={<AdminLayout />}>
                 <Route index element={<Suspense fallback={<LoadingFallback />}><AdminDashboard /></Suspense>} />

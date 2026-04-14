@@ -81,7 +81,12 @@ const NavArrow = ({ direction, onClick, disabled, className }: {
         />
         
         {/* Holographic Noise/Grain */}
-        <div className="absolute inset-0 opacity-[0.05] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')]" />
+        <div
+          className="absolute inset-0 opacity-[0.05] pointer-events-none"
+          style={{
+            backgroundImage: "var(--noise-overlay)"
+          }}
+        />
       </motion.div>
 
       <motion.div
@@ -405,31 +410,31 @@ export default function ProfilePage() {
 
   const { data: profile, isLoading: profileLoading } = useQuery<UserProfile>({
     queryKey: ['profile', userId],
-    queryFn: () => fetch(`/api/users/${userId}`).then(res => res.json()),
+    queryFn: () => apiJson<UserProfile>(`/api/users/${userId}`),
     enabled: !!userId
   });
 
   const { data: gameStatsData } = useQuery<any[]>({
     queryKey: ['gameStats', userId],
-    queryFn: () => fetch(`/api/users/${userId}/game-stats`).then(res => res.json()),
+    queryFn: () => apiJson<any[]>(`/api/users/${userId}/game-stats`),
     enabled: !!userId
   });
 
   const { data: transactionsData } = useQuery<any[]>({
     queryKey: ['gameTransactions', userId],
-    queryFn: () => fetch(`/api/users/${userId}/game-transactions`).then(res => res.json()),
+    queryFn: () => apiJson<any[]>(`/api/users/${userId}/game-transactions`),
     enabled: !!userId
   });
 
   const { data: matchesData } = useQuery<any[]>({
     queryKey: ['gameMatches', userId],
-    queryFn: () => fetch(`/api/users/${userId}/game-matches`).then(res => res.json()),
+    queryFn: () => apiJson<any[]>(`/api/users/${userId}/game-matches`),
     enabled: !!userId
   });
 
   const { data: leaderboardData } = useQuery<any[]>({
     queryKey: ['wealthLeaderboard'],
-    queryFn: () => fetch('/api/leaderboards/wealth').then(res => res.json())
+    queryFn: () => apiJson<any[]>('/api/leaderboards/wealth')
   });
 
   // Ensure data is always an array for rendering
@@ -568,7 +573,7 @@ export default function ProfilePage() {
               {profile.avatar_url ? (
                 <img src={profile.avatar_url} alt={profile.username} className="w-full h-full object-cover" />
               ) : (
-                <span className="relative z-10">{profile.username.charAt(0).toUpperCase()}</span>
+                <span className="relative z-10">{(profile.username || '?').charAt(0).toUpperCase()}</span>
               )}
               {/* Decorative Frame */}
               <div className="absolute inset-2 border border-white/5 rounded-2xl pointer-events-none" />
@@ -1026,7 +1031,7 @@ export default function ProfilePage() {
                       {player.avatar_url ? (
                         <img src={player.avatar_url} alt={player.username} className="w-full h-full object-cover" />
                       ) : (
-                        player.username.charAt(0).toUpperCase()
+                        (player.username || '?').charAt(0).toUpperCase()
                       )}
                     </div>
                     <div>

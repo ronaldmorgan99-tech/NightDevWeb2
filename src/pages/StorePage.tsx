@@ -26,9 +26,9 @@ interface PaymentProvider {
 }
 
 const StorePage: React.FC = () => {
-  const { data: products, isLoading } = useQuery<Product[]>({
+  const { data: productsData, isLoading } = useQuery<Product[]>({
     queryKey: ['products'],
-    queryFn: () => fetch('/api/store/products').then(res => res.json())
+    queryFn: () => apiJson<Product[]>('/api/store/products')
   });
 
   const { data: paymentProviders } = useQuery<PaymentProvider[]>({
@@ -41,12 +41,13 @@ const StorePage: React.FC = () => {
   const [selectedPaymentProvider, setSelectedPaymentProvider] = useState<'stripe' | 'paypal' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const products = Array.isArray(productsData) ? productsData : [];
 
   useEffect(() => {
     const loadCart = async () => {
       try {
         const cartData = await apiJson<{ items: CartItem[]; total: number; count: number }>('/api/cart');
-        setCart(cartData.items);
+        setCart(Array.isArray(cartData.items) ? cartData.items : []);
       } catch (err: any) {
         console.warn('Failed to load cart', err.message);
       }

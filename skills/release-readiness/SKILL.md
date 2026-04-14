@@ -55,11 +55,11 @@ description: Comprehensive checklist for preparing code releases - run before me
 - [ ] Error tracking enabled
 - [ ] Performance monitoring active
 - [ ] Health checks configured
-- [ ] Alert thresholds set
+- [ ] Alert thresholds set (including `/api/admin/observability/metrics` media latency/error/quota thresholds)
 
 ### Rollback Plan
 - [ ] Previous version tagged
-- [ ] Rollback procedure documented
+- [ ] Rollback procedure documented (explicit owner, trigger, and disable path for `VITE_ENABLE_STUDIO`)
 - [ ] Data migration reversible
 - [ ] Feature flags available for quick disable
 
@@ -67,6 +67,7 @@ description: Comprehensive checklist for preparing code releases - run before me
 
 ### Functional Testing
 - [ ] Core user flows work in production
+- [ ] Scripted smoke test executed (`npm run smoke:postdeploy`) for `/api/settings`, `/api/auth/me`, and one authenticated flow
 - [ ] Payment processing verified
 - [ ] Real-time features functional
 - [ ] Media generation working

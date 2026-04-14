@@ -1,0 +1,240 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit (high severity and above)
+        run: npm audit --audit-level=high
+
+  sast:
+    name: SAST (CodeQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+
+  validate:
+    name: Lint, Build, and Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_V8_COVERAGE: coverage/integration
+      COVERAGE_THRESHOLD: 75
+      INTEGRATION_COVERAGE_THRESHOLD: 65
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Ensure deterministic test DB directory exists
+        run: mkdir -p tmp
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: Run build
+        run: npm run build
+
+      - name: Run scripted post-deploy smoke checks against local server
+        env:
+          NODE_ENV: production
+          PORT: 3100
+          DATABASE_URL: tmp/post-deploy-smoke.db
+          JWT_SECRET: ci-smoke-secret
+          SMOKE_USER: admin
+          SMOKE_PASSWORD: password
+          BASE_URL: http://127.0.0.1:3100
+        run: |
+          npm run dev > smoke-server.log 2>&1 &
+          server_pid=$!
+          cleanup() {
+            if kill -0 "$server_pid" 2>/dev/null; then
+              kill "$server_pid"
+              wait "$server_pid" || true
+            fi
+          }
+          trap cleanup EXIT
+
+          for attempt in {1..45}; do
+            if curl -sSf "$BASE_URL/api/settings" > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          if ! curl -sSf "$BASE_URL/api/settings" > /dev/null; then
+            echo "Smoke server did not become ready in time."
+            echo "--- smoke-server.log ---"
+            cat smoke-server.log
+            exit 1
+          fi
+
+          npm run smoke:postdeploy
+
+      # Flaky test handling policy:
+      # 1) Retry once in CI to reduce noise from transient issues.
+      # 2) If still failing, upload logs/artifacts and fail fast.
+      # 3) For confirmed flakes, quarantine behind a documented skip with owner + ticket,
+      #    then track in README "Contributing" until fixed and unquarantined.
+      # 3) Confirmed flakes must be tracked in test/flaky-manifest.json with owner + ticket + expiry.
+      # 4) CI validates manifest schema and publishes a flaky summary artifact each run.
+      - name: Validate flaky quarantine manifest schema
+        run: node scripts/ci/flaky-quarantine-report.mjs test/flaky-manifest.json artifacts/flaky
+      - name: Reset integration coverage directory
+        run: |
+          rm -rf coverage/integration
+          mkdir -p coverage/integration
+
+      - name: Run integration tests with V8 coverage (attempt 1, capture logs)
+        id: integration
+        continue-on-error: true
+        env:
+          TEST_DATABASE_URL: tmp/test.db
+          DATABASE_URL: tmp/test.db
+        run: |
+          npm run test:integration 2>&1 | tee integration-test-attempt-1.log
+          exit_code=${PIPESTATUS[0]}
+          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+
+      - name: Retry integration tests with V8 coverage (attempt 2)
+        id: integration_retry
+        if: steps.integration.outputs.exit_code != '0'
+        continue-on-error: true
+        env:
+          TEST_DATABASE_URL: tmp/test.db
+          DATABASE_URL: tmp/test.db
+        run: |
+          rm -rf coverage/integration
+          mkdir -p coverage/integration
+          npm run test:integration 2>&1 | tee integration-test-attempt-2.log
+          exit_code=${PIPESTATUS[0]}
+          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+
+      - name: Run unit tests with coverage and enforce minimum threshold
+        env:
+          NODE_V8_COVERAGE: coverage/unit
+        run: >
+          node --experimental-test-coverage
+          --test-coverage-lines="$COVERAGE_THRESHOLD"
+          --test test/regression.test.js
+
+      - name: Enforce integration line coverage threshold from existing V8 output
+        if: steps.integration.outputs.exit_code == '0' || steps.integration_retry.outputs.exit_code == '0'
+        run: |
+          coverage_summary="$(npx --yes c8 report --temp-directory coverage/integration --reporter text-summary)"
+          coverage_summary="$(npx c8 report --temp-directory coverage/integration --reporter text-summary)"
+          printf '%s\n' "$coverage_summary"
+
+          actual_lines_coverage="$(
+            printf '%s\n' "$coverage_summary" \
+              | awk -F'[:%]+' '/^Lines/ { gsub(/[[:space:]]/, "", $2); print $2; exit }'
+          )"
+
+          if [ -z "$actual_lines_coverage" ]; then
+            echo "::error::Integration coverage gate failed: unable to parse line coverage from coverage/integration."
+            exit 1
+          fi
+
+          if awk "BEGIN { exit !($actual_lines_coverage + 0 >= $INTEGRATION_COVERAGE_THRESHOLD + 0) }"; then
+            echo "Integration coverage gate passed: expected >= ${INTEGRATION_COVERAGE_THRESHOLD}%, actual ${actual_lines_coverage}%."
+          else
+            echo "::error::Integration coverage gate failed: expected >= ${INTEGRATION_COVERAGE_THRESHOLD}%, actual ${actual_lines_coverage}%."
+            exit 1
+          fi
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            coverage/integration
+            coverage/unit
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload integration logs on failure
+        if: steps.integration.outputs.exit_code != '0' && steps.integration_retry.outputs.exit_code != '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-logs
+          path: |
+            integration-test-attempt-1.log
+            integration-test-attempt-2.log
+            tmp/test.db
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Build flaky quarantine summary
+        if: always()
+        run: >
+          node scripts/ci/flaky-quarantine-report.mjs
+          test/flaky-manifest.json
+          artifacts/flaky
+          integration-test-attempt-1.log
+          integration-test-attempt-2.log
+
+      - name: Upload flaky quarantine summary artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-quarantine-summary
+          path: artifacts/flaky
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Fail workflow when integration tests fail
+        if: steps.integration.outputs.exit_code != '0' && steps.integration_retry.outputs.exit_code != '0'
+        run: |
+          echo "Integration tests failed after retry. See uploaded artifact: integration-test-logs"
+          exit 1

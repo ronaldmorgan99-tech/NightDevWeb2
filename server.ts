@@ -24,13 +24,104 @@ const JWT_SECRET = process.env.JWT_SECRET || '';
 
 const AUTH_COOKIE_NAME = 'token';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const CLIENT_ORIGINS = String(process.env.CLIENT_ORIGIN || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const HAS_SPLIT_ORIGIN_DEPLOYMENT = CLIENT_ORIGINS.length > 0;
+const ERROR_TRACKING_WEBHOOK = process.env.ERROR_TRACKING_WEBHOOK || '';
+const parseEnvNumber = (value: string | undefined, fallback: number) => {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+const AUTH_RATE_LIMIT_CREDENTIAL_WINDOW_MS = parseEnvNumber(process.env.AUTH_RATE_LIMIT_CREDENTIAL_WINDOW_MS, 10 * 60 * 1000);
+const AUTH_RATE_LIMIT_CREDENTIAL_MAX = parseEnvNumber(process.env.AUTH_RATE_LIMIT_CREDENTIAL_MAX, 8);
+const AUTH_RATE_LIMIT_SESSION_WINDOW_MS = parseEnvNumber(process.env.AUTH_RATE_LIMIT_SESSION_WINDOW_MS, 5 * 60 * 1000);
+const AUTH_RATE_LIMIT_SESSION_MAX = parseEnvNumber(process.env.AUTH_RATE_LIMIT_SESSION_MAX, 30);
 
 const AUTH_COOKIE_OPTIONS: CookieOptions = {
   httpOnly: true,
   secure: IS_PRODUCTION,
-  sameSite: IS_PRODUCTION ? 'none' : 'lax',
+  sameSite: IS_PRODUCTION && HAS_SPLIT_ORIGIN_DEPLOYMENT ? 'none' : 'lax',
   path: '/'
 };
+
+const authRegisterSchema = z.object({
+  username: z.string().trim().min(3).max(32),
+  email: z.string().trim().toLowerCase().email().max(320),
+  password: z.string().min(8).max(128)
+});
+
+const authLoginSchema = z.object({
+  username: z.string().trim().min(1).max(64),
+  password: z.string().min(1).max(128)
+});
+
+const profileUpdateSchema = z.object({
+  avatar_url: z.string().trim().max(2048).optional(),
+  banner_url: z.string().trim().max(2048).optional(),
+  bio: z.string().trim().max(500).optional(),
+  username: z.string().trim().min(3).max(32).optional(),
+  email: z.string().trim().toLowerCase().email().max(320).optional(),
+  currentPassword: z.string().max(128).optional(),
+  newPassword: z.string().min(8).max(128).optional()
+}).superRefine((payload, ctx) => {
+  if (payload.newPassword && !payload.currentPassword) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['currentPassword'],
+      message: 'Current password required to set new password'
+    });
+  }
+});
+
+const adminSettingsItemSchema = z.object({
+  key: z.string().trim().min(1).max(100),
+  value: z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(z.any()), z.record(z.string(), z.any())])
+});
+
+const adminSettingsUpdateSchema = z.union([
+  z.array(adminSettingsItemSchema),
+  z.object({ settings: z.array(adminSettingsItemSchema) })
+]);
+
+const threadCreateSchema = z.object({
+  forum_id: z.coerce.number().int().positive(),
+  title: z.string().trim().min(3).max(200),
+  content: z.string().trim().min(1).max(10_000)
+});
+
+const postCreateSchema = z.object({
+  thread_id: z.coerce.number().int().positive(),
+  content: z.string().trim().min(1).max(10_000)
+});
+
+const ticketMessageSchema = z.object({
+  message: z.string().trim().min(1).max(5_000)
+});
+
+const directMessageSchema = z.object({
+  receiver_id: z.coerce.number().int().positive(),
+  content: z.string().trim().min(1).max(5_000)
+});
+
+const forumCategoryCreateSchema = z.object({
+  name: z.string().trim().min(1).max(100)
+});
+
+const forumCategoryUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  display_order: z.coerce.number().int().min(0).optional().default(0)
+});
+
+const forumCreateSchema = z.object({
+  category_id: z.coerce.number().int().positive(),
+  name: z.string().trim().min(1).max(150),
+  description: z.string().trim().max(1000).optional().default(''),
+  min_role_to_thread: z.enum(['member', 'moderator', 'admin']).optional().default('member'),
+  display_order: z.coerce.number().int().min(0).optional().default(0)
+});
 
 function validateEnv() {
   if (!JWT_SECRET || JWT_SECRET.length < 32) {
@@ -47,6 +138,19 @@ function validateEnv() {
 
   if (process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL is required in production.');
+  }
+
+  if (CLIENT_ORIGINS.length > 0) {
+    for (const origin of CLIENT_ORIGINS) {
+      try {
+        const parsed = new URL(origin);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          throw new Error(`CLIENT_ORIGIN contains unsupported protocol: ${origin}`);
+        }
+      } catch {
+        throw new Error(`CLIENT_ORIGIN contains an invalid URL origin: ${origin}`);
+      }
+    }
   }
 
   // Validate payment configuration
@@ -94,10 +198,201 @@ function sanitizeProxyEnvironment() {
   }
 }
 
+type LogLevel = 'info' | 'warn' | 'error';
+type StructuredLogContext = Record<string, string | number | boolean | null | undefined>;
+
+const logStructured = (level: LogLevel, event: string, context: StructuredLogContext = {}) => {
+  const payload = {
+    timestamp: new Date().toISOString(),
+    level,
+    event,
+    ...context
+  };
+  const serialized = JSON.stringify(payload);
+  if (level === 'error') {
+    console.error(serialized);
+    return;
+  }
+  if (level === 'warn') {
+    console.warn(serialized);
+    return;
+  }
+  console.log(serialized);
+};
+
+const captureException = async (error: unknown, context: Record<string, unknown> = {}) => {
+  const normalizedMessage = error instanceof Error ? error.message : String(error);
+  logStructured('error', 'exception.captured', {
+    message: normalizedMessage,
+    context: JSON.stringify(context)
+  });
+
+  if (!ERROR_TRACKING_WEBHOOK) {
+    return;
+  }
+
+  try {
+    const payload = {
+      environment: process.env.NODE_ENV,
+      message: normalizedMessage,
+      stack: error instanceof Error ? error.stack : undefined,
+      context
+    };
+    const response = await fetch(ERROR_TRACKING_WEBHOOK, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        content: `[${process.env.NODE_ENV || 'unknown'}] ${normalizedMessage}`.slice(0, 1900),
+        ...payload
+      })
+    });
+    if (!response.ok) {
+      const failureBody = await response.text().catch(() => '');
+      logStructured('warn', 'exception.webhook_rejected', {
+        status: response.status,
+        statusText: response.statusText || '',
+        body: failureBody.slice(0, 500)
+      });
+    }
+  } catch (webhookError) {
+    logStructured('warn', 'exception.webhook_failed', {
+      message: webhookError instanceof Error ? webhookError.message : String(webhookError)
+    });
+  }
+};
+
+type LatencyMetrics = {
+  count: number;
+  totalMs: number;
+  minMs: number;
+  maxMs: number;
+};
+
+type ApiMetrics = {
+  totalRequests: number;
+  errorCount: number;
+  statusCounts: Record<string, number>;
+  byRoute: Record<string, { requests: number; errors: number; latency: LatencyMetrics }>;
+};
+
+type AuthFlowMetrics = {
+  registerAttempts: number;
+  registerSuccess: number;
+  registerFailure: number;
+  loginAttempts: number;
+  loginSuccess: number;
+  loginFailure: number;
+  meChecks: number;
+  meUnauthorized: number;
+};
+
+type SocketMetrics = {
+  authFailures: number;
+  connections: number;
+  disconnects: number;
+  connectionErrors: number;
+  activeConnections: number;
+  roomCount: number;
+  roomMemberships: number;
+  maxRoomOccupancy: number;
+};
+
+const createLatencyMetric = (): LatencyMetrics => ({ count: 0, totalMs: 0, minMs: Number.POSITIVE_INFINITY, maxMs: 0 });
+
+const observabilityMetrics = {
+  api: {
+    totalRequests: 0,
+    errorCount: 0,
+    statusCounts: {},
+    byRoute: {}
+  } as ApiMetrics,
+  auth: {
+    registerAttempts: 0,
+    registerSuccess: 0,
+    registerFailure: 0,
+    loginAttempts: 0,
+    loginSuccess: 0,
+    loginFailure: 0,
+    meChecks: 0,
+    meUnauthorized: 0
+  } as AuthFlowMetrics,
+  media: {
+    '/api/media/animate': createLatencyMetric(),
+    '/api/media/poll': createLatencyMetric()
+  },
+  socket: {
+    authFailures: 0,
+    connections: 0,
+    disconnects: 0,
+    connectionErrors: 0,
+    activeConnections: 0,
+    roomCount: 0,
+    roomMemberships: 0,
+    maxRoomOccupancy: 0
+  } as SocketMetrics
+};
+
+const recordLatency = (metric: LatencyMetrics, durationMs: number) => {
+  metric.count += 1;
+  metric.totalMs += durationMs;
+  metric.minMs = Math.min(metric.minMs, durationMs);
+  metric.maxMs = Math.max(metric.maxMs, durationMs);
+};
+
+const summarizeLatency = (metric: LatencyMetrics) => ({
+  count: metric.count,
+  avgMs: metric.count > 0 ? Number((metric.totalMs / metric.count).toFixed(2)) : 0,
+  minMs: metric.count > 0 ? Number(metric.minMs.toFixed(2)) : 0,
+  maxMs: Number(metric.maxMs.toFixed(2))
+});
+
+const getOrCreateRouteMetric = (routeKey: string) => {
+  if (!observabilityMetrics.api.byRoute[routeKey]) {
+    observabilityMetrics.api.byRoute[routeKey] = {
+      requests: 0,
+      errors: 0,
+      latency: createLatencyMetric()
+    };
+  }
+
+  return observabilityMetrics.api.byRoute[routeKey];
+};
+
+const summarizeApiMetrics = () => {
+  const errorRate = observabilityMetrics.api.totalRequests > 0
+    ? Number(((observabilityMetrics.api.errorCount / observabilityMetrics.api.totalRequests) * 100).toFixed(2))
+    : 0;
+
+  const byRoute = Object.fromEntries(
+    Object.entries(observabilityMetrics.api.byRoute).map(([route, metric]) => [
+      route,
+      {
+        requests: metric.requests,
+        errors: metric.errors,
+        errorRatePct: metric.requests > 0 ? Number(((metric.errors / metric.requests) * 100).toFixed(2)) : 0,
+        latency: summarizeLatency(metric.latency)
+      }
+    ])
+  );
+
+  return {
+    totalRequests: observabilityMetrics.api.totalRequests,
+    errorCount: observabilityMetrics.api.errorCount,
+    errorRatePct: errorRate,
+    statusCounts: observabilityMetrics.api.statusCounts,
+    byRoute
+  };
+};
+
 async function start() {
   console.log('--- STARTING NIGHTRESPAWN SERVER ---');
   validateEnv();
   sanitizeProxyEnvironment();
+  if (ERROR_TRACKING_WEBHOOK) {
+    logStructured('info', 'error_tracking.initialized', { environment: process.env.NODE_ENV || 'unknown' });
+  } else {
+    logStructured('warn', 'error_tracking.not_configured');
+  }
 
   // Startup order is deterministic: create/validate schema first, then seed/reset data.
   try {
@@ -112,10 +407,13 @@ async function start() {
   }
 
   const app = express();
+  app.set('trust proxy', 1);
   const server = http.createServer(app);
+  const socketCorsOrigins = CLIENT_ORIGINS.length > 0 ? CLIENT_ORIGINS : IS_PRODUCTION ? false : true;
   const io = new Server(server, {
     cors: {
-      origin: '*',
+      origin: socketCorsOrigins,
+      credentials: HAS_SPLIT_ORIGIN_DEPLOYMENT,
       methods: ['GET', 'POST', 'OPTIONS', 'HEAD', 'PUT', 'DELETE', 'PATCH']
     }
   });
@@ -123,6 +421,131 @@ async function start() {
 
   app.use(express.json({ limit: '50mb' }));
   app.use(cookieParser());
+
+  const corsMethods = ['GET', 'POST', 'OPTIONS', 'HEAD', 'PUT', 'DELETE', 'PATCH'].join(', ');
+  const corsHeaders = ['Content-Type', 'X-CSRF-Token'].join(', ');
+  app.use((req, res, next) => {
+    const requestOrigin = req.headers.origin;
+    if (requestOrigin && CLIENT_ORIGINS.includes(requestOrigin)) {
+      res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
+
+    res.setHeader('Access-Control-Allow-Methods', corsMethods);
+    res.setHeader('Access-Control-Allow-Headers', corsHeaders);
+
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
+    next();
+  });
+
+  const validateBody = <T>(schema: z.ZodSchema<T>) => (
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) => {
+    const parsedPayload = schema.safeParse(req.body);
+    if (!parsedPayload.success) {
+      return res.status(400).json({ error: parsedPayload.error.issues[0]?.message || 'Invalid request payload' });
+    }
+    req.body = parsedPayload.data;
+    next();
+  };
+
+  const createRateLimit = (windowMs: number, maxRequests: number, errorMessage: string) => {
+    const requests = new Map<string, number[]>();
+    return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+      const now = Date.now();
+      const key = req.ip || req.socket.remoteAddress || 'unknown';
+      const timestamps = (requests.get(key) || []).filter((timestamp) => now - timestamp < windowMs);
+      timestamps.push(now);
+      requests.set(key, timestamps);
+
+      if (timestamps.length > maxRequests) {
+        return res.status(429).json({ error: errorMessage });
+      }
+      next();
+    };
+  };
+
+  app.use((req, res, next) => {
+    const shouldLog = req.path.startsWith('/api/auth')
+      || req.path.startsWith('/api/settings')
+      || req.path.startsWith('/api/admin/settings')
+      || req.path.startsWith('/api/media');
+
+    next();
+  });
+
+  app.use((req, res, next) => {
+    if (!req.path.startsWith('/api')) {
+      return next();
+    }
+
+    const startHr = process.hrtime.bigint();
+    const requestId = req.headers['x-request-id'] ? String(req.headers['x-request-id']) : `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    res.setHeader('x-request-id', requestId);
+
+    res.on('finish', () => {
+      const durationMs = Number(process.hrtime.bigint() - startHr) / 1_000_000;
+      const routePattern = req.route?.path;
+      const routePath = typeof routePattern === 'string' ? routePattern : req.path;
+      const routeKey = `${req.method} ${routePath}`;
+      const userId = req.path.startsWith('/api/auth') || req.path.startsWith('/api/media') ? getUserFromToken(req)?.id ?? null : null;
+
+      observabilityMetrics.api.totalRequests += 1;
+      observabilityMetrics.api.statusCounts[String(res.statusCode)] = (observabilityMetrics.api.statusCounts[String(res.statusCode)] || 0) + 1;
+
+      const routeMetric = getOrCreateRouteMetric(routeKey);
+      routeMetric.requests += 1;
+      recordLatency(routeMetric.latency, durationMs);
+
+      if (res.statusCode >= 400) {
+        observabilityMetrics.api.errorCount += 1;
+        routeMetric.errors += 1;
+      }
+
+      logStructured('info', 'http.request', {
+        requestId,
+        method: req.method,
+        path: req.path,
+        route: routePath,
+        statusCode: res.statusCode,
+        durationMs: Number(durationMs.toFixed(2)),
+        userId
+      });
+
+      if (res.statusCode >= 500) {
+        void captureException(new Error(`HTTP ${res.statusCode} response`), {
+          scope: 'api_route',
+          requestId,
+          method: req.method,
+          path: req.path,
+          route: routePath,
+          statusCode: res.statusCode,
+          userId
+        });
+      }
+    });
+
+    next();
+  });
+
+  const strictCredentialRateLimit = createRateLimit(
+    AUTH_RATE_LIMIT_CREDENTIAL_WINDOW_MS,
+    AUTH_RATE_LIMIT_CREDENTIAL_MAX,
+    'Too many credential attempts. Please try again in 10 minutes.'
+  );
+  const authSessionRateLimit = createRateLimit(
+    AUTH_RATE_LIMIT_SESSION_WINDOW_MS,
+    AUTH_RATE_LIMIT_SESSION_MAX,
+    'Too many authentication requests. Please slow down.'
+  );
+  app.use('/api/auth/login', strictCredentialRateLimit);
+  app.use('/api/auth/register', strictCredentialRateLimit);
+  app.use(['/api/auth/me', '/api/auth/logout'], authSessionRateLimit);
 
   const csrfProtection = csurf({
     cookie: {
@@ -153,16 +576,39 @@ async function start() {
   // --- SOCKET.IO AUTH ---
   io.use((socket, next) => {
     const cookie = socket.handshake.headers.cookie;
-    if (!cookie) return next(new Error('Authentication error'));
+    if (!cookie) {
+      observabilityMetrics.socket.authFailures += 1;
+      logStructured('warn', 'socket.auth.failed', {
+        socketId: socket.id,
+        reason: 'missing_cookie'
+      });
+      return next(new Error('Authentication error'));
+    }
     
     const token = cookie.split('; ').find(row => row.startsWith(`${AUTH_COOKIE_NAME}=`))?.split('=')[1];
-    if (!token) return next(new Error('Authentication error'));
+    if (!token) {
+      observabilityMetrics.socket.authFailures += 1;
+      logStructured('warn', 'socket.auth.failed', {
+        socketId: socket.id,
+        reason: 'missing_token'
+      });
+      return next(new Error('Authentication error'));
+    }
 
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as any;
       socket.data.user = decoded;
+      logStructured('info', 'socket.auth.succeeded', {
+        socketId: socket.id,
+        userId: decoded?.id ?? null
+      });
       next();
     } catch (err) {
+      observabilityMetrics.socket.authFailures += 1;
+      logStructured('warn', 'socket.auth.failed', {
+        socketId: socket.id,
+        reason: 'invalid_token'
+      });
       next(new Error('Authentication error'));
     }
   });
@@ -234,12 +680,56 @@ async function start() {
 
   setInterval(pruneExpiredMediaOperations, 60_000).unref();
 
+  const updateSocketRoomLoad = () => {
+    let roomCount = 0;
+    let roomMemberships = 0;
+    let maxRoomOccupancy = 0;
+
+    for (const [roomName, roomSockets] of io.sockets.adapter.rooms) {
+      if (io.sockets.sockets.has(roomName)) {
+        continue;
+      }
+      const size = roomSockets.size;
+      roomCount += 1;
+      roomMemberships += size;
+      maxRoomOccupancy = Math.max(maxRoomOccupancy, size);
+    }
+
+    observabilityMetrics.socket.roomCount = roomCount;
+    observabilityMetrics.socket.roomMemberships = roomMemberships;
+    observabilityMetrics.socket.maxRoomOccupancy = maxRoomOccupancy;
+  };
+
+  io.of('/').adapter.on('join-room', () => updateSocketRoomLoad());
+  io.of('/').adapter.on('leave-room', () => updateSocketRoomLoad());
+
   io.on('connection', (socket) => {
     const userId = socket.data.user.id;
     const currentSockets = userSockets.get(userId) || new Set<string>();
     currentSockets.add(socket.id);
     userSockets.set(userId, currentSockets);
-    console.log(`User ${userId} connected via socket [${socket.id}]`);
+    observabilityMetrics.socket.connections += 1;
+    observabilityMetrics.socket.activeConnections += 1;
+    updateSocketRoomLoad();
+    logStructured('info', 'socket.connected', {
+      userId,
+      socketId: socket.id,
+      activeConnections: observabilityMetrics.socket.activeConnections
+    });
+
+    socket.on('error', (err: Error) => {
+      observabilityMetrics.socket.connectionErrors += 1;
+      void captureException(err, {
+        scope: 'socket',
+        socketId: socket.id,
+        userId
+      });
+      logStructured('error', 'socket.error', {
+        userId,
+        socketId: socket.id,
+        message: err.message
+      });
+    });
 
     socket.on('disconnect', () => {
       const userSet = userSockets.get(userId);
@@ -251,19 +741,34 @@ async function start() {
           userSockets.set(userId, userSet);
         }
       }
-      console.log(`User ${userId} disconnected from socket [${socket.id}]`);
+      observabilityMetrics.socket.disconnects += 1;
+      observabilityMetrics.socket.activeConnections = Math.max(0, observabilityMetrics.socket.activeConnections - 1);
+      updateSocketRoomLoad();
+      logStructured('info', 'socket.disconnected', {
+        userId,
+        socketId: socket.id,
+        activeConnections: observabilityMetrics.socket.activeConnections
+      });
     });
   });
 
   // --- AUTH MIDDLEWARE ---
   const authenticate = (req: any, res: any, next: any) => {
     const token = req.cookies[AUTH_COOKIE_NAME];
-    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+    if (!token) {
+      if (req.path === '/api/auth/me') {
+        observabilityMetrics.auth.meUnauthorized += 1;
+      }
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
       req.user = decoded;
       next();
     } catch (err) {
+      if (req.path === '/api/auth/me') {
+        observabilityMetrics.auth.meUnauthorized += 1;
+      }
       res.status(401).json({ error: 'Invalid token' });
     }
   };
@@ -341,19 +846,33 @@ async function start() {
 
   // --- API ROUTES ---
 
-  // Auth
-  app.post('/api/auth/register', async (req, res) => {
-    const { username, email, password } = req.body;
-    const normalizedEmail = String(email || '').trim().toLowerCase();
-    const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail);
+  app.post('/api/telemetry/client-error', async (req, res) => {
+    const payload = req.body || {};
+    logStructured('error', 'frontend.exception', {
+      type: String(payload.type || 'unknown'),
+      message: String(payload.message || 'Unknown client error'),
+      source: String(payload.source || ''),
+      url: String(payload.url || ''),
+      line: Number(payload.line || 0),
+      column: Number(payload.column || 0)
+    });
 
-    if (!isValidEmail) {
-      return res.status(400).json({ error: 'A valid email address is required.' });
-    }
+    await captureException(payload.message || 'Unknown client error', {
+      scope: 'frontend',
+      payload
+    });
+
+    res.status(202).json({ accepted: true });
+  });
+
+  // Auth
+  app.post('/api/auth/register', validateBody(authRegisterSchema), async (req, res) => {
+    const { username, email, password } = req.body;
+    observabilityMetrics.auth.registerAttempts += 1;
 
     try {
       const hashedPassword = bcrypt.hashSync(password, 10);
-      await db.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)', [username, normalizedEmail, hashedPassword]);
+      await db.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)', [username, email, hashedPassword]);
 
       const user = await db.queryOne<any>(
         'SELECT id, username, email, role FROM users WHERE username = ?',
@@ -361,6 +880,7 @@ async function start() {
       );
 
       if (!user) {
+        observabilityMetrics.auth.registerFailure += 1;
         return res.status(500).json({ error: 'Failed to load registered user' });
       }
 
@@ -377,37 +897,47 @@ async function start() {
       );
 
       res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
+      observabilityMetrics.auth.registerSuccess += 1;
       res.json({ user: { id: user.id, username: user.username, email: user.email, role: user.role } });
     } catch (err: any) {
+      observabilityMetrics.auth.registerFailure += 1;
+      void captureException(err, { scope: 'auth', flow: 'register' });
       res.status(400).json({ error: err.message });
     }
   });
 
-  app.post('/api/auth/login', async (req, res) => {
+  app.post('/api/auth/login', validateBody(authLoginSchema), async (req, res) => {
     const { username, password } = req.body;
+    observabilityMetrics.auth.loginAttempts += 1;
     try {
       const user = await db.queryOne<any>('SELECT * FROM users WHERE username = ?', [username]);
       if (!user || !bcrypt.compareSync(password, user.password)) {
+        observabilityMetrics.auth.loginFailure += 1;
         return res.status(401).json({ error: 'Invalid credentials' });
       }
       const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
       res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
+      observabilityMetrics.auth.loginSuccess += 1;
       res.json({ user: { id: user.id, username: user.username, email: user.email, role: user.role } });
     } catch (err: any) {
+      observabilityMetrics.auth.loginFailure += 1;
+      void captureException(err, { scope: 'auth', flow: 'login' });
       res.status(500).json({ error: err.message });
     }
   });
 
   app.get('/api/auth/me', authenticate, csrfProtection, async (req: any, res) => {
+    observabilityMetrics.auth.meChecks += 1;
     try {
       const user = await db.queryOne<any>('SELECT id, username, email, role, avatar_url, banner_url, bio, created_at, last_active FROM users WHERE id = ?', [req.user.id]);
       res.json({ user, csrfToken: req.csrfToken() });
     } catch (err: any) {
+      void captureException(err, { scope: 'auth', flow: 'me' });
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.patch('/api/auth/me', authenticate, async (req: any, res) => {
+  app.patch('/api/auth/me', authenticate, validateBody(profileUpdateSchema), async (req: any, res) => {
     const { avatar_url, banner_url, bio, username, email, currentPassword, newPassword } = req.body;
     try {
       const updates: string[] = [];
@@ -426,11 +956,6 @@ async function start() {
 
       // Handle email update
       if (email !== undefined && email !== '') {
-        // Validate email format
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-          return res.status(400).json({ error: 'Invalid email format' });
-        }
         // Check if email is already taken (by another user)
         const existingUser = await db.queryOne<any>('SELECT id FROM users WHERE email = ? AND id != ?', [email, req.user.id]);
         if (existingUser) {
@@ -442,10 +967,6 @@ async function start() {
 
       // Handle password update
       if (newPassword !== undefined && newPassword !== '') {
-        if (!currentPassword) {
-          return res.status(400).json({ error: 'Current password required to set new password' });
-        }
-        
         // Verify current password
         const user = await db.queryOne<any>('SELECT password FROM users WHERE id = ?', [req.user.id]);
         const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
@@ -786,7 +1307,7 @@ async function start() {
     }
   });
 
-  app.post('/api/threads', authenticate, async (req: any, res) => {
+  app.post('/api/threads', authenticate, validateBody(threadCreateSchema), async (req: any, res) => {
     const { forum_id, title, content } = req.body;
     try {
       // Fetch forum to check min_role_to_thread permission
@@ -854,7 +1375,7 @@ async function start() {
     }
   });
 
-  app.post('/api/posts', authenticate, async (req: any, res) => {
+  app.post('/api/posts', authenticate, validateBody(postCreateSchema), async (req: any, res) => {
     const { thread_id, content } = req.body;
     try {
       // Fetch thread and its forum to check permissions
@@ -1452,7 +1973,7 @@ async function start() {
     }
   });
 
-  app.post('/api/tickets/:id/messages', authenticate, async (req: any, res) => {
+  app.post('/api/tickets/:id/messages', authenticate, validateBody(ticketMessageSchema), async (req: any, res) => {
     const { message } = req.body;
     try {
       const ticket = await db.queryOne<any>('SELECT * FROM tickets WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
@@ -1552,11 +2073,14 @@ async function start() {
     }
   });
 
-  app.post('/api/admin/settings', authenticate, isAdmin, async (req, res) => {
-    const settings = Array.isArray(req.body) ? req.body : req.body?.settings || [];
+  app.post('/api/admin/settings', authenticate, isAdmin, validateBody(adminSettingsUpdateSchema), async (req, res) => {
+    const settings = Array.isArray(req.body) ? req.body : req.body.settings;
     try {
       for (const setting of settings) {
-        await db.execute('UPDATE site_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?', [setting.value, setting.key]);
+        await db.execute(
+          'UPDATE site_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?',
+          [typeof setting.value === 'string' ? setting.value.trim() : JSON.stringify(setting.value), setting.key]
+        );
       }
 
       const networkServersSetting = settings.find((setting: any) => setting.key === 'network_servers');
@@ -1640,7 +2164,7 @@ async function start() {
     }
   });
 
-  app.post('/api/admin/categories', authenticate, isAdmin, async (req, res) => {
+  app.post('/api/admin/categories', authenticate, isAdmin, validateBody(forumCategoryCreateSchema), async (req, res) => {
     const { name } = req.body;
     try {
       await db.execute('INSERT INTO forum_categories (name) VALUES (?)', [name]);
@@ -1650,7 +2174,7 @@ async function start() {
     }
   });
 
-  app.patch('/api/admin/categories/:id', authenticate, isAdmin, async (req, res) => {
+  app.patch('/api/admin/categories/:id', authenticate, isAdmin, validateBody(forumCategoryUpdateSchema), async (req, res) => {
     const { name, display_order } = req.body;
     try {
       await db.execute('UPDATE forum_categories SET name = ?, display_order = ? WHERE id = ?', [name, display_order || 0, req.params.id]);
@@ -1669,7 +2193,7 @@ async function start() {
     }
   });
 
-  app.post('/api/admin/forums', authenticate, isAdmin, async (req, res) => {
+  app.post('/api/admin/forums', authenticate, isAdmin, validateBody(forumCreateSchema), async (req, res) => {
     const { category_id, name, description, min_role_to_thread, display_order } = req.body;
     try {
       await db.execute(
@@ -1682,7 +2206,7 @@ async function start() {
     }
   });
 
-  app.patch('/api/admin/forums/:id', authenticate, isAdmin, async (req, res) => {
+  app.patch('/api/admin/forums/:id', authenticate, isAdmin, validateBody(forumCreateSchema), async (req, res) => {
     const { category_id, name, description, min_role_to_thread, display_order } = req.body;
     try {
       await db.execute(
@@ -1779,7 +2303,7 @@ async function start() {
     }
   });
 
-  app.post('/api/admin/tickets/:id/messages', authenticate, isAdmin, async (req: any, res) => {
+  app.post('/api/admin/tickets/:id/messages', authenticate, isAdmin, validateBody(ticketMessageSchema), async (req: any, res) => {
     const { message } = req.body;
     try {
       await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [req.params.id, req.user.id, message]);
@@ -1846,7 +2370,7 @@ async function start() {
     }
   });
 
-  app.post('/api/messages', authenticate, async (req: any, res) => {
+  app.post('/api/messages', authenticate, validateBody(directMessageSchema), async (req: any, res) => {
     const { receiver_id, content } = req.body;
     try {
       const result = await db.execute('INSERT INTO messages (sender_id, receiver_id, content) VALUES (?, ?, ?)', [req.user.id, receiver_id, content]);
@@ -1908,6 +2432,7 @@ async function start() {
 
   // --- MEDIA ---
   app.post('/api/media/animate', authenticate, async (req: any, res) => {
+    const startedAt = Date.now();
     if (!mediaClient) {
       return res.status(503).json({ error: 'Media provider is not configured. Missing GEMINI_API_KEY.' });
     }
@@ -1963,12 +2488,22 @@ async function start() {
       res.json({ operationName });
     } catch (err: any) {
       console.error('Media provider animate error:', err);
+      void captureException(err, { scope: 'media', endpoint: '/api/media/animate', userId: req.user.id });
       const providerMessage = err?.message || 'Unknown media provider error';
       res.status(502).json({ error: `Media provider failed to start generation: ${providerMessage}` });
+    } finally {
+      const durationMs = Date.now() - startedAt;
+      recordLatency(observabilityMetrics.media['/api/media/animate'], durationMs);
+      logStructured('info', 'media.latency', {
+        endpoint: '/api/media/animate',
+        durationMs,
+        ...summarizeLatency(observabilityMetrics.media['/api/media/animate'])
+      });
     }
   });
 
   app.get('/api/media/poll', authenticate, async (req: any, res) => {
+    const startedAt = Date.now();
     pruneExpiredMediaOperations();
 
     const operationName = String(req.query.operationName || '');
@@ -2028,18 +2563,46 @@ async function start() {
       return res.json({ done: true, uri });
     } catch (err: any) {
       console.error('Media provider poll error:', err);
+      void captureException(err, { scope: 'media', endpoint: '/api/media/poll', userId: req.user.id });
       operation.status = 'error';
       operation.error = err?.message || 'Failed to poll media provider.';
       return res.status(502).json({ done: true, error: operation.error });
+    } finally {
+      const durationMs = Date.now() - startedAt;
+      recordLatency(observabilityMetrics.media['/api/media/poll'], durationMs);
+      logStructured('info', 'media.latency', {
+        endpoint: '/api/media/poll',
+        durationMs,
+        ...summarizeLatency(observabilityMetrics.media['/api/media/poll'])
+      });
     }
+  });
+
+  app.get('/api/admin/observability/metrics', authenticate, isAdmin, (_req, res) => {
+    res.json({
+      api: summarizeApiMetrics(),
+      auth: observabilityMetrics.auth,
+      media: {
+        '/api/media/animate': summarizeLatency(observabilityMetrics.media['/api/media/animate']),
+        '/api/media/poll': summarizeLatency(observabilityMetrics.media['/api/media/poll'])
+      },
+      socket: observabilityMetrics.socket
+    });
   });
 
   // Error handling for CSRF and other failures
   app.use((err: any, req: any, res: any, next: any) => {
     if (err.code === 'EBADCSRFTOKEN') {
+      void captureException(err, { scope: 'csrf' });
       return res.status(403).json({ success: false, error: 'Invalid CSRF token', code: 'CSRF_INVALID_TOKEN' });
     }
 
+    void captureException(err, {
+      scope: 'express',
+      path: req.path,
+      method: req.method,
+      userId: req?.user?.id ?? null
+    });
     console.error('Unhandled error:', err);
     return res.status(500).json({ success: false, error: err?.message || 'Server error', code: 'INTERNAL_SERVER_ERROR' });
   });
@@ -2085,5 +2648,18 @@ async function start() {
 }
 
 start().catch(err => {
+  void captureException(err, { scope: 'startup' });
   console.error('Fatal server error:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  void captureException(reason, { scope: 'process.unhandled_rejection' });
+  logStructured('error', 'process.unhandled_rejection', {
+    reason: reason instanceof Error ? reason.message : String(reason)
+  });
+});
+
+process.on('uncaughtException', (err) => {
+  void captureException(err, { scope: 'process.uncaught_exception' });
+  logStructured('error', 'process.uncaught_exception', { message: err.message });
 });

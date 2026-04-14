@@ -156,6 +156,7 @@ const MainLayout: React.FC = () => {
   };
 
   const discordLink = "https://discord.gg/NZbmQNxX";
+  const isStudioDiscoverable = String(import.meta.env.VITE_ENABLE_STUDIO || '').toLowerCase() === 'true';
 
   const navItems = [
     { label: 'Forums', path: '/', icon: MessageSquare },
@@ -164,6 +165,7 @@ const MainLayout: React.FC = () => {
     { label: 'Store', path: '/store', icon: ShoppingBag },
     { label: 'Support', path: '/support', icon: Ticket },
     { label: 'Discord', path: '/discord', icon: Gamepad2 },
+    ...(isStudioDiscoverable ? [{ label: 'Studio', path: '/studio', icon: Zap }] : []),
   ];
 
   const handleLogout = async () => {
