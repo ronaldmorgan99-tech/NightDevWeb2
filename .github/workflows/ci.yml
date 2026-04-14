@@ -90,7 +90,7 @@ jobs:
           NODE_ENV: production
           PORT: 3100
           DATABASE_URL: tmp/post-deploy-smoke.db
-          JWT_SECRET: ci-smoke-secret
+          JWT_SECRET: ca09b7e4b67855a17bbf2d065ee6e7bbf0099a3774df490e456a64efd8e9c357
           SMOKE_USER: admin
           SMOKE_PASSWORD: password
           BASE_URL: http://127.0.0.1:3100
