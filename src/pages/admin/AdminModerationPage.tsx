@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import PromptModal from '../../components/PromptModal';
+import { apiJson } from '../../lib/api';
 
 interface Report {
   id: number;
@@ -51,25 +52,24 @@ const AdminModerationPage: React.FC = () => {
   });
   const queryClient = useQueryClient();
 
-  const { data: reports, isLoading: reportsLoading } = useQuery<Report[]>({
+  const { data: reports, isLoading: reportsLoading } = useQuery<Report[] | null>({
     queryKey: ['admin-reports'],
-    queryFn: () => fetch('/api/admin/reports').then(res => res.json()),
+    queryFn: () => apiJson<Report[] | null>('/api/admin/reports'),
     enabled: activeTab === 'reports'
   });
 
-  const { data: auditLogs, isLoading: auditLoading } = useQuery<AuditLog[]>({
+  const { data: auditLogs, isLoading: auditLoading } = useQuery<AuditLog[] | null>({
     queryKey: ['admin-audit-log'],
-    queryFn: () => fetch('/api/admin/audit-log').then(res => res.json()),
+    queryFn: () => apiJson<AuditLog[] | null>('/api/admin/audit-log'),
     enabled: activeTab === 'audit'
   });
 
   const actionMutation = useMutation({
     mutationFn: ({ reportId, action, reason }: { reportId: number; action: string; reason: string }) =>
-      fetch(`/api/admin/reports/${reportId}/action`, {
+      apiJson(`/api/admin/reports/${reportId}/action`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, reason })
-      }).then(res => res.json()),
+        json: { action, reason }
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-reports'] });
       queryClient.invalidateQueries({ queryKey: ['admin-audit-log'] });
@@ -120,14 +120,14 @@ const AdminModerationPage: React.FC = () => {
           >
             {reportsLoading ? (
               <div className="animate-pulse space-y-4">{[1, 2, 3].map(i => <div key={i} className="h-32 bg-white/5 rounded-2xl" />)}</div>
-            ) : reports?.length === 0 ? (
+            ) : (reports ?? []).length === 0 ? (
               <div className="p-12 text-center bg-[#121214] border border-white/5 rounded-2xl">
                 <CheckCircle className="w-12 h-12 text-emerald-500/20 mx-auto mb-4" />
                 <h3 className="text-xl font-bold text-white">All Clear!</h3>
                 <p className="text-zinc-500">No pending reports to review at this time.</p>
               </div>
             ) : (
-              reports?.map((report) => (
+              (reports ?? []).map((report) => (
                 <div key={report.id} className="bg-[#121214] border border-white/5 rounded-2xl overflow-hidden">
                   <div className="p-6 flex flex-col md:flex-row gap-6">
                     <div className="flex-1 space-y-4">
@@ -200,6 +200,14 @@ const AdminModerationPage: React.FC = () => {
             exit={{ opacity: 0, y: -10 }}
             className="bg-[#121214] border border-white/5 rounded-2xl overflow-hidden"
           >
+            {auditLoading ? (
+              <div className="animate-pulse p-6 space-y-4">{[1, 2, 3].map(i => <div key={i} className="h-16 bg-white/5 rounded-xl" />)}</div>
+            ) : (auditLogs ?? []).length === 0 ? (
+              <div className="p-12 text-center">
+                <History className="w-12 h-12 text-zinc-700/40 mx-auto mb-4" />
+                <p className="text-xs font-black text-zinc-500 uppercase tracking-widest">No moderation audit records returned</p>
+              </div>
+            ) : (
             <table className="w-full text-left">
               <thead>
                 <tr className="bg-white/5 text-[10px] uppercase tracking-widest font-bold text-zinc-500">
@@ -211,7 +219,7 @@ const AdminModerationPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {auditLogs?.map((log) => (
+                {(auditLogs ?? []).map((log) => (
                   <tr key={log.id} className="hover:bg-white/[0.02] transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
@@ -248,6 +256,7 @@ const AdminModerationPage: React.FC = () => {
                 ))}
               </tbody>
             </table>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

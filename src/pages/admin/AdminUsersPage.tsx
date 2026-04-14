@@ -35,7 +35,7 @@ const AdminUsersPage: React.FC = () => {
     }
   });
 
-  const filteredUsers = users?.filter(u => 
+  const filteredUsers = (users ?? []).filter(u => 
     u.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
     u.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -79,7 +79,7 @@ const AdminUsersPage: React.FC = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {filteredUsers?.map((user) => (
+            {filteredUsers.map((user) => (
               <tr key={user.id} className="hover:bg-neon-cyan/[0.02] transition-colors group">
                 <td className="px-8 py-6">
                   <div className="flex items-center gap-4">
@@ -167,6 +167,13 @@ const AdminUsersPage: React.FC = () => {
                 </td>
               </tr>
             ))}
+            {filteredUsers.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-8 py-14 text-center text-[10px] font-black uppercase tracking-widest text-zinc-600">
+                  No operatives matched current filters or API returned no users
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

@@ -3,13 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { BrowserRouter, Routes, Route } from 'react-router';
+import { HashRouter, Routes, Route } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { AuthProvider } from './context/AuthContext';
 import { MessagingProvider } from './context/MessagingContext';
 import MainLayout from './layouts/MainLayout';
 import AdminLayout from './layouts/AdminLayout';
+import { ApiError } from './lib/api';
 
 // Loading fallback component for lazy-loaded routes
 const LoadingFallback = () => (
@@ -50,7 +51,20 @@ const ServersPage = lazy(() => import('./pages/ServersPage'));
 const StudioUnavailablePage = lazy(() => import('./pages/ComingSoonPage'));
 const VeoStudioPage = lazy(() => import('./pages/VeoStudioPage'));
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => {
+        if (error instanceof ApiError && error.status === 404) {
+          return false;
+        }
+        return failureCount < 1;
+      },
+      refetchOnWindowFocus: false,
+      staleTime: 30_000
+    }
+  }
+});
 const isStudioDiscoverable = String(import.meta.env.VITE_ENABLE_STUDIO || '').toLowerCase() === 'true';
 
 const CustomCursor = () => {
@@ -108,7 +122,7 @@ export default function App() {
       <AuthProvider>
         <MessagingProvider>
           <CustomCursor />
-          <BrowserRouter>
+          <HashRouter>
             <Routes>
               <Route path="/" element={<MainLayout />}>
                 <Route index element={<Suspense fallback={<LoadingFallback />}><ForumsPage /></Suspense>} />
@@ -149,7 +163,7 @@ export default function App() {
                 <Route path="settings" element={<Suspense fallback={<LoadingFallback />}><AdminSettingsPage /></Suspense>} />
               </Route>
             </Routes>
-          </BrowserRouter>
+          </HashRouter>
         </MessagingProvider>
       </AuthProvider>
     </QueryClientProvider>

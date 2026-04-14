@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuth } from '../../context/AuthContext';
+import { apiJson } from '../../lib/api';
 
 import { Link } from 'react-router';
 
@@ -29,9 +30,9 @@ interface Metrics {
 
 const AdminDashboard: React.FC = () => {
   const { user } = useAuth();
-  const { data: metrics, isLoading } = useQuery<Metrics>({
+  const { data: metrics, isLoading } = useQuery<Metrics | null>({
     queryKey: ['admin-metrics'],
-    queryFn: () => fetch('/api/admin/metrics').then(res => res.json())
+    queryFn: () => apiJson<Metrics | null>('/api/admin/metrics')
   });
 
   const stats = [
@@ -74,6 +75,13 @@ const AdminDashboard: React.FC = () => {
           </motion.div>
         ))}
       </div>
+      {!metrics && (
+        <div className="cyber-card border-white/5 p-6">
+          <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest text-center">
+            Metrics uplink returned no payload. Displaying safe default counters.
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
         {/* Recent Activity */}

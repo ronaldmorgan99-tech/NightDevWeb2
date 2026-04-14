@@ -201,6 +201,13 @@ const AdminIntegrationsPage: React.FC = () => {
           </div>
         </motion.div>
       </div>
+      {(settings?.length ?? 0) === 0 && (
+        <div className="cyber-card border-white/5 p-6 text-center">
+          <p className="text-[10px] font-black text-zinc-600 uppercase tracking-widest">
+            Settings API returned empty data. Editable fields are running in local fallback mode.
+          </p>
+        </div>
+      )}
     </div>
   );
 };
