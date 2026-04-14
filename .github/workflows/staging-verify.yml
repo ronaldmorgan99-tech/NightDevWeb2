@@ -74,6 +74,7 @@ jobs:
       - name: Run post-deploy smoke checks
         id: smoke
         continue-on-error: true
+        # This verifies the deployed backend server routes, auth/CORS behavior, and API smoke profile.
         run: |
           npm run smoke:postdeploy 2>&1 | tee smoke-postdeploy.log
           exit_code=${PIPESTATUS[0]}

@@ -26,6 +26,8 @@
   },
   "include": [
     "src",
-    "vite.config.ts"
+    "vite.config.ts",
+    "server.ts",
+    "csurf.d.ts"
   ]
 }

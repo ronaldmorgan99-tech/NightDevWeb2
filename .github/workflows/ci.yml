@@ -87,7 +87,7 @@ jobs:
       - name: Ensure deterministic test DB directory exists
         run: mkdir -p tmp
 
-      - name: Run lint
+      - name: Run lint and verify backend TS compilation
         run: npm run lint
 
       - name: Run build
