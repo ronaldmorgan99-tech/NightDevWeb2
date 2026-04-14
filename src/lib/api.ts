@@ -90,6 +90,7 @@ export async function apiJson<T>(input: RequestInfo, init: ApiFetchOptions = {})
   if (res.status === 204 || res.status === 205 || res.headers.get('content-length') === '0') {
     if (!res.ok) {
       throw new ApiError(res.status, `HTTP ${res.status}`);
+      throw new Error(`HTTP ${res.status}`);
     }
     return null as T;
   }
@@ -105,6 +106,10 @@ export async function apiJson<T>(input: RequestInfo, init: ApiFetchOptions = {})
       throw new ApiError(res.status, data.slice(0, 200));
     }
     throw new ApiError(res.status, (data as any)?.error || `HTTP ${res.status}`);
+  }
+
+  if (!hasBody) {
+    return null as T;
   }
 
   if (!hasBody) {
