@@ -35,7 +35,7 @@ interface Category {
   display_order: number;
   description?: string | null;
   created_at?: string;
-  forums: Forum[];
+  forums?: Forum[] | null;
 }
 
 const AdminSectorsPage: React.FC = () => {
@@ -111,6 +111,7 @@ const AdminSectorsPage: React.FC = () => {
   });
 
   if (isLoading) return <div className="animate-pulse space-y-8">{[1, 2, 3].map(i => <div key={i} className="h-64 bg-white/5 rounded-3xl" />)}</div>;
+  const safeCategories = Array.isArray(categories) ? categories : [];
 
   return (
     <div className="space-y-12">
@@ -129,7 +130,9 @@ const AdminSectorsPage: React.FC = () => {
       </div>
 
       <div className="space-y-8">
-        {categories?.map((category) => (
+        {safeCategories.map((category) => {
+          const forums = Array.isArray(category.forums) ? category.forums : [];
+          return (
           <motion.div 
             key={category.id}
             initial={{ opacity: 0, y: 20 }}
@@ -169,7 +172,7 @@ const AdminSectorsPage: React.FC = () => {
 
             {/* Forums List */}
             <div className="divide-y divide-white/5">
-              {category.forums.map((forum) => (
+              {forums.map((forum) => (
                 <div key={forum.id} className="p-6 flex items-center gap-6 hover:bg-white/[0.01] transition-colors group">
                   <div className="w-12 h-12 rounded-xl bg-cyber-black border border-white/10 flex items-center justify-center group-hover:border-neon-cyan/30 transition-colors">
                     <MessageSquare className="w-6 h-6 text-zinc-700 group-hover:text-neon-cyan transition-colors" />
@@ -212,14 +215,20 @@ const AdminSectorsPage: React.FC = () => {
                   </div>
                 </div>
               ))}
-              {category.forums.length === 0 && (
+              {forums.length === 0 && (
                 <div className="p-12 text-center text-zinc-600 uppercase tracking-widest text-[10px] font-black">
                   No forums initialized in this sector
                 </div>
               )}
             </div>
           </motion.div>
-        ))}
+        )})}
+        {safeCategories.length === 0 && (
+          <div className="p-12 text-center cyber-card border-white/5 bg-white/[0.02]">
+            <FolderTree className="w-12 h-12 text-zinc-800 mx-auto mb-4 opacity-20" />
+            <p className="text-xs font-black text-zinc-600 uppercase tracking-widest">No sectors found in API response</p>
+          </div>
+        )}
       </div>
 
       {/* Add Category Modal */}

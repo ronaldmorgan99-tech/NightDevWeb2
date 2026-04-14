@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { BrowserRouter, Routes, Route } from 'react-router';
+import { HashRouter, Routes, Route } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { AuthProvider } from './context/AuthContext';
@@ -108,7 +108,7 @@ export default function App() {
       <AuthProvider>
         <MessagingProvider>
           <CustomCursor />
-          <BrowserRouter>
+          <HashRouter>
             <Routes>
               <Route path="/" element={<MainLayout />}>
                 <Route index element={<Suspense fallback={<LoadingFallback />}><ForumsPage /></Suspense>} />
@@ -149,7 +149,7 @@ export default function App() {
                 <Route path="settings" element={<Suspense fallback={<LoadingFallback />}><AdminSettingsPage /></Suspense>} />
               </Route>
             </Routes>
-          </BrowserRouter>
+          </HashRouter>
         </MessagingProvider>
       </AuthProvider>
     </QueryClientProvider>

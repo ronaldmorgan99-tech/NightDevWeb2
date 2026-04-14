@@ -38,6 +38,18 @@ State is managed using a combination of:
 
 Together, they keep local UI state and remote API data organized, performant, and maintainable.
 
+## Admin Stability and Navigation Hardening (April 14, 2026)
+
+- Added null-safe rendering across admin data-dependent sections (including analytics, support, moderation, users, tags, sectors, and store) to prevent pre-load/runtime crashes when API payloads are missing or partial.
+- Added explicit empty-state UI handling across admin pages so operators see informative placeholders when APIs return empty arrays or partial responses.
+- Standardized admin navigation/detail routing on React Router `Link` usage and switched app routing to `HashRouter` to prevent full-page reload issues in hash-based deployments.
+- Added global API client protection for `204 No Content`, `205 Reset Content`, `Content-Length: 0`, and empty-body responses to prevent JSON parsing crashes across endpoints.
+- Updated admin regression test scaffolding for `globalThis.fetch`, token handling via `btoa(...)`, and assertions aligned to current moderator/admin behavior.
+- Enabled `esModuleInterop` in `tsconfig.json` to improve React default import compatibility in tooling and test paths.
+- Clarified known Jest/ts-jest limitation: `import.meta` handling can fail in Jest CJS transforms without ESM-aware configuration; this is a tooling constraint and separate from these runtime/admin functional fixes.
+
+**Impact:** Resolved moderator/admin access flow failures from navigation reload mismatches and prevented runtime crashes across admin sections when upstream API data is delayed, empty, or partial.
+
 ## Run Locally
 
 **Prerequisites:** Node.js

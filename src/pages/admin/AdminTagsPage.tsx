@@ -62,6 +62,7 @@ const AdminTagsPage: React.FC = () => {
   });
 
   if (isLoading) return <div className="animate-pulse grid grid-cols-1 md:grid-cols-3 gap-6">{[1, 2, 3, 4, 5, 6].map(i => <div key={i} className="h-32 bg-white/5 rounded-2xl" />)}</div>;
+  const safeTags = Array.isArray(tags) ? tags : [];
 
   return (
     <div className="space-y-12">
@@ -80,7 +81,7 @@ const AdminTagsPage: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {tags?.map((tag) => (
+        {safeTags.map((tag) => (
           <motion.div 
             key={tag.id}
             initial={{ opacity: 0, scale: 0.95 }}
@@ -124,6 +125,12 @@ const AdminTagsPage: React.FC = () => {
             </div>
           </motion.div>
         ))}
+        {safeTags.length === 0 && (
+          <div className="md:col-span-3 lg:col-span-4 p-12 text-center cyber-card border-white/5 bg-white/[0.02]">
+            <TagIcon className="w-12 h-12 text-zinc-800 mx-auto mb-4 opacity-20" />
+            <p className="text-xs font-black text-zinc-600 uppercase tracking-widest">No tags returned from API response</p>
+          </div>
+        )}
       </div>
 
       {/* Add Tag Modal */}

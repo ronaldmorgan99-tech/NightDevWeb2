@@ -84,6 +84,8 @@ const AdminSupportPage: React.FC = () => {
   });
 
   const filteredTickets = tickets?.filter(t => filterStatus === 'all' || t.status === filterStatus);
+  const safeFilteredTickets = Array.isArray(filteredTickets) ? filteredTickets : [];
+  const ticketMessages = Array.isArray(ticketDetail?.messages) ? ticketDetail.messages : [];
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -129,7 +131,7 @@ const AdminSupportPage: React.FC = () => {
         </div>
 
         <div className="flex-1 overflow-y-auto pr-2 space-y-4 custom-scrollbar">
-          {filteredTickets?.map((ticket) => (
+          {safeFilteredTickets.map((ticket) => (
             <motion.button
               key={ticket.id}
               onClick={() => setSelectedTicketId(ticket.id)}
@@ -173,7 +175,7 @@ const AdminSupportPage: React.FC = () => {
               <ChevronRight className={`w-5 h-5 text-zinc-800 transition-transform ${selectedTicketId === ticket.id ? 'translate-x-1 text-neon-cyan' : 'group-hover:translate-x-1 group-hover:text-neon-cyan'}`} />
             </motion.button>
           ))}
-          {filteredTickets?.length === 0 && (
+          {safeFilteredTickets.length === 0 && (
             <div className="p-12 text-center cyber-card border-white/5 bg-white/[0.02]">
               <Ticket className="w-12 h-12 text-zinc-800 mx-auto mb-4 opacity-20" />
               <p className="text-xs font-black text-zinc-600 uppercase tracking-widest">No active support transmissions found</p>
@@ -184,7 +186,9 @@ const AdminSupportPage: React.FC = () => {
 
       {/* Ticket Detail */}
       <div className={`flex-[1.5] flex flex-col cyber-card border-white/5 overflow-hidden ${selectedTicketId ? 'flex' : 'hidden lg:flex items-center justify-center bg-white/[0.01]'}`}>
-        {selectedTicketId ? (
+        {selectedTicketId && isLoadingDetail ? (
+          <div className="animate-pulse p-8 space-y-4">{[1, 2, 3].map(i => <div key={i} className="h-16 bg-white/5 rounded-xl" />)}</div>
+        ) : selectedTicketId && ticketDetail ? (
           <>
             {/* Header */}
             <div className="p-8 bg-white/[0.02] border-b border-white/5 flex items-center justify-between">
@@ -197,23 +201,23 @@ const AdminSupportPage: React.FC = () => {
                 </button>
                 <div>
                   <div className="flex items-center gap-3 mb-1">
-                    <h2 className="text-xl font-black text-white uppercase italic tracking-tight">{ticketDetail?.ticket.subject}</h2>
-                    <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded border ${getStatusColor(ticketDetail?.ticket.status || '')}`}>
-                      {ticketDetail?.ticket.status}
+                    <h2 className="text-xl font-black text-white uppercase italic tracking-tight">{ticketDetail.ticket.subject}</h2>
+                    <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded border ${getStatusColor(ticketDetail.ticket.status || '')}`}>
+                      {ticketDetail.ticket.status}
                     </span>
-                    {ticketDetail?.ticket.ticket_type === 'admin_support' && (
+                    {ticketDetail.ticket.ticket_type === 'admin_support' && (
                       <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded border bg-neon-pink/10 border-neon-pink/20 text-neon-pink">
                         Admin Support
                       </span>
                     )}
                   </div>
                   <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
-                    Opened by <span className="text-white">{ticketDetail?.ticket.author_name}</span> // {ticketDetail?.ticket.created_at && formatDistanceToNow(new Date(ticketDetail.ticket.created_at))} ago
+                    Opened by <span className="text-white">{ticketDetail.ticket.author_name}</span> // {ticketDetail.ticket.created_at && formatDistanceToNow(new Date(ticketDetail.ticket.created_at))} ago
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                {ticketDetail?.ticket.status !== 'closed' ? (
+                {ticketDetail.ticket.status !== 'closed' ? (
                   <button 
                     onClick={() => updateStatusMutation.mutate('closed')}
                     className="flex items-center gap-2 px-4 py-2 bg-neon-pink/10 text-neon-pink border border-neon-pink/30 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neon-pink hover:text-white transition-all"
@@ -233,7 +237,7 @@ const AdminSupportPage: React.FC = () => {
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
-              {ticketDetail?.messages.map((msg) => (
+              {ticketMessages.map((msg) => (
                 <div key={msg.id} className={`flex gap-4 ${msg.author_role === 'admin' || msg.author_role === 'moderator' ? 'flex-row-reverse' : ''}`}>
                   <div className="w-10 h-10 rounded-lg bg-cyber-black border border-white/10 overflow-hidden flex-shrink-0">
                     {msg.author_avatar ? (
@@ -266,6 +270,11 @@ const AdminSupportPage: React.FC = () => {
                   </div>
                 </div>
               ))}
+              {ticketMessages.length === 0 && (
+                <div className="text-center text-[10px] font-black text-zinc-600 uppercase tracking-widest py-6">
+                  No messages in this ticket yet
+                </div>
+              )}
             </div>
 
             {/* Reply Input */}
