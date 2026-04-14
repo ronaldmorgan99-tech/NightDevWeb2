@@ -319,6 +319,26 @@ async function requireAuthUser(req: Request, res: Response) {
   return user;
 }
 
+async function requireStaffUser(req: Request, res: Response) {
+  const user = await requireAuthUser(req, res);
+  if (!user) return null;
+  if (!isStaffRole(user.role)) {
+    res.status(403).json({ error: 'Staff access required' });
+    return null;
+  }
+  return user;
+}
+
+async function requireAdminUser(req: Request, res: Response) {
+  const user = await requireAuthUser(req, res);
+  if (!user) return null;
+  if (user.role !== 'admin') {
+    res.status(403).json({ error: 'Admin access required' });
+    return null;
+  }
+  return user;
+}
+
 const validateBody = <T>(schema: z.ZodSchema<T>) => (req: Request, res: Response, next: express.NextFunction) => {
   const parsedPayload = schema.safeParse(req.body);
   if (!parsedPayload.success) {
@@ -1619,6 +1639,435 @@ const observabilityMetricsHandler = async (req: Request, res: Response) => {
   }
 };
 app.get(['/api/admin/observability/metrics', '/admin/observability/metrics'], observabilityMetricsHandler);
+
+const adminMetricsHandler = async (req: Request, res: Response) => {
+  const user = await requireStaffUser(req, res);
+  if (!user) return;
+  try {
+    const [users, threads, posts, reports] = await Promise.all([
+      db.queryOne<any>('SELECT COUNT(*) as count FROM users'),
+      db.queryOne<any>('SELECT COUNT(*) as count FROM threads'),
+      db.queryOne<any>('SELECT COUNT(*) as count FROM posts'),
+      db.queryOne<any>("SELECT COUNT(*) as count FROM reports WHERE status = 'pending'")
+    ]);
+    return res.json({
+      totalUsers: Number(users?.count || 0),
+      totalThreads: Number(threads?.count || 0),
+      totalPosts: Number(posts?.count || 0),
+      pendingReports: Number(reports?.count || 0)
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load admin metrics' });
+  }
+};
+app.get(['/api/admin/metrics', '/admin/metrics'], adminMetricsHandler);
+
+const adminUsersListHandler = async (req: Request, res: Response) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+  try {
+    const users = await db.query<any>('SELECT id, username, email, role, created_at, last_active FROM users ORDER BY created_at DESC');
+    return res.json(users);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load admin users' });
+  }
+};
+app.get(['/api/admin/users', '/admin/users'], adminUsersListHandler);
+
+const adminUserRolePatchHandler = async (req: Request, res: Response) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+  const role = String((req.body as any)?.role || '').trim();
+  if (!['admin', 'moderator', 'member', 'suspended'].includes(role)) {
+    return res.status(400).json({ error: 'Invalid role' });
+  }
+  try {
+    await db.execute('UPDATE users SET role = ? WHERE id = ?', [role, req.params.id]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to update role' });
+  }
+};
+app.patch(['/api/admin/users/:id/role', '/admin/users/:id/role'], adminUserRolePatchHandler);
+
+const adminReportsHandler = async (req: Request, res: Response) => {
+  const user = await requireStaffUser(req, res);
+  if (!user) return;
+  try {
+    const reports = await db.query<any>(`
+      SELECT r.*, u.username as reporter_name
+      FROM reports r
+      JOIN users u ON r.reporter_id = u.id
+      ORDER BY r.created_at DESC
+    `);
+    return res.json(reports);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load reports' });
+  }
+};
+app.get(['/api/admin/reports', '/admin/reports'], adminReportsHandler);
+
+const adminReportActionHandler = async (req: Request, res: Response) => {
+  const user = await requireStaffUser(req, res);
+  if (!user) return;
+  const { action, reason } = req.body as { action?: string; reason?: string };
+  try {
+    const report = await db.queryOne<any>('SELECT * FROM reports WHERE id = ?', [req.params.id]);
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    if (action === 'hide' && report.target_type === 'post') {
+      await db.execute('UPDATE posts SET is_hidden = 1 WHERE id = ?', [report.target_id]);
+    }
+    if (action === 'remove' && report.target_type === 'post') {
+      await db.execute('UPDATE posts SET is_deleted = 1 WHERE id = ?', [report.target_id]);
+    }
+    if (action === 'remove' && report.target_type === 'thread') {
+      await db.execute('DELETE FROM threads WHERE id = ?', [report.target_id]);
+    }
+    if (action === 'suspend' && report.target_type === 'user') {
+      await db.execute("UPDATE users SET role = 'suspended' WHERE id = ?", [report.target_id]);
+    }
+
+    await db.execute("UPDATE reports SET status = 'resolved' WHERE id = ?", [req.params.id]);
+    await db.execute(
+      'INSERT INTO moderation_actions (moderator_id, action_type, target_type, target_id, reason) VALUES (?, ?, ?, ?, ?)',
+      [user.id, action || 'dismiss', report.target_type, report.target_id, reason || null]
+    );
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to apply report action' });
+  }
+};
+app.post(['/api/admin/reports/:id/action', '/admin/reports/:id/action'], adminReportActionHandler);
+
+const adminAuditLogHandler = async (req: Request, res: Response) => {
+  const user = await requireStaffUser(req, res);
+  if (!user) return;
+  try {
+    const logs = await db.query<any>(`
+      SELECT m.*, u.username as moderator_name
+      FROM moderation_actions m
+      JOIN users u ON m.moderator_id = u.id
+      ORDER BY m.created_at DESC
+    `);
+    return res.json(logs);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load moderation audit log' });
+  }
+};
+app.get(['/api/admin/audit-log', '/admin/audit-log'], adminAuditLogHandler);
+
+const adminSettingsGetHandler = async (req: Request, res: Response) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+  try {
+    const settings = await db.query<any>('SELECT * FROM site_settings');
+    return res.json(settings);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load admin settings' });
+  }
+};
+app.get(['/api/admin/settings', '/admin/settings'], adminSettingsGetHandler);
+
+const adminSettingsUpdateHandler = async (req: Request, res: Response) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+  const settings = Array.isArray(req.body) ? req.body : (req.body as any)?.settings;
+  if (!Array.isArray(settings)) {
+    return res.status(400).json({ error: 'settings array is required' });
+  }
+  try {
+    for (const setting of settings) {
+      await db.execute(
+        'UPDATE site_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?',
+        [typeof setting.value === 'string' ? setting.value.trim() : JSON.stringify(setting.value), setting.key]
+      );
+    }
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to update settings' });
+  }
+};
+app.post(['/api/admin/settings', '/admin/settings'], adminSettingsUpdateHandler);
+
+const adminAnalyticsHandler = async (req: Request, res: Response) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+  try {
+    const [users, posts, threads, revenue] = await Promise.all([
+      db.queryOne<any>('SELECT COUNT(*) as count FROM users'),
+      db.queryOne<any>('SELECT COUNT(*) as count FROM posts'),
+      db.queryOne<any>('SELECT COUNT(*) as count FROM threads'),
+      db.queryOne<any>('SELECT COALESCE(SUM(total_amount), 0) as value FROM orders')
+    ]);
+
+    const registrations = await db.query<any>(`
+      SELECT DATE(created_at) as date, COUNT(*) as count
+      FROM users
+      WHERE created_at >= datetime('now', '-6 days')
+      GROUP BY DATE(created_at)
+      ORDER BY DATE(created_at)
+    `);
+    const orders = await db.query<any>(`
+      SELECT DATE(created_at) as date, COALESCE(SUM(total_amount), 0) as revenue
+      FROM orders
+      WHERE created_at >= datetime('now', '-6 days')
+      GROUP BY DATE(created_at)
+      ORDER BY DATE(created_at)
+    `);
+
+    return res.json({
+      stats: { users: Number(users?.count || 0), posts: Number(posts?.count || 0), threads: Number(threads?.count || 0), revenue: Number(revenue?.value || 0) },
+      registrations,
+      orders
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load analytics' });
+  }
+};
+app.get(['/api/admin/analytics', '/admin/analytics'], adminAnalyticsHandler);
+
+const adminTagsListHandler = async (req: Request, res: Response) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+  try {
+    const tags = await db.query<any>('SELECT * FROM tags ORDER BY created_at DESC');
+    return res.json(tags);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load tags' });
+  }
+};
+app.get(['/api/admin/tags', '/admin/tags'], adminTagsListHandler);
+
+app.post(['/api/admin/tags', '/admin/tags'], async (req: Request, res: Response) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+  const { name, color } = req.body as { name?: string; color?: string };
+  try {
+    await db.execute('INSERT INTO tags (name, color) VALUES (?, ?)', [name || '', color || '#00f3ff']);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to create tag' });
+  }
+});
+
+app.patch(['/api/admin/tags/:id', '/admin/tags/:id'], async (req: Request, res: Response) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+  const { name, color } = req.body as { name?: string; color?: string };
+  try {
+    await db.execute('UPDATE tags SET name = ?, color = ? WHERE id = ?', [name || '', color || '#00f3ff', req.params.id]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to update tag' });
+  }
+});
+
+app.delete(['/api/admin/tags/:id', '/admin/tags/:id'], async (req: Request, res: Response) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+  try {
+    await db.execute('DELETE FROM tags WHERE id = ?', [req.params.id]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to delete tag' });
+  }
+});
+
+app.post(['/api/admin/categories', '/admin/categories'], async (req: Request, res: Response) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+  const name = String((req.body as any)?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Category name is required' });
+  try {
+    await db.execute('INSERT INTO forum_categories (name) VALUES (?)', [name]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to create category' });
+  }
+});
+
+app.patch(['/api/admin/categories/:id', '/admin/categories/:id'], async (req: Request, res: Response) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+  const name = String((req.body as any)?.name || '').trim();
+  const displayOrder = Number((req.body as any)?.display_order || 0);
+  try {
+    await db.execute('UPDATE forum_categories SET name = ?, display_order = ? WHERE id = ?', [name, displayOrder, req.params.id]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to update category' });
+  }
+});
+
+app.delete(['/api/admin/categories/:id', '/admin/categories/:id'], async (req: Request, res: Response) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+  try {
+    await db.execute('DELETE FROM forum_categories WHERE id = ?', [req.params.id]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to delete category' });
+  }
+});
+
+app.post(['/api/admin/forums', '/admin/forums'], async (req: Request, res: Response) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+  const { category_id, name, description, min_role_to_thread, display_order } = req.body as any;
+  try {
+    await db.execute(
+      'INSERT INTO forums (category_id, name, description, min_role_to_thread, display_order) VALUES (?, ?, ?, ?, ?)',
+      [category_id, name, description || '', min_role_to_thread || 'member', display_order || 0]
+    );
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to create forum' });
+  }
+});
+
+app.patch(['/api/admin/forums/:id', '/admin/forums/:id'], async (req: Request, res: Response) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+  const { category_id, name, description, min_role_to_thread, display_order } = req.body as any;
+  try {
+    await db.execute(
+      'UPDATE forums SET category_id = ?, name = ?, description = ?, min_role_to_thread = ?, display_order = ? WHERE id = ?',
+      [category_id, name, description || '', min_role_to_thread || 'member', display_order || 0, req.params.id]
+    );
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to update forum' });
+  }
+});
+
+app.delete(['/api/admin/forums/:id', '/admin/forums/:id'], async (req: Request, res: Response) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+  try {
+    await db.execute('DELETE FROM forums WHERE id = ?', [req.params.id]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to delete forum' });
+  }
+});
+
+app.post(['/api/admin/products', '/admin/products'], async (req: Request, res: Response) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+  const { name, description, price, image_url, category, stock } = req.body as any;
+  try {
+    await db.execute(
+      'INSERT INTO products (name, description, price, image_url, category, stock) VALUES (?, ?, ?, ?, ?, ?)',
+      [name, description || '', price, image_url || '', category || 'Digital', stock ?? -1]
+    );
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to create product' });
+  }
+});
+
+app.patch(['/api/admin/products/:id', '/admin/products/:id'], async (req: Request, res: Response) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+  const { name, description, price, image_url, category, stock } = req.body as any;
+  try {
+    await db.execute(
+      'UPDATE products SET name = ?, description = ?, price = ?, image_url = ?, category = ?, stock = ? WHERE id = ?',
+      [name, description || '', price, image_url || '', category || 'Digital', stock ?? -1, req.params.id]
+    );
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to update product' });
+  }
+});
+
+app.delete(['/api/admin/products/:id', '/admin/products/:id'], async (req: Request, res: Response) => {
+  const user = await requireAdminUser(req, res);
+  if (!user) return;
+  try {
+    await db.execute('DELETE FROM products WHERE id = ?', [req.params.id]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to delete product' });
+  }
+});
+
+const adminTicketsListHandler = async (req: Request, res: Response) => {
+  const user = await requireStaffUser(req, res);
+  if (!user) return;
+  try {
+    const tickets = await db.query<any>(`
+      SELECT
+        t.*,
+        u.username as author_name,
+        u.avatar_url as author_avatar,
+        (SELECT COUNT(*) FROM ticket_messages tm WHERE tm.ticket_id = t.id) as message_count
+      FROM tickets t
+      JOIN users u ON u.id = t.user_id
+      ORDER BY t.created_at DESC
+    `);
+    return res.json(tickets);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load admin tickets' });
+  }
+};
+app.get(['/api/admin/tickets', '/admin/tickets'], adminTicketsListHandler);
+
+const adminTicketDetailHandler = async (req: Request, res: Response) => {
+  const user = await requireStaffUser(req, res);
+  if (!user) return;
+  try {
+    const ticket = await db.queryOne<any>(`
+      SELECT t.*, u.username as author_name, u.avatar_url as author_avatar
+      FROM tickets t
+      JOIN users u ON u.id = t.user_id
+      WHERE t.id = ?
+    `, [req.params.id]);
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    const messages = await db.query<any>(`
+      SELECT tm.*, u.username as author_name, u.avatar_url as author_avatar, u.role as author_role
+      FROM ticket_messages tm
+      JOIN users u ON u.id = tm.user_id
+      WHERE tm.ticket_id = ?
+      ORDER BY tm.created_at ASC
+    `, [req.params.id]);
+    return res.json({ ticket, messages });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load ticket detail' });
+  }
+};
+app.get(['/api/admin/tickets/:id', '/admin/tickets/:id'], adminTicketDetailHandler);
+
+app.post(['/api/admin/tickets/:id/messages', '/admin/tickets/:id/messages'], validateBody(ticketMessageSchema), async (req: Request, res: Response) => {
+  const user = await requireStaffUser(req, res);
+  if (!user) return;
+  const { message } = req.body as z.infer<typeof ticketMessageSchema>;
+  try {
+    await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [req.params.id, user.id, message]);
+    await db.execute("UPDATE tickets SET status = 'pending' WHERE id = ?", [req.params.id]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to post ticket message' });
+  }
+});
+
+app.patch(['/api/admin/tickets/:id', '/admin/tickets/:id'], async (req: Request, res: Response) => {
+  const user = await requireStaffUser(req, res);
+  if (!user) return;
+  const status = String((req.body as any)?.status || '').trim();
+  if (!['open', 'pending', 'closed'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+  try {
+    await db.execute('UPDATE tickets SET status = ? WHERE id = ?', [status, req.params.id]);
+    return res.json({ success: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to update ticket' });
+  }
+});
 
 const notificationsHandler = async (req: Request, res: Response) => {
   try {

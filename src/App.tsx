@@ -10,6 +10,7 @@ import { AuthProvider } from './context/AuthContext';
 import { MessagingProvider } from './context/MessagingContext';
 import MainLayout from './layouts/MainLayout';
 import AdminLayout from './layouts/AdminLayout';
+import { ApiError } from './lib/api';
 
 // Loading fallback component for lazy-loaded routes
 const LoadingFallback = () => (
@@ -50,7 +51,20 @@ const ServersPage = lazy(() => import('./pages/ServersPage'));
 const StudioUnavailablePage = lazy(() => import('./pages/ComingSoonPage'));
 const VeoStudioPage = lazy(() => import('./pages/VeoStudioPage'));
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => {
+        if (error instanceof ApiError && error.status === 404) {
+          return false;
+        }
+        return failureCount < 1;
+      },
+      refetchOnWindowFocus: false,
+      staleTime: 30_000
+    }
+  }
+});
 const isStudioDiscoverable = String(import.meta.env.VITE_ENABLE_STUDIO || '').toLowerCase() === 'true';
 
 const CustomCursor = () => {

@@ -4,6 +4,16 @@ export interface ApiFetchOptions extends RequestInit {
   json?: any;
 }
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 const nativeFetch: typeof fetch = globalThis.fetch.bind(globalThis);
 const apiBaseUrl = ((import.meta as any).env?.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 
@@ -79,6 +89,7 @@ export async function apiJson<T>(input: RequestInfo, init: ApiFetchOptions = {})
   const res = await apiFetch(input, init);
   if (res.status === 204 || res.status === 205 || res.headers.get('content-length') === '0') {
     if (!res.ok) {
+      throw new ApiError(res.status, `HTTP ${res.status}`);
       throw new Error(`HTTP ${res.status}`);
     }
     return null as T;
@@ -92,9 +103,13 @@ export async function apiJson<T>(input: RequestInfo, init: ApiFetchOptions = {})
 
   if (!res.ok) {
     if (typeof data === 'string' && data.trim()) {
-      throw new Error(data.slice(0, 200));
+      throw new ApiError(res.status, data.slice(0, 200));
     }
-    throw new Error((data as any)?.error || `HTTP ${res.status}`);
+    throw new ApiError(res.status, (data as any)?.error || `HTTP ${res.status}`);
+  }
+
+  if (!hasBody) {
+    return null as T;
   }
 
   if (!hasBody) {
