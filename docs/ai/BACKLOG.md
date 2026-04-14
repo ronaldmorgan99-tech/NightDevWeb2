@@ -88,6 +88,10 @@ Last reviewed: 2026-04-10
   - Health check endpoints and monitoring
   - Vite HMR configuration for production domains
 
+#### Backend Request Validation & TS Server Checks
+- **Status**: ✅ Completed
+- **Details**: Added server-side request and route parameter validation, fixed `csurf` TypeScript declaration issues, and ensured backend TS compilation passes in CI.
+
 ### Pending
 
 ### Security Hardening
