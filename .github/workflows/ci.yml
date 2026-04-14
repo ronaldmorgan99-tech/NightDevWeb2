@@ -70,6 +70,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Validate AI docs review dates
+        env:
+          AI_DOCS_MAX_AGE_DAYS: 14
+        run: node scripts/ci/validate-ai-docs-dates.mjs
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

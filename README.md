@@ -208,9 +208,15 @@ Minimum expected results:
 
 - Pull requests must use `.github/pull_request_template.md`. Complete every checklist section before requesting review.
 - If your change affects release/deploy behavior, update `docs/ai/MEMORY.md` and/or `docs/ai/BACKLOG.md` as part of the PR.
+- CI validates `Last reviewed: YYYY-MM-DD` in both `docs/ai/MEMORY.md` and `docs/ai/BACKLOG.md` via `scripts/ci/validate-ai-docs-dates.mjs`.
+  Keep both dates valid and no older than 14 days (`AI_DOCS_MAX_AGE_DAYS`) when opening/updating a PR.
 
 ### CI flaky-test handling policy
 
+- **Canonical smoke checks in CI**:
+  - `.github/workflows/ci.yml` (`validate` job) is the single source of truth for pull request and `main` branch local-server smoke coverage. It starts the app, waits for readiness with bounded retries, and runs `npm run smoke:postdeploy`.
+  - `.github/workflows/staging-verify.yml` is the canonical post-deploy staging smoke workflow and also runs `npm run smoke:postdeploy` against the deployed environment.
+  - `smoke-test.yml` has been removed to avoid duplicate smoke implementations and drift.
 - **Retry policy**: CI retries integration tests once before marking the job as failed, to filter out transient environment noise.
 - **Quarantine manifest**: `test/flaky-manifest.json` is the source of truth for quarantined tests. Every entry must include: `id`, `testMatch`, `owner`, `ticket`, and `expiry` (`YYYY-MM-DD`). CI fails fast if any required field is missing or malformed.
 - **Detection/reporting policy**: CI scans integration test logs (`integration-test-attempt-1.log` and retry logs when present) for each manifest `testMatch` value, emits warnings when quarantined tests are hit, and uploads a per-run flaky summary artifact (`flaky-quarantine-summary`) containing JSON + Markdown rollups.
@@ -220,11 +226,7 @@ Minimum expected results:
 
 - **Unit coverage gate**: `validate` enforces minimum unit test line coverage via `COVERAGE_THRESHOLD` (default `75`).
 - **Integration coverage gate**: `validate` enforces minimum integration test line coverage from `coverage/integration` via `INTEGRATION_COVERAGE_THRESHOLD` (default `65`) without rerunning integration tests.
-
-### CI coverage requirements
-
-- **Unit coverage gate**: `validate` enforces minimum unit test line coverage via `COVERAGE_THRESHOLD` (default `75`).
-- **Integration coverage gate**: `validate` enforces minimum integration test line coverage from `coverage/integration` via `INTEGRATION_COVERAGE_THRESHOLD` (default `65`) without rerunning integration tests.
+- Canonical source: if CI behavior changes, update `.github/workflows/ci.yml` first and then sync this section.
 
 ## AI Workflow Files
 
