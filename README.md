@@ -203,6 +203,10 @@ Minimum expected results:
 
 ### CI flaky-test handling policy
 
+- **Canonical smoke checks in CI**:
+  - `.github/workflows/ci.yml` (`validate` job) is the single source of truth for pull request and `main` branch local-server smoke coverage. It starts the app, waits for readiness with bounded retries, and runs `npm run smoke:postdeploy`.
+  - `.github/workflows/staging-verify.yml` is the canonical post-deploy staging smoke workflow and also runs `npm run smoke:postdeploy` against the deployed environment.
+  - `smoke-test.yml` has been removed to avoid duplicate smoke implementations and drift.
 - **Retry policy**: CI retries integration tests once before marking the job as failed, to filter out transient environment noise.
 - **Quarantine manifest**: `test/flaky-manifest.json` is the source of truth for quarantined tests. Every entry must include: `id`, `testMatch`, `owner`, `ticket`, and `expiry` (`YYYY-MM-DD`). CI fails fast if any required field is missing or malformed.
 - **Detection/reporting policy**: CI scans integration test logs (`integration-test-attempt-1.log` and retry logs when present) for each manifest `testMatch` value, emits warnings when quarantined tests are hit, and uploads a per-run flaky summary artifact (`flaky-quarantine-summary`) containing JSON + Markdown rollups.
