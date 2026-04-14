@@ -106,6 +106,41 @@ const directMessageSchema = z.object({
   content: z.string().trim().min(1).max(5_000)
 });
 
+const reportCreateSchema = z.object({
+  target_type: z.enum(['post', 'thread', 'user']),
+  target_id: z.coerce.number().int().positive(),
+  reason: z.string().trim().min(5).max(1000)
+});
+
+const cartItemSchema = z.object({
+  productId: z.coerce.number().int().positive(),
+  quantity: z.coerce.number().int().min(1)
+});
+
+const categoryIdQuerySchema = z.object({
+  categoryId: z.coerce.number().int().positive().optional()
+});
+
+const memberSearchQuerySchema = z.object({
+  search: z.string().trim().max(100).optional()
+});
+
+const idParamSchema = z.object({
+  id: z.coerce.number().int().positive()
+});
+
+const orderIdParamSchema = z.object({
+  orderId: z.coerce.number().int().positive()
+});
+
+const productIdParamSchema = z.object({
+  productId: z.coerce.number().int().positive()
+});
+
+const userIdParamSchema = z.object({
+  userId: z.coerce.number().int().positive()
+});
+
 const forumCategoryCreateSchema = z.object({
   name: z.string().trim().min(1).max(100)
 });
@@ -454,6 +489,32 @@ async function start() {
     next();
   };
 
+  const validateQuery = <T>(schema: z.ZodSchema<T>) => (
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) => {
+    const parsedQuery = schema.safeParse(req.query);
+    if (!parsedQuery.success) {
+      return res.status(400).json({ error: parsedQuery.error.issues[0]?.message || 'Invalid query parameters' });
+    }
+    req.query = parsedQuery.data as any;
+    next();
+  };
+
+  const validateParams = <T>(schema: z.ZodSchema<T>) => (
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) => {
+    const parsedParams = schema.safeParse(req.params);
+    if (!parsedParams.success) {
+      return res.status(400).json({ error: parsedParams.error.issues[0]?.message || 'Invalid route parameters' });
+    }
+    req.params = parsedParams.data as any;
+    next();
+  };
+
   const createRateLimit = (windowMs: number, maxRequests: number, errorMessage: string) => {
     const requests = new Map<string, number[]>();
     return (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -554,7 +615,7 @@ async function start() {
       sameSite: IS_PRODUCTION ? 'none' : 'lax',
       path: '/'
     },
-    value: (req) => req.headers['x-csrf-token'] as string || ''
+    value: (req: express.Request) => req.headers['x-csrf-token'] as string || ''
   });
 
   app.get('/api/csrf-token', csrfProtection, (_req, res) => {
@@ -1012,7 +1073,7 @@ async function start() {
   });
 
   // Users
-  app.get('/api/users/:id', async (req, res) => {
+  app.get('/api/users/:id', validateParams(idParamSchema), async (req: any, res) => {
     try {
       const user = await db.queryOne<any>('SELECT id, username, role, avatar_url, banner_url, bio, created_at, last_active FROM users WHERE id = ?', [req.params.id]);
       if (!user) return res.status(404).json({ error: 'User not found' });
@@ -1022,7 +1083,7 @@ async function start() {
     }
   });
 
-  app.get('/api/users/:id/game-stats', async (req, res) => {
+  app.get('/api/users/:id/game-stats', validateParams(idParamSchema), async (req: any, res) => {
     try {
       const stats = await db.query<any>('SELECT * FROM game_stats WHERE user_id = ?', [req.params.id]);
       res.json(stats);
@@ -1031,7 +1092,7 @@ async function start() {
     }
   });
 
-  app.get('/api/users/:id/game-transactions', async (req, res) => {
+  app.get('/api/users/:id/game-transactions', validateParams(idParamSchema), async (req: any, res) => {
     try {
       const transactions = await db.query<any>('SELECT * FROM game_transactions WHERE user_id = ? ORDER BY created_at DESC', [req.params.id]);
       res.json(transactions);
@@ -1040,7 +1101,7 @@ async function start() {
     }
   });
 
-  app.get('/api/users/:id/game-matches', async (req, res) => {
+  app.get('/api/users/:id/game-matches', validateParams(idParamSchema), async (req: any, res) => {
     try {
       const matches = await db.query<any>('SELECT * FROM game_matches WHERE user_id = ? ORDER BY created_at DESC', [req.params.id]);
       res.json(matches);
@@ -1250,7 +1311,7 @@ async function start() {
     }
   });
 
-  app.patch('/api/admin/servers/:id/status', authenticate, isAdmin, async (req, res) => {
+  app.patch('/api/admin/servers/:id/status', authenticate, isAdmin, validateParams(idParamSchema), async (req: any, res) => {
     const { id } = req.params;
     const status = req.body?.status === 'online' ? 'online' : 'offline';
     const players = Number.isFinite(Number(req.body?.players)) ? Math.max(0, Number(req.body.players)) : 0;
@@ -1286,7 +1347,7 @@ async function start() {
   });
 
   // Forums & Threads
-  app.get('/api/forums/:id', async (req, res) => {
+  app.get('/api/forums/:id', validateParams(idParamSchema), async (req: any, res) => {
     try {
       const forum = await db.queryOne<any>('SELECT * FROM forums WHERE id = ?', [req.params.id]);
       const threads = await db.query<any>(`
@@ -1330,7 +1391,7 @@ async function start() {
     }
   });
 
-  app.get('/api/threads/:id', async (req, res) => {
+  app.get('/api/threads/:id', validateParams(idParamSchema), async (req: any, res) => {
     try {
       const thread = await db.queryOne<any>(`
         SELECT t.*, u.username as author_name, f.name as forum_name 
@@ -1352,7 +1413,7 @@ async function start() {
     }
   });
 
-  app.get('/api/threads', async (req, res) => {
+  app.get('/api/threads', validateQuery(categoryIdQuerySchema), async (req: any, res) => {
     const { categoryId } = req.query;
     try {
       const threads = await db.query<any>(`
@@ -1403,7 +1464,7 @@ async function start() {
     }
   });
 
-  app.patch('/api/posts/:id', authenticate, async (req: any, res) => {
+  app.patch('/api/posts/:id', authenticate, validateParams(idParamSchema), async (req: any, res) => {
     const { content, is_hidden, is_deleted } = req.body;
     try {
       const post = await db.queryOne<any>('SELECT * FROM posts WHERE id = ?', [req.params.id]);
@@ -1468,7 +1529,7 @@ async function start() {
     }
   });
 
-  app.patch('/api/threads/:id', authenticate, async (req: any, res) => {
+  app.patch('/api/threads/:id', authenticate, validateParams(idParamSchema), async (req: any, res) => {
     const { is_pinned, is_locked, is_solved, is_hidden } = req.body;
     if (!['admin', 'moderator'].includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
     try {
@@ -1553,7 +1614,7 @@ async function start() {
     }
   });
 
-  app.delete('/api/threads/:id', authenticate, async (req: any, res) => {
+  app.delete('/api/threads/:id', authenticate, validateParams(idParamSchema), async (req: any, res) => {
     try {
       const thread = await db.queryOne<any>('SELECT * FROM threads WHERE id = ?', [req.params.id]);
       if (!thread) return res.status(404).json({ error: 'Thread not found' });
@@ -1582,17 +1643,9 @@ async function start() {
     }
   });
 
-  app.post('/api/reports', authenticate, async (req: any, res) => {
+  app.post('/api/reports', authenticate, validateBody(reportCreateSchema), async (req: any, res) => {
     const { target_type, target_id, reason } = req.body;
     try {
-      if (!target_type || !target_id || !reason) {
-        return res.status(400).json({ error: 'target_type, target_id, and reason are required' });
-      }
-
-      if (!['post', 'thread', 'user'].includes(target_type)) {
-        return res.status(400).json({ error: 'Invalid target_type' });
-      }
-
       await db.execute(
         'INSERT INTO reports (reporter_id, target_type, target_id, reason) VALUES (?, ?, ?, ?)',
         [req.user.id, target_type, target_id, reason]
@@ -1605,9 +1658,9 @@ async function start() {
   });
 
   // Members
-  app.get('/api/members', async (req, res) => {
+  app.get('/api/members', validateQuery(memberSearchQuerySchema), async (req: any, res) => {
     try {
-      const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+      const search = req.query.search || '';
 
       const members = search
         ? await db.query<any>(
@@ -1633,12 +1686,9 @@ async function start() {
   });
 
   // Cart management - stored in database
-  app.post('/api/cart', authenticate, async (req: any, res) => {
+  app.post('/api/cart', authenticate, validateBody(cartItemSchema), async (req: any, res) => {
     try {
       const { productId, quantity } = req.body;
-      if (!productId || !quantity || quantity < 1) {
-        return res.status(400).json({ error: 'Invalid product ID or quantity' });
-      }
 
       // Fetch product to verify it exists and get price
       const product = await db.queryOne<any>('SELECT id, name, price, stock FROM products WHERE id = ?', [productId]);
@@ -1711,9 +1761,9 @@ async function start() {
     }
   });
 
-  app.delete('/api/cart/:productId', authenticate, async (req: any, res) => {
+  app.delete('/api/cart/:productId', authenticate, validateParams(productIdParamSchema), async (req: any, res) => {
     try {
-      const productId = parseInt(req.params.productId);
+      const productId = req.params.productId;
 
       // Get user's cart
       const cart = await db.queryOne<any>('SELECT id FROM carts WHERE user_id = ?', [req.user.id]);
@@ -1806,7 +1856,7 @@ async function start() {
     }
   });
 
-  app.get('/api/orders/:id', authenticate, async (req: any, res) => {
+  app.get('/api/orders/:id', authenticate, validateParams(idParamSchema), async (req: any, res) => {
     try {
       const order = await db.queryOne<any>(
         'SELECT * FROM orders WHERE id = ? AND user_id = ?',
@@ -1859,21 +1909,24 @@ async function start() {
 
       const { createPayPalOrder } = require('./src/lib/payments.js');
       const order = await createPayPalOrder(amount, currency);
+      const approvalUrl = Array.isArray(order.links)
+        ? order.links.find((link: any) => link.rel === 'approve')?.href
+        : undefined;
 
       res.json({
         orderId: order.id,
         status: order.status,
-        approvalUrl: order.links.find(link => link.rel === 'approve')?.href
+        approvalUrl
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.post('/api/payments/stripe/confirm/:orderId', authenticate, async (req: any, res) => {
+  app.post('/api/payments/stripe/confirm/:orderId', authenticate, validateParams(orderIdParamSchema), async (req: any, res) => {
     try {
       const { paymentIntentId } = req.body;
-      const orderId = parseInt(req.params.orderId);
+      const orderId = req.params.orderId;
 
       // Verify order belongs to user and is pending
       const order = await db.queryOne<any>('SELECT * FROM orders WHERE id = ? AND user_id = ?', [orderId, req.user.id]);
@@ -1899,10 +1952,10 @@ async function start() {
     }
   });
 
-  app.post('/api/payments/paypal/capture/:orderId', authenticate, async (req: any, res) => {
+  app.post('/api/payments/paypal/capture/:orderId', authenticate, validateParams(orderIdParamSchema), async (req: any, res) => {
     try {
       const { paypalOrderId } = req.body;
-      const orderId = parseInt(req.params.orderId);
+      const orderId = req.params.orderId;
 
       // Verify order belongs to user and is pending
       const order = await db.queryOne<any>('SELECT * FROM orders WHERE id = ? AND user_id = ?', [orderId, req.user.id]);
@@ -1950,7 +2003,7 @@ async function start() {
     }
   });
 
-  app.get('/api/tickets/:id', authenticate, async (req: any, res) => {
+  app.get('/api/tickets/:id', authenticate, validateParams(idParamSchema), async (req: any, res) => {
     try {
       const ticket = await db.queryOne<any>(`
         SELECT t.*, u.username as author_name, u.avatar_url as author_avatar
@@ -1996,7 +2049,7 @@ async function start() {
     }
   });
 
-  app.patch('/api/admin/users/:id/role', authenticate, isAdmin, async (req, res) => {
+  app.patch('/api/admin/users/:id/role', authenticate, isAdmin, validateParams(idParamSchema), async (req: any, res) => {
     const { role } = req.body;
     try {
       await db.execute('UPDATE users SET role = ? WHERE id = ?', [role, req.params.id]);
@@ -2020,7 +2073,7 @@ async function start() {
     }
   });
 
-  app.post('/api/admin/reports/:id/action', authenticate, isAdmin, async (req: any, res) => {
+  app.post('/api/admin/reports/:id/action', authenticate, isAdmin, validateParams(idParamSchema), async (req: any, res) => {
     const { action, reason } = req.body;
     try {
       const report = await db.queryOne<any>('SELECT * FROM reports WHERE id = ?', [req.params.id]);
@@ -2145,7 +2198,7 @@ async function start() {
     }
   });
 
-  app.patch('/api/admin/tags/:id', authenticate, isAdmin, async (req, res) => {
+  app.patch('/api/admin/tags/:id', authenticate, isAdmin, validateParams(idParamSchema), async (req: any, res) => {
     const { name, color } = req.body;
     try {
       await db.execute('UPDATE tags SET name = ?, color = ? WHERE id = ?', [name, color, req.params.id]);
@@ -2155,7 +2208,7 @@ async function start() {
     }
   });
 
-  app.delete('/api/admin/tags/:id', authenticate, isAdmin, async (req, res) => {
+  app.delete('/api/admin/tags/:id', authenticate, isAdmin, validateParams(idParamSchema), async (req: any, res) => {
     try {
       await db.execute('DELETE FROM tags WHERE id = ?', [req.params.id]);
       res.json({ success: true });
@@ -2184,7 +2237,7 @@ async function start() {
     }
   });
 
-  app.delete('/api/admin/categories/:id', authenticate, isAdmin, async (req, res) => {
+  app.delete('/api/admin/categories/:id', authenticate, isAdmin, validateParams(idParamSchema), async (req: any, res) => {
     try {
       await db.execute('DELETE FROM forum_categories WHERE id = ?', [req.params.id]);
       res.json({ success: true });
@@ -2219,7 +2272,7 @@ async function start() {
     }
   });
 
-  app.delete('/api/admin/forums/:id', authenticate, isAdmin, async (req, res) => {
+  app.delete('/api/admin/forums/:id', authenticate, isAdmin, validateParams(idParamSchema), async (req: any, res) => {
     try {
       await db.execute('DELETE FROM forums WHERE id = ?', [req.params.id]);
       res.json({ success: true });
@@ -2241,7 +2294,7 @@ async function start() {
     }
   });
 
-  app.patch('/api/admin/products/:id', authenticate, isAdmin, async (req, res) => {
+  app.patch('/api/admin/products/:id', authenticate, isAdmin, validateParams(idParamSchema), async (req: any, res) => {
     const { name, description, price, image_url, category, stock } = req.body;
     try {
       await db.execute(
@@ -2254,7 +2307,7 @@ async function start() {
     }
   });
 
-  app.delete('/api/admin/products/:id', authenticate, isAdmin, async (req, res) => {
+  app.delete('/api/admin/products/:id', authenticate, isAdmin, validateParams(idParamSchema), async (req: any, res) => {
     try {
       await db.execute('DELETE FROM products WHERE id = ?', [req.params.id]);
       res.json({ success: true });
@@ -2281,7 +2334,7 @@ async function start() {
     }
   });
 
-  app.get('/api/admin/tickets/:id', authenticate, isAdmin, async (req, res) => {
+  app.get('/api/admin/tickets/:id', authenticate, isAdmin, validateParams(idParamSchema), async (req: any, res) => {
     try {
       const ticket = await db.queryOne<any>(`
         SELECT t.*, u.username as author_name, u.avatar_url as author_avatar
@@ -2303,7 +2356,7 @@ async function start() {
     }
   });
 
-  app.post('/api/admin/tickets/:id/messages', authenticate, isAdmin, validateBody(ticketMessageSchema), async (req: any, res) => {
+  app.post('/api/admin/tickets/:id/messages', authenticate, isAdmin, validateParams(idParamSchema), validateBody(ticketMessageSchema), async (req: any, res) => {
     const { message } = req.body;
     try {
       await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [req.params.id, req.user.id, message]);
@@ -2314,7 +2367,7 @@ async function start() {
     }
   });
 
-  app.patch('/api/admin/tickets/:id', authenticate, isAdmin, async (req, res) => {
+  app.patch('/api/admin/tickets/:id', authenticate, isAdmin, validateParams(idParamSchema), async (req: any, res) => {
     const { status } = req.body;
     try {
       await db.execute('UPDATE tickets SET status = ? WHERE id = ?', [status, req.params.id]);
@@ -2353,7 +2406,7 @@ async function start() {
     }
   });
 
-  app.get('/api/messages/:userId', authenticate, async (req: any, res) => {
+  app.get('/api/messages/:userId', authenticate, validateParams(userIdParamSchema), async (req: any, res) => {
     try {
       const messages = await db.query<any>(`
         SELECT * FROM messages 
@@ -2412,7 +2465,7 @@ async function start() {
     }
   });
 
-  app.patch('/api/notifications/:id/read', authenticate, async (req: any, res) => {
+  app.patch('/api/notifications/:id/read', authenticate, validateParams(idParamSchema), async (req: any, res) => {
     try {
       await db.execute('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
       res.json({ success: true });
