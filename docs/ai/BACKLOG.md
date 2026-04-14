@@ -11,6 +11,8 @@ Last reviewed: 2026-04-10
   - Post-release update to reflect shipped work, regressions, and carry-over tasks.
   - Architecture change update when technical direction changes feature scope, sequencing, or risks.
 - **Review cadence**: Review weekly and at each sprint planning session.
+- **Quarterly ownership review checklist**:
+  - [ ] Confirm owner, backup owner, and escalation path are still valid for CI/CD and deployment initiatives.
 - **Archive format**:
   - In `## Now`, any item marked complete for more than 30 days must be moved to `docs/ai/archive/BACKLOG_ARCHIVE.md`.
   - Archive entries must include: original section, completion date, and `Archived on: YYYY-MM-DD`.
@@ -61,6 +63,9 @@ Last reviewed: 2026-04-10
 ## Next (Next Sprint)
 
 ### Deployment Documentation
+- **Owner**: Platform Engineering
+- **Backup owner**: Admin Operations
+- **Escalation path**: Platform Engineering on-call -> Incident Commander -> Head of Engineering
 - **Priority**: High
 - **Status**: ✅ Completed (2026-04-10)
 - **Details**: README now includes a production deployment runbook covering deployment models, environment-variable requirements, DB bootstrap/seed expectations, HTTPS and secrets-management requirements, post-deploy health/smoke checks, rollback flow, and Vite HMR production-domain guidance.
@@ -85,6 +90,9 @@ Last reviewed: 2026-04-10
 - Implement rate limiting on auth endpoints
 
 ### CI/CD Pipeline
+- **Owner**: Platform Engineering
+- **Backup owner**: Admin Operations
+- **Escalation path**: Platform Engineering on-call -> Incident Commander -> Head of Engineering
 - **Priority**: High
 - **Workflow Reference**: `.github/workflows/ci.yml`
 - **Source of truth note**: Treat `.github/workflows/ci.yml` as canonical when backlog checklists drift.

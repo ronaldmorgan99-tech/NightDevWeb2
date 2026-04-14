@@ -80,6 +80,14 @@ Together, they keep local UI state and remote API data organized, performant, an
 
 ## Production Deployment Runbook
 
+### Ownership
+- **Owner**: Platform Engineering
+- **Backup owner**: Admin Operations
+- **Escalation path**: Platform Engineering on-call -> Incident Commander -> Head of Engineering
+
+#### Quarterly ownership review checklist
+- [ ] Verify owner, backup owner, and escalation path are still correct for production deploy incidents.
+
 Use this runbook before every production deployment (Vercel, containers, or VM-based hosting).
 
 ### 1) Deployment model decision (same-origin vs split-deployment)

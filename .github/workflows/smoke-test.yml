@@ -1,3 +1,6 @@
+# Owner: Platform Engineering
+# Backup owner: Admin Operations
+# Canonical doc: README.md (Production Deployment Runbook)
 name: Smoke Test
 
 on:

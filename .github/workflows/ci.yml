@@ -1,3 +1,6 @@
+# Owner: Platform Engineering
+# Backup owner: Admin Operations
+# Canonical doc: docs/ai/BACKLOG.md (CI/CD Pipeline)
 name: CI
 
 on:

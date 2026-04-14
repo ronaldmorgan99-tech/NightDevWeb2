@@ -1,5 +1,13 @@
 # Observability, Dashboards, Alert Thresholds, and Incident Triage
 
+## Ownership
+- **Owner**: Platform Engineering
+- **Backup owner**: Admin Operations
+- **Escalation path**: Platform Engineering on-call -> Incident Commander -> Head of Engineering
+
+### Quarterly ownership review checklist
+- [ ] Confirm observability/incident ownership and escalation contacts remain accurate.
+
 ## Scope
 This document defines baseline monitoring and incident response for:
 
