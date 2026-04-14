@@ -46,12 +46,19 @@ Last reviewed: 2026-04-10
 - **Definition of Done**: All dev environments work without websocket/file loading errors
 
 ### Vercel Split-Deployment API Routing
-- **Status**: ✅ Core fixes implemented
+#### Completed
+- **Status**: ✅ Completed
 - **Details**: Added Vercel filesystem-first routing for static assets and stabilized serverless API bootstrap with idempotent default auth-user creation.
-- **Definition of Done**: Maintain green deploys where `/api/settings`, `/api/servers`, and `/api/auth/login` return expected responses (200/401, not 404/500) after redeploy.
+
+#### Remaining
 - **Status**: ⚠️ In progress
+- **Owner**: Platform Engineering
+- **Target review date**: 2026-04-19
 - **Details**: Frontend supports `VITE_API_BASE_URL` for split deployment. For same-origin Vercel API routes, keep `VITE_API_BASE_URL` unset to avoid preview-to-production CORS failures. Serverless runtime also requires explicit emitted `.js` import extensions in Node ESM paths.
-- **Definition of Done**: Vercel project has working API origin configured, `/api/settings` and `/api/auth/login` return 200/401 (not 404) in production.
+- **Acceptance criteria**:
+  - Vercel project has the correct API origin configured for each environment.
+  - Production `/api/settings` and `/api/auth/login` return 200/401 (not 404/500) after deploy.
+  - Deployment runbook captures split-deployment `VITE_API_BASE_URL` guidance and Node ESM `.js` extension requirement.
 
 ### Integration Testing
 - **Status**: ✅ Implemented
@@ -60,10 +67,6 @@ Last reviewed: 2026-04-10
 
 ## Next (Next Sprint)
 
-### Deployment Documentation
-- **Priority**: High
-- **Status**: ✅ Completed (2026-04-10)
-- **Details**: README now includes a production deployment runbook covering deployment models, environment-variable requirements, DB bootstrap/seed expectations, HTTPS and secrets-management requirements, post-deploy health/smoke checks, rollback flow, and Vite HMR production-domain guidance.
 ### Completed (this sprint)
 
 #### Deployment Documentation
