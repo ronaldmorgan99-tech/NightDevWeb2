@@ -146,11 +146,13 @@ jobs:
       - name: Run integration tests with V8 coverage (attempt 1, capture logs)
         id: integration
         continue-on-error: true
+        timeout-minutes: 15
         env:
           TEST_DATABASE_URL: tmp/test.db
           DATABASE_URL: tmp/test.db
         run: |
-          npm run test:integration 2>&1 | tee integration-test-attempt-1.log
+          set -o pipefail
+          timeout 15m npm run test:integration 2>&1 | tee integration-test-attempt-1.log
           exit_code=${PIPESTATUS[0]}
           echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
 
@@ -158,13 +160,15 @@ jobs:
         id: integration_retry
         if: steps.integration.outputs.exit_code != '0'
         continue-on-error: true
+        timeout-minutes: 15
         env:
           TEST_DATABASE_URL: tmp/test.db
           DATABASE_URL: tmp/test.db
         run: |
+          set -o pipefail
           rm -rf coverage/integration
           mkdir -p coverage/integration
-          npm run test:integration 2>&1 | tee integration-test-attempt-2.log
+          timeout 15m npm run test:integration 2>&1 | tee integration-test-attempt-2.log
           exit_code=${PIPESTATUS[0]}
           echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
 
