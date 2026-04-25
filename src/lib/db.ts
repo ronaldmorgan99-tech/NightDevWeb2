@@ -250,10 +250,64 @@ export async function initDb() {
       total_amount REAL NOT NULL,
       status TEXT DEFAULT 'pending',
       payment_method TEXT,
+      stripe_payment_intent_id TEXT,
+      paypal_order_id TEXT,
+      stripe_last_event_id TEXT,
+      stripe_last_event_created_at DATETIME,
+      stripe_last_event_processed_at DATETIME,
+      paypal_last_event_id TEXT,
+      paypal_last_event_created_at DATETIME,
+      paypal_last_event_processed_at DATETIME,
+      payment_confirmed_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
+
+  // Migration-safe schema updates for orders payment webhook replay protection fields
+  if (db instanceof SQLiteWrapper) {
+    const orderColumns = await db.query<any>('PRAGMA table_info(orders)');
+    const ensureOrderColumn = async (name: string, definition: string) => {
+      const exists = orderColumns.some((column) => column.name === name);
+      if (!exists) {
+        await db.execute(`ALTER TABLE orders ADD COLUMN ${name} ${definition}`);
+      }
+    };
+
+    await ensureOrderColumn('stripe_payment_intent_id', 'TEXT');
+    await ensureOrderColumn('paypal_order_id', 'TEXT');
+    await ensureOrderColumn('stripe_last_event_id', 'TEXT');
+    await ensureOrderColumn('stripe_last_event_created_at', 'DATETIME');
+    await ensureOrderColumn('stripe_last_event_processed_at', 'DATETIME');
+    await ensureOrderColumn('paypal_last_event_id', 'TEXT');
+    await ensureOrderColumn('paypal_last_event_created_at', 'DATETIME');
+    await ensureOrderColumn('paypal_last_event_processed_at', 'DATETIME');
+    await ensureOrderColumn('payment_confirmed_at', 'DATETIME');
+  } else {
+    const hasOrderColumn = async (name: string) => db.queryOne<any>(`
+      SELECT COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'orders'
+        AND COLUMN_NAME = ?
+    `, [name]);
+    const ensureMySqlOrderColumn = async (name: string, definition: string) => {
+      const existing = await hasOrderColumn(name);
+      if (!existing) {
+        await db.execute(`ALTER TABLE orders ADD COLUMN ${name} ${definition}`);
+      }
+    };
+
+    await ensureMySqlOrderColumn('stripe_payment_intent_id', 'VARCHAR(255)');
+    await ensureMySqlOrderColumn('paypal_order_id', 'VARCHAR(255)');
+    await ensureMySqlOrderColumn('stripe_last_event_id', 'VARCHAR(255)');
+    await ensureMySqlOrderColumn('stripe_last_event_created_at', 'TIMESTAMP NULL');
+    await ensureMySqlOrderColumn('stripe_last_event_processed_at', 'TIMESTAMP NULL');
+    await ensureMySqlOrderColumn('paypal_last_event_id', 'VARCHAR(255)');
+    await ensureMySqlOrderColumn('paypal_last_event_created_at', 'TIMESTAMP NULL');
+    await ensureMySqlOrderColumn('paypal_last_event_processed_at', 'TIMESTAMP NULL');
+    await ensureMySqlOrderColumn('payment_confirmed_at', 'TIMESTAMP NULL');
+  }
 
   // Order Items
   await run(`

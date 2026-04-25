@@ -15,6 +15,17 @@ import { GoogleGenAI, type GenerateVideosOperation } from '@google/genai';
 import { z } from 'zod';
 import { PUBLIC_SETTINGS_ALLOWLIST, isPublicSetting } from './src/lib/settingsAllowlist';
 import { sendWelcomeEmail } from './src/lib/mailer';
+import {
+  capturePayPalOrder,
+  createPayPalOrder,
+  createStripePaymentIntent,
+  markOrderPaymentPending,
+  paymentProviders,
+  processPayPalWebhookEvent,
+  processStripeWebhookEvent,
+  verifyPayPalWebhookSignature,
+  verifyStripeWebhookSignature
+} from './src/lib/payments';
 import { sanitizeUserText } from './src/lib/sanitize';
 import dotenv from 'dotenv';
 
@@ -512,7 +523,12 @@ async function start() {
   });
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-  app.use(express.json({ limit: '50mb' }));
+  app.use(express.json({
+    limit: '50mb',
+    verify: (req, _res, buffer) => {
+      (req as any).rawBody = buffer.toString('utf8');
+    }
+  }));
   app.use(cookieParser());
 
   const corsMethods = ['GET', 'POST', 'OPTIONS', 'HEAD', 'PUT', 'DELETE', 'PATCH'].join(', ');
@@ -683,7 +699,14 @@ async function start() {
   // We need login/register to be possible for new anonymous sessions, so we skip CSRF there.
   // Apply CSRF protection to all other state-changing routes.
   app.use('/api', (req, res, next) => {
-    if (['/auth/login', '/auth/register', '/auth/logout', '/csrf-token'].includes(req.path)) {
+    if ([
+      '/auth/login',
+      '/auth/register',
+      '/auth/logout',
+      '/csrf-token',
+      '/payments/stripe/webhook',
+      '/payments/paypal/webhook'
+    ].includes(req.path)) {
       return next();
     }
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
@@ -1934,7 +1957,6 @@ async function start() {
 
   // Payment endpoints
   app.get('/api/payments/providers', (req, res) => {
-    const { paymentProviders } = require('./src/lib/payments.js');
     res.json({ providers: paymentProviders });
   });
 
@@ -1946,7 +1968,6 @@ async function start() {
         return res.status(400).json({ error: 'Valid amount is required' });
       }
 
-      const { createStripePaymentIntent } = require('./src/lib/payments.js');
       const paymentIntent = await createStripePaymentIntent(amount, currency);
 
       res.json({
@@ -1968,7 +1989,6 @@ async function start() {
         return res.status(400).json({ error: 'Valid amount is required' });
       }
 
-      const { createPayPalOrder } = require('./src/lib/payments.js');
       const order = await createPayPalOrder(amount, currency);
       const approvalUrl = Array.isArray(order.links)
         ? order.links.find((link: any) => link.rel === 'approve')?.href
@@ -1995,19 +2015,25 @@ async function start() {
         return res.status(404).json({ error: 'Order not found' });
       }
 
-      if (order.status !== 'pending') {
+      if (!['pending', 'payment_pending'].includes(String(order.status || ''))) {
         return res.status(400).json({ error: 'Order is not in pending status' });
       }
-
-      const { confirmStripePayment } = require('./src/lib/payments.js');
-      const success = await confirmStripePayment(paymentIntentId);
-
-      if (success) {
-        await db.execute('UPDATE orders SET status = ?, payment_method = ? WHERE id = ?', ['completed', 'stripe', orderId]);
-        res.json({ success: true, status: 'completed' });
-      } else {
-        res.status(400).json({ error: 'Payment confirmation failed' });
+      if (!paymentIntentId) {
+        return res.status(400).json({ error: 'Payment intent ID is required' });
       }
+
+      const pending = await markOrderPaymentPending({
+        db,
+        orderId: Number(orderId),
+        userId: req.user.id,
+        provider: 'stripe',
+        providerPaymentId: String(paymentIntentId)
+      });
+      if (!pending.updated) {
+        return res.status(400).json({ error: 'Order is not in a payable status' });
+      }
+
+      res.json({ success: true, status: 'payment_pending', message: 'Awaiting Stripe webhook confirmation' });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2024,21 +2050,85 @@ async function start() {
         return res.status(404).json({ error: 'Order not found' });
       }
 
-      if (order.status !== 'pending') {
+      if (!['pending', 'payment_pending'].includes(String(order.status || ''))) {
         return res.status(400).json({ error: 'Order is not in pending status' });
       }
 
-      const { capturePayPalOrder } = require('./src/lib/payments.js');
       const success = await capturePayPalOrder(paypalOrderId);
 
-      if (success) {
-        await db.execute('UPDATE orders SET status = ?, payment_method = ? WHERE id = ?', ['completed', 'paypal', orderId]);
-        res.json({ success: true, status: 'completed' });
-      } else {
+      if (!success) {
         res.status(400).json({ error: 'Payment capture failed' });
+        return;
       }
+
+      const pending = await markOrderPaymentPending({
+        db,
+        orderId: Number(orderId),
+        userId: req.user.id,
+        provider: 'paypal',
+        providerPaymentId: String(paypalOrderId)
+      });
+      if (!pending.updated) {
+        return res.status(400).json({ error: 'Order is not in a payable status' });
+      }
+
+      res.json({ success: true, status: 'payment_pending', message: 'Awaiting PayPal webhook confirmation' });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/payments/stripe/webhook', async (req: any, res) => {
+    try {
+      const rawPayload = req.rawBody || JSON.stringify(req.body || {});
+      const signature = req.get('stripe-signature');
+      if (!verifyStripeWebhookSignature(rawPayload, signature)) {
+        return res.status(400).json({ error: 'Invalid Stripe webhook signature' });
+      }
+
+      const result = await processStripeWebhookEvent(db, req.body || {});
+      if (!result.accepted && result.reason === 'order_not_found') {
+        return res.status(404).json({ error: 'Order not found for webhook event' });
+      }
+
+      return res.json({
+        received: true,
+        accepted: result.accepted,
+        reason: result.reason || null,
+        orderId: result.orderId ?? null
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/payments/paypal/webhook', async (req: any, res) => {
+    try {
+      const rawPayload = req.rawBody || JSON.stringify(req.body || {});
+      const valid = verifyPayPalWebhookSignature({
+        payload: rawPayload,
+        signature: req.get('paypal-transmission-sig'),
+        transmissionId: req.get('paypal-transmission-id'),
+        transmissionTime: req.get('paypal-transmission-time'),
+        webhookId: req.get('paypal-webhook-id') || process.env.PAYPAL_WEBHOOK_ID
+      });
+      if (!valid) {
+        return res.status(400).json({ error: 'Invalid PayPal webhook signature' });
+      }
+
+      const result = await processPayPalWebhookEvent(db, req.body || {});
+      if (!result.accepted && result.reason === 'order_not_found') {
+        return res.status(404).json({ error: 'Order not found for webhook event' });
+      }
+
+      return res.json({
+        received: true,
+        accepted: result.accepted,
+        reason: result.reason || null,
+        orderId: result.orderId ?? null
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
     }
   });
 
