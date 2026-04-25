@@ -1,12 +1,30 @@
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
 let BASE_URL = '';
 const JWT_SECRET = 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEF';
 
 const cookies = new Map();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const STRIPE_WEBHOOK_SECRET = 'whsec_regression_test_secret';
+const PAYPAL_WEBHOOK_SECRET = 'paypal_regression_test_secret';
+
+function signStripePayload(payload, timestamp = Math.floor(Date.now() / 1000)) {
+  const signature = crypto
+    .createHmac('sha256', STRIPE_WEBHOOK_SECRET)
+    .update(`${timestamp}.${payload}`, 'utf8')
+    .digest('hex');
+  return `t=${timestamp},v1=${signature}`;
+}
+
+function signPayPalPayload(payload, headers) {
+  return crypto
+    .createHmac('sha256', PAYPAL_WEBHOOK_SECRET)
+    .update(`${headers.transmissionId}|${headers.transmissionTime}|${headers.webhookId}|${payload}`, 'utf8')
+    .digest('hex');
+}
 
 function updateCookies(res) {
   const setCookieHeader = res.headers.get('set-cookie');
@@ -63,6 +81,10 @@ function spawnServerWithEnv(extraEnv) {
         JWT_SECRET,
         PORT: String(requestedPort),
         DATABASE_URL: resolveTestDbPath(),
+        MOCK_PAYMENTS: '1',
+        STRIPE_WEBHOOK_SECRET,
+        PAYPAL_WEBHOOK_SECRET,
+        PAYPAL_WEBHOOK_ID: 'test-webhook-id',
         ...extraEnv
       },
       stdio: ['ignore', 'pipe', 'pipe']
@@ -245,6 +267,203 @@ async function runTests() {
     });
     if (!r.res.ok || !r.body?.id) throw new Error(`Expected thread create success; got ${r.res.status} ${JSON.stringify(r.body)}`);
     console.log('✅ Member can create in member forum');
+
+    console.log('⏳ Preparing order for webhook regression tests...');
+    r = await request('/api/store/products');
+    if (!r.res.ok || !Array.isArray(r.body) || r.body.length === 0) {
+      throw new Error(`Expected seeded store products; got ${r.res.status} ${JSON.stringify(r.body)}`);
+    }
+    const product = r.body[0];
+
+    r = await request('/api/cart', {
+      method: 'POST',
+      body: JSON.stringify({ productId: product.id, quantity: 1 }),
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }
+    });
+    if (!r.res.ok) throw new Error(`Cart insert failed: ${JSON.stringify(r.body)}`);
+
+    r = await request('/api/orders', {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': csrfToken }
+    });
+    if (!r.res.ok || !r.body?.id) throw new Error(`Order create failed: ${r.res.status} ${JSON.stringify(r.body)}`);
+    const orderId = r.body.id;
+    console.log(`✅ Created order ${orderId} for webhook tests`);
+
+    console.log('⏳ Marking Stripe order as payment_pending via confirm endpoint...');
+    const paymentIntentId = `pi_regression_${Date.now()}`;
+    r = await request(`/api/payments/stripe/confirm/${orderId}`, {
+      method: 'POST',
+      body: JSON.stringify({ paymentIntentId }),
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }
+    });
+    if (!r.res.ok || r.body?.status !== 'payment_pending') {
+      throw new Error(`Expected payment_pending from stripe confirm; got ${r.res.status} ${JSON.stringify(r.body)}`);
+    }
+    console.log('✅ Stripe confirm now keeps order pending until webhook');
+
+    console.log('⏳ Verifying Stripe webhook rejects invalid signature...');
+    const stripeEvent = {
+      id: `evt_stripe_${Date.now()}`,
+      type: 'payment_intent.succeeded',
+      created: Math.floor(Date.now() / 1000),
+      data: { object: { id: paymentIntentId, metadata: { orderId: String(orderId) } } }
+    };
+    const stripePayload = JSON.stringify(stripeEvent);
+    r = await request('/api/payments/stripe/webhook', {
+      method: 'POST',
+      body: stripePayload,
+      headers: { 'Content-Type': 'application/json', 'stripe-signature': 't=1,v1=bad' }
+    });
+    if (r.res.status !== 400) throw new Error(`Expected 400 for invalid Stripe signature; got ${r.res.status}`);
+    console.log('✅ Stripe webhook invalid signature rejected');
+
+    console.log('⏳ Verifying Stripe webhook valid signature + duplicate + out-of-order handling...');
+    const stripeSignature = signStripePayload(stripePayload);
+    r = await request('/api/payments/stripe/webhook', {
+      method: 'POST',
+      body: stripePayload,
+      headers: { 'Content-Type': 'application/json', 'stripe-signature': stripeSignature }
+    });
+    if (!r.res.ok || !r.body?.accepted) throw new Error(`Expected accepted Stripe webhook; got ${r.res.status} ${JSON.stringify(r.body)}`);
+
+    r = await request('/api/orders/' + orderId);
+    if (!r.res.ok || r.body?.status !== 'completed') throw new Error(`Expected order completed by Stripe webhook; got ${r.res.status} ${JSON.stringify(r.body)}`);
+
+    r = await request('/api/payments/stripe/webhook', {
+      method: 'POST',
+      body: stripePayload,
+      headers: { 'Content-Type': 'application/json', 'stripe-signature': stripeSignature }
+    });
+    if (!r.res.ok || r.body?.reason !== 'duplicate') {
+      throw new Error(`Expected duplicate Stripe event to be ignored; got ${r.res.status} ${JSON.stringify(r.body)}`);
+    }
+
+    const olderStripeEvent = {
+      ...stripeEvent,
+      id: `evt_stripe_old_${Date.now()}`,
+      created: stripeEvent.created - 500
+    };
+    const olderStripePayload = JSON.stringify(olderStripeEvent);
+    r = await request('/api/payments/stripe/webhook', {
+      method: 'POST',
+      body: olderStripePayload,
+      headers: { 'Content-Type': 'application/json', 'stripe-signature': signStripePayload(olderStripePayload) }
+    });
+    if (!r.res.ok || r.body?.reason !== 'out_of_order') {
+      throw new Error(`Expected out_of_order Stripe event to be ignored; got ${r.res.status} ${JSON.stringify(r.body)}`);
+    }
+    console.log('✅ Stripe webhook duplicate and out-of-order protections verified');
+
+    console.log('⏳ Preparing second order for PayPal webhook regression tests...');
+    r = await request('/api/cart', {
+      method: 'POST',
+      body: JSON.stringify({ productId: product.id, quantity: 1 }),
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }
+    });
+    if (!r.res.ok) throw new Error(`Cart insert failed for PayPal order: ${JSON.stringify(r.body)}`);
+    r = await request('/api/orders', {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': csrfToken }
+    });
+    if (!r.res.ok || !r.body?.id) throw new Error(`PayPal order create failed: ${r.res.status} ${JSON.stringify(r.body)}`);
+    const paypalLocalOrderId = r.body.id;
+    const paypalProviderOrderId = `PAYPAL-${Date.now()}`;
+
+    r = await request(`/api/payments/paypal/capture/${paypalLocalOrderId}`, {
+      method: 'POST',
+      body: JSON.stringify({ paypalOrderId: paypalProviderOrderId }),
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }
+    });
+    if (!r.res.ok || r.body?.status !== 'payment_pending') {
+      throw new Error(`Expected payment_pending from paypal capture; got ${r.res.status} ${JSON.stringify(r.body)}`);
+    }
+    console.log('✅ PayPal capture now keeps order pending until webhook');
+
+    const paypalEvent = {
+      id: `evt_paypal_${Date.now()}`,
+      event_type: 'PAYMENT.CAPTURE.COMPLETED',
+      create_time: new Date().toISOString(),
+      resource: {
+        id: `PAYCAP-${Date.now()}`,
+        supplementary_data: { related_ids: { order_id: paypalProviderOrderId } },
+        custom_id: String(paypalLocalOrderId)
+      }
+    };
+    const paypalPayload = JSON.stringify(paypalEvent);
+    const paypalHeaders = {
+      transmissionId: `trans-${Date.now()}`,
+      transmissionTime: new Date().toISOString(),
+      webhookId: 'test-webhook-id'
+    };
+
+    r = await request('/api/payments/paypal/webhook', {
+      method: 'POST',
+      body: paypalPayload,
+      headers: {
+        'Content-Type': 'application/json',
+        'paypal-transmission-id': paypalHeaders.transmissionId,
+        'paypal-transmission-time': paypalHeaders.transmissionTime,
+        'paypal-webhook-id': paypalHeaders.webhookId,
+        'paypal-transmission-sig': 'bad'
+      }
+    });
+    if (r.res.status !== 400) throw new Error(`Expected 400 for invalid PayPal signature; got ${r.res.status}`);
+
+    r = await request('/api/payments/paypal/webhook', {
+      method: 'POST',
+      body: paypalPayload,
+      headers: {
+        'Content-Type': 'application/json',
+        'paypal-transmission-id': paypalHeaders.transmissionId,
+        'paypal-transmission-time': paypalHeaders.transmissionTime,
+        'paypal-webhook-id': paypalHeaders.webhookId,
+        'paypal-transmission-sig': signPayPalPayload(paypalPayload, paypalHeaders)
+      }
+    });
+    if (!r.res.ok || !r.body?.accepted) throw new Error(`Expected accepted PayPal webhook; got ${r.res.status} ${JSON.stringify(r.body)}`);
+
+    r = await request('/api/payments/paypal/webhook', {
+      method: 'POST',
+      body: paypalPayload,
+      headers: {
+        'Content-Type': 'application/json',
+        'paypal-transmission-id': paypalHeaders.transmissionId,
+        'paypal-transmission-time': paypalHeaders.transmissionTime,
+        'paypal-webhook-id': paypalHeaders.webhookId,
+        'paypal-transmission-sig': signPayPalPayload(paypalPayload, paypalHeaders)
+      }
+    });
+    if (!r.res.ok || r.body?.reason !== 'duplicate') {
+      throw new Error(`Expected duplicate PayPal event to be ignored; got ${r.res.status} ${JSON.stringify(r.body)}`);
+    }
+
+    const olderPayPalEvent = {
+      ...paypalEvent,
+      id: `evt_paypal_old_${Date.now()}`,
+      create_time: new Date(Date.now() - 10 * 60 * 1000).toISOString()
+    };
+    const olderPayPalPayload = JSON.stringify(olderPayPalEvent);
+    const olderHeaders = {
+      transmissionId: `trans-old-${Date.now()}`,
+      transmissionTime: new Date().toISOString(),
+      webhookId: 'test-webhook-id'
+    };
+    r = await request('/api/payments/paypal/webhook', {
+      method: 'POST',
+      body: olderPayPalPayload,
+      headers: {
+        'Content-Type': 'application/json',
+        'paypal-transmission-id': olderHeaders.transmissionId,
+        'paypal-transmission-time': olderHeaders.transmissionTime,
+        'paypal-webhook-id': olderHeaders.webhookId,
+        'paypal-transmission-sig': signPayPalPayload(olderPayPalPayload, olderHeaders)
+      }
+    });
+    if (!r.res.ok || r.body?.reason !== 'out_of_order') {
+      throw new Error(`Expected out_of_order PayPal event to be ignored; got ${r.res.status} ${JSON.stringify(r.body)}`);
+    }
+    console.log('✅ PayPal webhook invalid/duplicate/out-of-order protections verified');
 
   } finally {
     server.kill('SIGTERM');

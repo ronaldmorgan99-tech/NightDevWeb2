@@ -9,15 +9,24 @@ import db, { initDb } from '../src/lib/db.js';
 import { seedDb } from '../src/lib/seed.js';
 import {
   capturePayPalOrder,
-  confirmStripePayment,
   createPayPalOrder,
   createStripePaymentIntent,
-  paymentProviders
+  markOrderPaymentPending,
+  paymentProviders,
+  processPayPalWebhookEvent,
+  processStripeWebhookEvent,
+  verifyPayPalWebhookSignature,
+  verifyStripeWebhookSignature
 } from '../src/lib/payments.js';
 import { isPublicSetting } from '../src/lib/settingsAllowlist.js';
 
 const app = express();
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, _res, buffer) => {
+    (req as any).rawBody = buffer.toString('utf8');
+  }
+}));
 app.use(cookieParser());
 
 // Vercel can invoke this catch-all function with either:
@@ -768,7 +777,7 @@ const stripeConfirmHandler = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    if (order.status !== 'pending') {
+    if (!['pending', 'payment_pending'].includes(String(order.status || ''))) {
       return res.status(400).json({ error: 'Order is not in pending status' });
     }
 
@@ -777,13 +786,18 @@ const stripeConfirmHandler = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Payment intent ID is required' });
     }
 
-    const success = await confirmStripePayment(String(paymentIntentId));
-    if (!success) {
-      return res.status(400).json({ error: 'Payment confirmation failed' });
+    const pending = await markOrderPaymentPending({
+      db,
+      orderId,
+      userId: user.id,
+      provider: 'stripe',
+      providerPaymentId: String(paymentIntentId)
+    });
+    if (!pending.updated) {
+      return res.status(400).json({ error: 'Order is not in a payable status' });
     }
 
-    await db.execute('UPDATE orders SET status = ?, payment_method = ? WHERE id = ?', ['completed', 'stripe', orderId]);
-    return res.json({ success: true, status: 'completed' });
+    return res.json({ success: true, status: 'payment_pending', message: 'Awaiting Stripe webhook confirmation' });
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to confirm Stripe payment' });
   }
@@ -824,7 +838,7 @@ const paypalCaptureHandler = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    if (order.status !== 'pending') {
+    if (!['pending', 'payment_pending'].includes(String(order.status || ''))) {
       return res.status(400).json({ error: 'Order is not in pending status' });
     }
 
@@ -838,13 +852,79 @@ const paypalCaptureHandler = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Payment capture failed' });
     }
 
-    await db.execute('UPDATE orders SET status = ?, payment_method = ? WHERE id = ?', ['completed', 'paypal', orderId]);
-    return res.json({ success: true, status: 'completed' });
+    const pending = await markOrderPaymentPending({
+      db,
+      orderId,
+      userId: user.id,
+      provider: 'paypal',
+      providerPaymentId: String(paypalOrderId)
+    });
+    if (!pending.updated) {
+      return res.status(400).json({ error: 'Order is not in a payable status' });
+    }
+
+    return res.json({ success: true, status: 'payment_pending', message: 'Awaiting PayPal webhook confirmation' });
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to capture PayPal order' });
   }
 };
 app.post(['/api/payments/paypal/capture/:orderId', '/payments/paypal/capture/:orderId'], paypalCaptureHandler);
+
+const stripeWebhookHandler = async (req: Request, res: Response) => {
+  try {
+    const rawPayload = (req as any).rawBody || JSON.stringify(req.body || {});
+    const signature = req.header('stripe-signature') || undefined;
+    if (!verifyStripeWebhookSignature(rawPayload, signature)) {
+      return res.status(400).json({ error: 'Invalid Stripe webhook signature' });
+    }
+
+    const result = await processStripeWebhookEvent(db, req.body || {});
+    if (!result.accepted && result.reason === 'order_not_found') {
+      return res.status(404).json({ error: 'Order not found for webhook event' });
+    }
+
+    return res.json({
+      received: true,
+      accepted: result.accepted,
+      reason: result.reason || null,
+      orderId: result.orderId ?? null
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to process Stripe webhook' });
+  }
+};
+app.post(['/api/payments/stripe/webhook', '/payments/stripe/webhook'], stripeWebhookHandler);
+
+const paypalWebhookHandler = async (req: Request, res: Response) => {
+  try {
+    const rawPayload = (req as any).rawBody || JSON.stringify(req.body || {});
+    const valid = verifyPayPalWebhookSignature({
+      payload: rawPayload,
+      signature: req.header('paypal-transmission-sig') || undefined,
+      transmissionId: req.header('paypal-transmission-id') || undefined,
+      transmissionTime: req.header('paypal-transmission-time') || undefined,
+      webhookId: req.header('paypal-webhook-id') || process.env.PAYPAL_WEBHOOK_ID || undefined
+    });
+    if (!valid) {
+      return res.status(400).json({ error: 'Invalid PayPal webhook signature' });
+    }
+
+    const result = await processPayPalWebhookEvent(db, req.body || {});
+    if (!result.accepted && result.reason === 'order_not_found') {
+      return res.status(404).json({ error: 'Order not found for webhook event' });
+    }
+
+    return res.json({
+      received: true,
+      accepted: result.accepted,
+      reason: result.reason || null,
+      orderId: result.orderId ?? null
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to process PayPal webhook' });
+  }
+};
+app.post(['/api/payments/paypal/webhook', '/payments/paypal/webhook'], paypalWebhookHandler);
 
 const forumCategoriesHandler = async (_req: Request, res: Response) => {
   try {
