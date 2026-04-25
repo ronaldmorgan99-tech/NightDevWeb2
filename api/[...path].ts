@@ -758,13 +758,32 @@ const stripeConfirmHandler = async (req: Request, res: Response) => {
     const user = await requireAuthUser(req, res);
     if (!user) return;
 
+    const orderId = Number.parseInt(String(req.params.orderId), 10);
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return res.status(400).json({ error: 'Valid order ID is required' });
+    }
+
+    const order = await db.queryOne<any>('SELECT * FROM orders WHERE id = ? AND user_id = ?', [orderId, user.id]);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (order.status !== 'pending') {
+      return res.status(400).json({ error: 'Order is not in pending status' });
+    }
+
     const { paymentIntentId } = req.body || {};
     if (!paymentIntentId) {
       return res.status(400).json({ error: 'Payment intent ID is required' });
     }
 
     const success = await confirmStripePayment(String(paymentIntentId));
-    return res.json({ success, status: success ? 'succeeded' : 'failed' });
+    if (!success) {
+      return res.status(400).json({ error: 'Payment confirmation failed' });
+    }
+
+    await db.execute('UPDATE orders SET status = ?, payment_method = ? WHERE id = ?', ['completed', 'stripe', orderId]);
+    return res.json({ success: true, status: 'completed' });
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to confirm Stripe payment' });
   }
@@ -795,13 +814,32 @@ const paypalCaptureHandler = async (req: Request, res: Response) => {
     const user = await requireAuthUser(req, res);
     if (!user) return;
 
+    const orderId = Number.parseInt(String(req.params.orderId), 10);
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return res.status(400).json({ error: 'Valid order ID is required' });
+    }
+
+    const order = await db.queryOne<any>('SELECT * FROM orders WHERE id = ? AND user_id = ?', [orderId, user.id]);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (order.status !== 'pending') {
+      return res.status(400).json({ error: 'Order is not in pending status' });
+    }
+
     const { paypalOrderId } = req.body || {};
     if (!paypalOrderId) {
       return res.status(400).json({ error: 'PayPal order ID is required' });
     }
 
     const success = await capturePayPalOrder(String(paypalOrderId));
-    return res.json({ success, status: success ? 'completed' : 'failed' });
+    if (!success) {
+      return res.status(400).json({ error: 'Payment capture failed' });
+    }
+
+    await db.execute('UPDATE orders SET status = ?, payment_method = ? WHERE id = ?', ['completed', 'paypal', orderId]);
+    return res.json({ success: true, status: 'completed' });
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to capture PayPal order' });
   }
