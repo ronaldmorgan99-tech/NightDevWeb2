@@ -23,6 +23,14 @@ globalThis.fetch = async (url, options = {}) => {
   }
 
   if (url.includes('/api/auth/login')) {
+    const body = options.body ? JSON.parse(options.body) : {};
+    if (!body.password) {
+      return {
+        ok: false,
+        status: 400,
+        json: async () => ({ error: 'Invalid request payload' })
+      };
+    }
     const encodedToken = btoa('testuser:moderator');
     return {
       ok: true,
@@ -82,6 +90,13 @@ globalThis.fetch = async (url, options = {}) => {
   if (url.includes('/api/threads')) {
     if (options.method === 'POST') {
       const body = JSON.parse(options.body);
+      if (!body.title || body.title.length < 3 || !body.content?.trim()) {
+        return {
+          ok: false,
+          status: 400,
+          json: async () => ({ error: 'Invalid request payload' })
+        };
+      }
       // Mock permission check - moderator forum should fail for member
       if (body.forum_id === 2) {
         return {
@@ -96,6 +111,22 @@ globalThis.fetch = async (url, options = {}) => {
         json: async () => ({ thread: { id: 1, title: body.title } })
       };
     }
+  }
+
+  if (url.includes('/api/posts') && options.method === 'POST') {
+    const body = JSON.parse(options.body);
+    if (!body.content?.trim()) {
+      return {
+        ok: false,
+        status: 400,
+        json: async () => ({ error: 'Invalid request payload' })
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true })
+    };
   }
 
   // Mock store endpoints
@@ -260,6 +291,24 @@ test('NightDevWeb2 Regression Tests', async (t) => {
     assert.strictEqual(newLoginRes.status, 200);
   });
 
+  await t.test('Invalid auth/content payload rejection', async () => {
+    const invalidLoginRes = await fetch('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username: 'only_username' })
+    });
+    assert.strictEqual(invalidLoginRes.status, 400);
+
+    const invalidThreadRes = await fetch('/api/threads', {
+      method: 'POST',
+      body: JSON.stringify({ forum_id: 1, title: 'x', content: '' })
+    });
+    assert.strictEqual(invalidThreadRes.status, 400);
+
+    const invalidPostRes = await fetch('/api/posts', {
+      method: 'POST',
+      body: JSON.stringify({ thread_id: 1, content: '' })
+    });
+    assert.strictEqual(invalidPostRes.status, 400);
 
   await t.test('Studio route feature-flag behavior', async () => {
     assert.strictEqual(getStudioRouteMode('true'), 'studio-enabled');

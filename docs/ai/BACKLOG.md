@@ -89,10 +89,12 @@ Last reviewed: 2026-04-25
 
 ### Security Hardening
 - **Priority**: High
-- Audit Socket.IO CORS settings before production (currently origin: '*')
-- Review cookie auth + CORS interaction for cross-domain scenarios
-- Add input sanitization validation across all endpoints
-- Implement rate limiting on auth endpoints
+- **Status**: ⚠️ In progress (updated 2026-04-25, owner: Platform Engineering)
+- Audit Socket.IO CORS settings before production (currently origin: '*') — ✅ Completed (owner: Platform Engineering, 2026-04-25)
+- Review cookie auth + CORS interaction for cross-domain scenarios — ✅ Completed (owner: Platform Engineering, 2026-04-25)
+- Add input sanitization validation across all endpoints — ✅ Completed for auth/content/profile/support write paths (owner: Platform Engineering, 2026-04-25)
+- Implement rate limiting on auth endpoints — ✅ Completed (owner: Platform Engineering, 2026-04-25)
+- **Rollout caveat**: Sanitization currently strips HTML/control characters on server-side write paths for profile/forum/post/message/ticket content. Non-content admin catalog payloads still rely on schema validation only and should be reviewed in a follow-up hardening pass.
 
 ### CI/CD Pipeline
 - **Owner**: Platform Engineering
