@@ -67,8 +67,7 @@ Together, they keep local UI state and remote API data organized, performant, an
 3. Set required values in `.env.local`:
    - `JWT_SECRET` (required): secret used by auth token code in `server.ts`.
    - `NODE_ENV` (required): `development` locally, `production` in deployed environments.
-   - `VITE_ENABLE_STUDIO` (recommended): set to `true` to enable `/studio`, or `false` to show the coming soon page.
-   - `VITE_ENABLE_STUDIO` is currently ignored in this release because `/studio` is not shipping in the April 2026 cycle.
+   - `VITE_ENABLE_STUDIO` (recommended): set to `true` to render the Veo Studio experience at `/studio`; set to `false` (default) to keep `/studio` on the Coming Soon experience.
 4. Optional values:
    - `APP_URL`: used in hosted environments for callback/self links.
    - `VITE_API_BASE_URL`: set this when frontend and API are hosted on different domains (example: `https://api.yourdomain.com`). If omitted, frontend calls relative `/api/*` paths on the current origin.
@@ -116,7 +115,7 @@ Use this runbook before every production deployment (Vercel, containers, or VM-b
 | `AUTH_RATE_LIMIT_CREDENTIAL_MAX` | No | Login/register max requests per window | Defaults to `8`. |
 | `AUTH_RATE_LIMIT_SESSION_WINDOW_MS` | No | Session endpoint limiter window | Defaults to `300000` (5 minutes). |
 | `AUTH_RATE_LIMIT_SESSION_MAX` | No | Session endpoint max requests per window | Defaults to `30`. |
-| `GEMINI_API_KEY` | Feature-gated | Gemini-backed media features | Keep unset while Studio remains disabled for this cycle. |
+| `GEMINI_API_KEY` | Feature-gated | Gemini-backed media features | Required when `VITE_ENABLE_STUDIO=true`; keep unset when Studio stays in Coming Soon mode. |
 
 ### 3) Database bootstrap and seed expectations
 
@@ -203,12 +202,12 @@ Minimum expected results:
 - For Node ESM compatibility in serverless runtime, use emitted `.js` import extensions in runtime imports.
 - If static assets load as `text/html`, adjust route ordering so filesystem assets resolve before SPA fallback rewrites.
 
-## Studio Feature Support Status (April 2026)
+## Studio Feature Support Status (April/May 2026)
 
-- **Decision**: `/studio` is **not shipping** this cycle.
-- **User experience**: Visiting `/studio` now redirects to `/` to avoid dead-end “coming soon” flows.
+- **Decision**: `/studio` is **feature-flagged** for April/May 2026 using `VITE_ENABLE_STUDIO`.
+- **User experience**: Visiting `/studio` always resolves to a page: `VITE_ENABLE_STUDIO=true` renders Veo Studio; `VITE_ENABLE_STUDIO=false` renders the Coming Soon page (no redirect).
 - **Operational ownership**: Platform Engineering owns route-gating and deploy behavior; Admin Operations owns support communications and release notes.
-- **Re-open criteria**: backend media routes implemented and validated (`/api/media/animate`, `/api/media/poll`), provider outage fallback UX, and production runbook updates.
+- **Enablement criteria**: keep `VITE_ENABLE_STUDIO=false` by default until media SLOs and on-call readiness criteria are met for the target environment.
 
 ## Contributing
 
