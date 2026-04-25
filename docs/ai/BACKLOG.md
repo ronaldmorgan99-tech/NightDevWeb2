@@ -28,9 +28,9 @@ Last reviewed: 2026-04-25
 - **Details**: Individual Suspense boundaries per route, smart HMR detection
 
 ### Studio/Veo Shipping Decision
-- **Status**: ✅ Decided (Not shipping in April 2026 cycle)
-- **Details**: `/studio` now redirects to `/` so users do not hit dead-end routes. Discoverability remains disabled.
-- **Definition of Done**: Decision documented in README + admin operations docs, with ownership and re-open criteria.
+- **Status**: ✅ Decided (Feature-flagged in April/May 2026)
+- **Details**: `/studio` is canonicalized as a feature-flagged route: `VITE_ENABLE_STUDIO=true` serves Veo Studio, while `VITE_ENABLE_STUDIO=false` serves Coming Soon at `/studio` (no redirect).
+- **Definition of Done**: App routing, regression assertion, README, admin operations docs, and memory log all match this behavior.
 
 ### Production Media Provider Setup
 - **Status**: ✅ Release-ready (validation + rollback drill documented)

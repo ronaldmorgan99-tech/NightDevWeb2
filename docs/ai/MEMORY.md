@@ -24,7 +24,7 @@ Last reviewed: 2026-04-25
 - `/profile/:id` - ProfilePage (user profiles)
 - `/store` - StorePage (premium features)
 - `/admin/*` - AdminLayout with various admin pages
-- `/studio` - Controlled route: enabled only when `VITE_ENABLE_STUDIO=true`, otherwise remains non-discoverable
+- `/studio` - Feature-flagged route: `VITE_ENABLE_STUDIO=true` renders Veo Studio, `VITE_ENABLE_STUDIO=false` renders Coming Soon (no redirect)
 
 ### Server Structure (server.ts)
 - Express app with SQLite database
@@ -56,7 +56,7 @@ Last reviewed: 2026-04-25
 - `/api/media/animate` and `/api/media/poll` are implemented in the serverless API surface.
 - Guardrails in place: per-user animation quota, minimum poll interval, poll budget per operation, operation TTL pruning.
 - Monitoring in place via `/api/admin/observability/metrics` with latency + provider outage/quota counters.
-- Keep Studio discoverability gated (`VITE_ENABLE_STUDIO`) until go/no-go owners sign off.
+- Keep Studio discoverability gated (`VITE_ENABLE_STUDIO`) until go/no-go owners sign off; disabled mode must keep `/studio` on Coming Soon (not redirect).
 
 ### Real-time Features
 - Socket.IO with cookie-based auth parsing
@@ -79,6 +79,7 @@ Last reviewed: 2026-04-25
 
 ## Decisions Log
 
+**2026-04-25 (Latest)**: Canonicalized Studio route behavior for April/May 2026: `/studio` remains feature-flagged with `VITE_ENABLE_STUDIO`; enabled mode renders Veo Studio and disabled mode renders Coming Soon in-place (no redirect). Synced App routing, regression assertions, README, and admin support docs to this invariant.
 **2026-04-10 (Latest)**: Documented two release-process decisions to keep docs aligned with runtime behavior: (1) CI enforces an explicit integration coverage threshold from existing V8 output in `coverage/integration` in `.github/workflows/ci.yml`; (2) `README.md` now serves as the consolidated production deployment runbook/checklist for environment requirements, verification, and rollback guidance.
 **2026-04-09 (Latest)**: Reconciled AI docs with CI reality. `docs/ai/BACKLOG.md` CI/CD status now matches `.github/workflows/ci.yml` (dependency scan, CodeQL SAST, coverage artifacts, retry + failure artifact behavior marked complete; only true gaps remain).
 **2026-04-07 (Latest)**: Stabilized Vercel deployment behavior by:
