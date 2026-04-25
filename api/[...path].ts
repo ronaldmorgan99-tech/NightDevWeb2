@@ -1,6 +1,7 @@
 import express from 'express';
 import type { CookieOptions, Request, Response } from 'express';
 import cookieParser from 'cookie-parser';
+import csurf from 'csurf';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { GoogleGenAI, type GenerateVideosOperation } from '@google/genai';
@@ -29,6 +30,27 @@ app.use(express.json({
   }
 }));
 app.use(cookieParser());
+
+const csrfProtection = csurf({ cookie: true });
+app.use((req, res, next) => {
+  const path = req.path || '';
+  if (
+    path === '/api/payments/stripe/webhook' ||
+    path === '/payments/stripe/webhook' ||
+    path === '/api/payments/paypal/webhook' ||
+    path === '/payments/paypal/webhook'
+  ) {
+    return next();
+  }
+  return csrfProtection(req, res, next);
+});
+
+app.use((err: any, _req: Request, res: Response, next: express.NextFunction) => {
+  if (err?.code === 'EBADCSRFTOKEN') {
+    return res.status(403).json({ error: 'Invalid CSRF token' });
+  }
+  return next(err);
+});
 
 // Vercel can invoke this catch-all function with either:
 // - /api/<path> (direct hit), or
