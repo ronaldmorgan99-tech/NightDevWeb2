@@ -6,6 +6,12 @@
 
 This contains everything you need to run your app locally.
 
+## Build and Launch Readiness
+
+✅ **Status: This app is ready for build and launch.**
+
+The project includes production build tooling (`npm run build`), deployment runbook guidance, and post-deploy verification steps to support a launch workflow.
+
 View your app in AI Studio: https://ai.studio/apps/760e6625-d344-4b21-a27e-ffbef0bdf8e6
 
 ## Tech Stack Overview
