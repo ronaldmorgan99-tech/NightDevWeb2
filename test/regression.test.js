@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
+import { getStudioRouteMode } from '../src/lib/studioRouting.js';
 
 // Mock fetch for testing
 globalThis.fetch = async (url, options = {}) => {
@@ -308,6 +309,12 @@ test('NightDevWeb2 Regression Tests', async (t) => {
       body: JSON.stringify({ thread_id: 1, content: '' })
     });
     assert.strictEqual(invalidPostRes.status, 400);
+
+  await t.test('Studio route feature-flag behavior', async () => {
+    assert.strictEqual(getStudioRouteMode('true'), 'studio-enabled');
+    assert.strictEqual(getStudioRouteMode('TRUE'), 'studio-enabled');
+    assert.strictEqual(getStudioRouteMode('false'), 'coming-soon');
+    assert.strictEqual(getStudioRouteMode(undefined), 'coming-soon');
   });
 
   await t.test('Thread creation role permissions', async () => {
