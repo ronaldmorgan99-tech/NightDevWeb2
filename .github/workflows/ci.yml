@@ -216,7 +216,7 @@ jobs:
           retention-days: 14
 
       - name: Upload integration logs on failure
-        if: steps.integration.outputs.exit_code != '0' && steps.integration_retry.outputs.exit_code != '0'
+        if: always() && steps.integration.outputs.exit_code != '0' && steps.integration_retry.outputs.exit_code != '0'
         uses: actions/upload-artifact@v4
         with:
           name: integration-test-logs
@@ -246,7 +246,7 @@ jobs:
           retention-days: 14
 
       - name: Fail workflow when integration tests fail
-        if: steps.integration.outputs.exit_code != '0' && steps.integration_retry.outputs.exit_code != '0'
+        if: always() && steps.integration.outputs.exit_code != '0' && steps.integration_retry.outputs.exit_code != '0'
         run: |
           echo "Integration tests failed after retry. See uploaded artifact: integration-test-logs"
           exit 1
