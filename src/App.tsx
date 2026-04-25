@@ -11,6 +11,7 @@ import { MessagingProvider } from './context/MessagingContext';
 import MainLayout from './layouts/MainLayout';
 import AdminLayout from './layouts/AdminLayout';
 import { ApiError } from './lib/api';
+import { getStudioRouteMode } from './lib/studioRouting';
 
 // Loading fallback component for lazy-loaded routes
 const LoadingFallback = () => (
@@ -65,7 +66,7 @@ const queryClient = new QueryClient({
     }
   }
 });
-const isStudioDiscoverable = String(import.meta.env.VITE_ENABLE_STUDIO || '').toLowerCase() === 'true';
+const studioRouteMode = getStudioRouteMode(import.meta.env.VITE_ENABLE_STUDIO);
 
 const CustomCursor = () => {
   useEffect(() => {
@@ -145,7 +146,7 @@ export default function App() {
                   path="studio"
                   element={
                     <Suspense fallback={<LoadingFallback />}>
-                      {isStudioDiscoverable ? <VeoStudioPage /> : <StudioUnavailablePage />}
+                      {studioRouteMode === 'studio-enabled' ? <VeoStudioPage /> : <StudioUnavailablePage />}
                     </Suspense>
                   }
                 />

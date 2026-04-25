@@ -28,9 +28,9 @@ Last reviewed: 2026-04-25
 - **Details**: Individual Suspense boundaries per route, smart HMR detection
 
 ### Studio/Veo Shipping Decision
-- **Status**: ✅ Decided (Not shipping in April 2026 cycle)
-- **Details**: `/studio` now redirects to `/` so users do not hit dead-end routes. Discoverability remains disabled.
-- **Definition of Done**: Decision documented in README + admin operations docs, with ownership and re-open criteria.
+- **Status**: ✅ Decided (Feature-flagged in April/May 2026)
+- **Details**: `/studio` is canonicalized as a feature-flagged route: `VITE_ENABLE_STUDIO=true` serves Veo Studio, while `VITE_ENABLE_STUDIO=false` serves Coming Soon at `/studio` (no redirect).
+- **Definition of Done**: App routing, regression assertion, README, admin operations docs, and memory log all match this behavior.
 
 ### Production Media Provider Setup
 - **Status**: ✅ Release-ready (validation + rollback drill documented)
@@ -48,19 +48,12 @@ Last reviewed: 2026-04-25
 - **Definition of Done**: All dev environments work without websocket/file loading errors
 
 ### Vercel Split-Deployment API Routing
-#### Completed
-- **Status**: ✅ Completed
-- **Details**: Added Vercel filesystem-first routing for static assets and stabilized serverless API bootstrap with idempotent default auth-user creation.
-
-#### Remaining
-- **Status**: ⚠️ In progress
+- **Status**: ✅ Completed (reviewed 2026-04-25)
 - **Owner**: Platform Engineering
-- **Target review date**: 2026-04-19
-- **Details**: Frontend supports `VITE_API_BASE_URL` for split deployment. For same-origin Vercel API routes, keep `VITE_API_BASE_URL` unset to avoid preview-to-production CORS failures. Serverless runtime also requires explicit emitted `.js` import extensions in Node ESM paths.
-- **Acceptance criteria**:
-  - Vercel project has the correct API origin configured for each environment.
-  - Production `/api/settings` and `/api/auth/login` return 200/401 (not 404/500) after deploy.
-  - Deployment runbook captures split-deployment `VITE_API_BASE_URL` guidance and Node ESM `.js` extension requirement.
+- **Details**:
+  - Added Vercel filesystem-first routing for static assets and stabilized serverless API bootstrap with idempotent default auth-user creation.
+  - Added explicit `VITE_API_BASE_URL` environment validation/fallback logic (same-origin when unset, HTTPS enforcement outside local, preview-safe guidance).
+  - Expanded deployment runbook with a local/preview/production env matrix and checklist steps for post-deploy API health checks (`/api/settings`, `/api/auth/login`) and serverless Node ESM `.js` import-extension verification.
 
 ### Integration Testing
 - **Status**: ✅ Implemented
@@ -96,10 +89,12 @@ Last reviewed: 2026-04-25
 
 ### Security Hardening
 - **Priority**: High
-- Audit Socket.IO CORS settings before production (currently origin: '*')
-- Review cookie auth + CORS interaction for cross-domain scenarios
-- Add input sanitization validation across all endpoints
-- Implement rate limiting on auth endpoints
+- **Status**: ⚠️ In progress (updated 2026-04-25, owner: Platform Engineering)
+- Audit Socket.IO CORS settings before production (currently origin: '*') — ✅ Completed (owner: Platform Engineering, 2026-04-25)
+- Review cookie auth + CORS interaction for cross-domain scenarios — ✅ Completed (owner: Platform Engineering, 2026-04-25)
+- Add input sanitization validation across all endpoints — ✅ Completed for auth/content/profile/support write paths (owner: Platform Engineering, 2026-04-25)
+- Implement rate limiting on auth endpoints — ✅ Completed (owner: Platform Engineering, 2026-04-25)
+- **Rollout caveat**: Sanitization currently strips HTML/control characters on server-side write paths for profile/forum/post/message/ticket content. Non-content admin catalog payloads still rely on schema validation only and should be reviewed in a follow-up hardening pass.
 
 ### CI/CD Pipeline
 - **Owner**: Platform Engineering

@@ -67,8 +67,7 @@ Together, they keep local UI state and remote API data organized, performant, an
 3. Set required values in `.env.local`:
    - `JWT_SECRET` (required): secret used by auth token code in `server.ts`.
    - `NODE_ENV` (required): `development` locally, `production` in deployed environments.
-   - `VITE_ENABLE_STUDIO` (recommended): set to `true` to enable `/studio`, or `false` to show the coming soon page.
-   - `VITE_ENABLE_STUDIO` is currently ignored in this release because `/studio` is not shipping in the April 2026 cycle.
+   - `VITE_ENABLE_STUDIO` (recommended): set to `true` to render the Veo Studio experience at `/studio`; set to `false` (default) to keep `/studio` on the Coming Soon experience.
 4. Optional values:
    - `APP_URL`: used in hosted environments for callback/self links.
    - `VITE_API_BASE_URL`: set this when frontend and API are hosted on different domains (example: `https://api.yourdomain.com`). If omitted, frontend calls relative `/api/*` paths on the current origin.
@@ -83,6 +82,16 @@ Together, they keep local UI state and remote API data organized, performant, an
   Set `CLIENT_ORIGIN` to the frontend origin (or a comma-separated list, for example `https://app.example.com,https://admin.example.com`).  
   Set `VITE_API_BASE_URL` to the API origin (for example `https://api.example.com`). In production this enables credentialed CORS responses and sets auth cookies as `SameSite=None; Secure`.
   Socket.IO CORS uses the same `CLIENT_ORIGIN` allowlist (comma-separated entries are supported).
+
+### Security hardening status (2026-04-25)
+
+- **Owner**: Platform Engineering.
+- **Implemented**:
+  - Zod-backed request validation middleware is enforced on auth/content/support write endpoints.
+  - Auth endpoint rate limiting is active for login/register and session mutation endpoints.
+  - User-generated text writes are sanitized server-side (profile bio, thread title, post body, support ticket subject/message, and direct message content).
+- **Rollout caveat**:
+  - Sanitization is currently scoped to user-generated content fields. Admin catalog/config mutation endpoints rely on schema validation but do not sanitize rich text fields yet.
 
 ## Production Deployment Runbook
 
@@ -116,7 +125,7 @@ Use this runbook before every production deployment (Vercel, containers, or VM-b
 | `AUTH_RATE_LIMIT_CREDENTIAL_MAX` | No | Login/register max requests per window | Defaults to `8`. |
 | `AUTH_RATE_LIMIT_SESSION_WINDOW_MS` | No | Session endpoint limiter window | Defaults to `300000` (5 minutes). |
 | `AUTH_RATE_LIMIT_SESSION_MAX` | No | Session endpoint max requests per window | Defaults to `30`. |
-| `GEMINI_API_KEY` | Feature-gated | Gemini-backed media features | Keep unset while Studio remains disabled for this cycle. |
+| `GEMINI_API_KEY` | Feature-gated | Gemini-backed media features | Required when `VITE_ENABLE_STUDIO=true`; keep unset when Studio stays in Coming Soon mode. |
 
 ### 3) Database bootstrap and seed expectations
 
@@ -203,12 +212,29 @@ Minimum expected results:
 - For Node ESM compatibility in serverless runtime, use emitted `.js` import extensions in runtime imports.
 - If static assets load as `text/html`, adjust route ordering so filesystem assets resolve before SPA fallback rewrites.
 
+## Studio Feature Support Status (April/May 2026)
+### Vercel environment matrix (`VITE_API_BASE_URL` + API health)
+
+| Environment | Frontend origin example | API deployment model | `VITE_API_BASE_URL` value | Validation rule | Required health checks |
+| --- | --- | --- | --- | --- | --- |
+| Local development | `http://localhost:5173` | Same-origin via local server proxy/runtime routes | Leave unset (recommended) | Unset defaults to same-origin `/api/*`; if set locally, allow `http://localhost:<port>` only. | `GET /api/settings` => `200`; `POST /api/auth/login` => `401` (invalid creds) and `200` (valid creds). |
+| Vercel Preview | `https://<project>-git-<branch>-<user>.vercel.app` | Usually same-origin within one Vercel project | Leave unset for same-project previews. | Do **not** point preview frontend at production API origin unless intentionally running split preview testing. | `GET /api/settings` => `200`; `POST /api/auth/login` => `401` (invalid creds) and `200` (valid creds). |
+| Production | `https://app.example.com` (or production Vercel domain) | Same-origin or split-origin | Same-origin: unset. Split-origin: set `https://api.example.com`. | Require HTTPS when set in production; split deploy must align with `CLIENT_ORIGIN`. | `GET /api/settings` => `200`; `POST /api/auth/login` => `401` (invalid creds) and `200` (valid creds). |
+
+### Deployment checklist additions (preview + production)
+
+- [ ] Confirm `VITE_API_BASE_URL` matches the selected environment model (unset for same-origin, explicit HTTPS API origin for split deployments).
+- [ ] Run post-deploy smoke checks in each environment:
+  - Preview: `BASE_URL="https://<preview-origin>" SMOKE_USER="..." SMOKE_PASSWORD="..." npm run smoke:postdeploy`
+  - Production: `BASE_URL="https://<production-origin>" SMOKE_USER="..." SMOKE_PASSWORD="..." npm run smoke:postdeploy`
+- [ ] Run `npm run check:serverless-imports` before deploy to confirm Node ESM `.js` runtime import extensions remain intact in `api/*` entrypoints.
+
 ## Studio Feature Support Status (April 2026)
 
-- **Decision**: `/studio` is **not shipping** this cycle.
-- **User experience**: Visiting `/studio` now redirects to `/` to avoid dead-end “coming soon” flows.
+- **Decision**: `/studio` is **feature-flagged** for April/May 2026 using `VITE_ENABLE_STUDIO`.
+- **User experience**: Visiting `/studio` always resolves to a page: `VITE_ENABLE_STUDIO=true` renders Veo Studio; `VITE_ENABLE_STUDIO=false` renders the Coming Soon page (no redirect).
 - **Operational ownership**: Platform Engineering owns route-gating and deploy behavior; Admin Operations owns support communications and release notes.
-- **Re-open criteria**: backend media routes implemented and validated (`/api/media/animate`, `/api/media/poll`), provider outage fallback UX, and production runbook updates.
+- **Enablement criteria**: keep `VITE_ENABLE_STUDIO=false` by default until media SLOs and on-call readiness criteria are met for the target environment.
 
 ## Contributing
 

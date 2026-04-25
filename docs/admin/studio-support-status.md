@@ -1,9 +1,9 @@
-# Studio Support Status (April 2026)
+# Studio Support Status (April/May 2026)
 
 ## Final decision
 
-- `/studio` is now **implemented behind a controlled discoverability flag** (`VITE_ENABLE_STUDIO`).
-- Default state remains non-discoverable until go-live criteria are met and ownership sign-off is complete.
+- `/studio` is **implemented behind a controlled discoverability flag** (`VITE_ENABLE_STUDIO`).
+- Canonical behavior: `VITE_ENABLE_STUDIO=true` renders Veo Studio at `/studio`; `VITE_ENABLE_STUDIO=false` renders the Coming Soon page at `/studio` (no redirect).
 
 ## Why this was deferred
 
@@ -38,7 +38,7 @@
   - Studio discoverability introduces sustained user-impacting errors/performance regressions.
 - **Disable path**:
   1. Set `VITE_ENABLE_STUDIO=false` in production environment config.
-  2. Redeploy frontend and verify `/studio` returns non-discoverable behavior.
+  2. Redeploy frontend and verify `/studio` renders the Coming Soon page (non-discoverable state).
   3. Run post-deploy smoke script (`npm run smoke:postdeploy`) against production URL.
   4. Confirm `/api/settings`, `/api/auth/me`, and authenticated `/api/admin/observability/metrics` checks pass.
   5. Log rollback timestamp, owner, and re-enable criteria in incident notes.

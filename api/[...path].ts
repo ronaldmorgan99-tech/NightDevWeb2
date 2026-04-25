@@ -19,6 +19,7 @@ import {
   verifyStripeWebhookSignature
 } from '../src/lib/payments.js';
 import { isPublicSetting } from '../src/lib/settingsAllowlist.js';
+import { sanitizeUserText } from '../src/lib/sanitize.js';
 
 const app = express();
 app.use(express.json({
@@ -113,6 +114,36 @@ const reportCreateSchema = z.object({
   target_type: z.enum(['post', 'thread', 'user']),
   target_id: z.coerce.number().int().positive(),
   reason: z.string().trim().min(1)
+});
+const postUpdateSchema = z.object({
+  content: z.string().trim().min(1).max(10_000).optional(),
+  is_hidden: z.boolean().optional(),
+  is_deleted: z.boolean().optional()
+});
+const threadUpdateSchema = z.object({
+  is_pinned: z.boolean().optional(),
+  is_locked: z.boolean().optional(),
+  is_solved: z.boolean().optional(),
+  is_hidden: z.boolean().optional()
+});
+const idParamSchema = z.object({
+  id: z.coerce.number().int().positive()
+});
+const productIdParamSchema = z.object({
+  productId: z.coerce.number().int().positive()
+});
+const orderIdParamSchema = z.object({
+  orderId: z.coerce.number().int().positive()
+});
+const adminRoleUpdateSchema = z.object({
+  role: z.enum(['admin', 'moderator', 'member', 'suspended'])
+});
+const adminReportActionSchema = z.object({
+  action: z.enum(['hide', 'remove', 'suspend', 'dismiss']),
+  reason: z.string().trim().max(1000).optional()
+});
+const adminTicketStatusSchema = z.object({
+  status: z.enum(['open', 'pending', 'closed'])
 });
 
 const discordWidgetMemberSchema = z.object({
@@ -378,6 +409,14 @@ const validateBody = <T>(schema: z.ZodSchema<T>) => (req: Request, res: Response
     return res.status(400).json({ error: parsedPayload.error.issues[0]?.message || 'Invalid request payload' });
   }
   req.body = parsedPayload.data;
+  next();
+};
+const validateParams = <T>(schema: z.ZodSchema<T>) => (req: Request, res: Response, next: express.NextFunction) => {
+  const parsedParams = schema.safeParse(req.params);
+  if (!parsedParams.success) {
+    return res.status(400).json({ error: parsedParams.error.issues[0]?.message || 'Invalid route parameters' });
+  }
+  req.params = parsedParams.data as any;
   next();
 };
 
@@ -732,7 +771,7 @@ const cartDeleteHandler = async (req: Request, res: Response) => {
     return res.status(500).json({ error: err?.message || 'Failed to remove cart item' });
   }
 };
-app.delete(['/api/cart/:productId', '/cart/:productId'], cartDeleteHandler);
+app.delete(['/api/cart/:productId', '/cart/:productId'], validateParams(productIdParamSchema), cartDeleteHandler);
 
 const paymentProvidersHandler = (_req: Request, res: Response) => {
   return res.json({ providers: paymentProviders });
@@ -802,7 +841,7 @@ const stripeConfirmHandler = async (req: Request, res: Response) => {
     return res.status(500).json({ error: err?.message || 'Failed to confirm Stripe payment' });
   }
 };
-app.post(['/api/payments/stripe/confirm/:orderId', '/payments/stripe/confirm/:orderId'], stripeConfirmHandler);
+app.post(['/api/payments/stripe/confirm/:orderId', '/payments/stripe/confirm/:orderId'], validateParams(orderIdParamSchema), stripeConfirmHandler);
 
 const paypalCreateOrderHandler = async (req: Request, res: Response) => {
   try {
@@ -868,7 +907,7 @@ const paypalCaptureHandler = async (req: Request, res: Response) => {
     return res.status(500).json({ error: err?.message || 'Failed to capture PayPal order' });
   }
 };
-app.post(['/api/payments/paypal/capture/:orderId', '/payments/paypal/capture/:orderId'], paypalCaptureHandler);
+app.post(['/api/payments/paypal/capture/:orderId', '/payments/paypal/capture/:orderId'], validateParams(orderIdParamSchema), paypalCaptureHandler);
 
 const stripeWebhookHandler = async (req: Request, res: Response) => {
   try {
@@ -1055,9 +1094,9 @@ const threadCreateHandler = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'You do not have permission to create threads in this forum' });
     }
 
-    const result = await db.execute('INSERT INTO threads (forum_id, author_id, title) VALUES (?, ?, ?)', [forum_id, user.id, title]);
+    const result = await db.execute('INSERT INTO threads (forum_id, author_id, title) VALUES (?, ?, ?)', [forum_id, user.id, sanitizeUserText(title)]);
     const threadId = result.lastInsertRowid || result.insertId;
-    await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [threadId, user.id, content]);
+    await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [threadId, user.id, sanitizeUserText(content)]);
     return res.json({ id: threadId });
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to create thread' });
@@ -1084,7 +1123,7 @@ const postCreateHandler = async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'You do not have permission to post in this forum' });
     }
 
-    await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [thread_id, user.id, content]);
+    await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [thread_id, user.id, sanitizeUserText(content)]);
     await db.execute('UPDATE threads SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [thread_id]);
     return res.json({ success: true });
   } catch (err: any) {
@@ -1117,7 +1156,7 @@ const postUpdateHandler = async (req: Request, res: Response) => {
     const params: any[] = [];
     if (content !== undefined) {
       updates.push('content = ?');
-      params.push(content);
+      params.push(sanitizeUserText(content));
     }
     if (is_hidden !== undefined) {
       updates.push('is_hidden = ?');
@@ -1138,7 +1177,7 @@ const postUpdateHandler = async (req: Request, res: Response) => {
     return res.status(500).json({ error: err?.message || 'Failed to update post' });
   }
 };
-app.patch(['/api/posts/:id', '/posts/:id'], postUpdateHandler);
+app.patch(['/api/posts/:id', '/posts/:id'], validateParams(idParamSchema), validateBody(postUpdateSchema), postUpdateHandler);
 
 const threadUpdateHandler = async (req: Request, res: Response) => {
   const user = await requireAuthUser(req, res);
@@ -1192,7 +1231,7 @@ const threadUpdateHandler = async (req: Request, res: Response) => {
     return res.status(500).json({ error: err?.message || 'Failed to update thread' });
   }
 };
-app.patch(['/api/threads/:id', '/threads/:id'], threadUpdateHandler);
+app.patch(['/api/threads/:id', '/threads/:id'], validateParams(idParamSchema), validateBody(threadUpdateSchema), threadUpdateHandler);
 
 const threadDeleteHandler = async (req: Request, res: Response) => {
   const user = await requireAuthUser(req, res);
@@ -1216,7 +1255,7 @@ const threadDeleteHandler = async (req: Request, res: Response) => {
     return res.status(500).json({ error: err?.message || 'Failed to delete thread' });
   }
 };
-app.delete(['/api/threads/:id', '/threads/:id'], threadDeleteHandler);
+app.delete(['/api/threads/:id', '/threads/:id'], validateParams(idParamSchema), threadDeleteHandler);
 
 const reportCreateHandler = async (req: Request, res: Response) => {
   const user = await requireAuthUser(req, res);
@@ -1296,10 +1335,10 @@ const ticketCreateHandler = async (req: Request, res: Response) => {
   try {
     const result = await db.execute(
       'INSERT INTO tickets (user_id, subject, priority, ticket_type) VALUES (?, ?, ?, ?)',
-      [user.id, subject, priority, ticket_type]
+      [user.id, sanitizeUserText(subject), priority, ticket_type]
     );
     const ticketId = result.lastInsertRowid || result.insertId;
-    await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [ticketId, user.id, message]);
+    await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [ticketId, user.id, sanitizeUserText(message)]);
     return res.status(201).json({ success: true, id: ticketId });
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to create ticket' });
@@ -1336,7 +1375,7 @@ const ticketDetailHandler = async (req: Request, res: Response) => {
     return res.status(500).json({ error: err?.message || 'Failed to load ticket' });
   }
 };
-app.get(['/api/tickets/:id', '/tickets/:id'], ticketDetailHandler);
+app.get(['/api/tickets/:id', '/tickets/:id'], validateParams(idParamSchema), ticketDetailHandler);
 
 const ticketMessageCreateHandler = async (req: Request, res: Response) => {
   const user = await requireAuthUser(req, res);
@@ -1349,14 +1388,14 @@ const ticketMessageCreateHandler = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Ticket not found' });
     }
 
-    await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [req.params.id, user.id, message]);
+    await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [req.params.id, user.id, sanitizeUserText(message)]);
     await db.execute("UPDATE tickets SET status = 'pending' WHERE id = ?", [req.params.id]);
     return res.json({ success: true });
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to post ticket message' });
   }
 };
-app.post(['/api/tickets/:id/messages', '/tickets/:id/messages'], validateBody(ticketMessageSchema), ticketMessageCreateHandler);
+app.post(['/api/tickets/:id/messages', '/tickets/:id/messages'], validateParams(idParamSchema), validateBody(ticketMessageSchema), ticketMessageCreateHandler);
 
 const messageConversationsHandler = async (req: Request, res: Response) => {
   const user = await requireAuthUser(req, res);
@@ -1415,7 +1454,7 @@ const messageCreateHandler = async (req: Request, res: Response) => {
 
   const { receiver_id, content } = req.body as z.infer<typeof directMessageSchema>;
   try {
-    const result = await db.execute('INSERT INTO messages (sender_id, receiver_id, content) VALUES (?, ?, ?)', [user.id, receiver_id, content]);
+    const result = await db.execute('INSERT INTO messages (sender_id, receiver_id, content) VALUES (?, ?, ?)', [user.id, receiver_id, sanitizeUserText(content)]);
     const messageId = result.lastInsertRowid || result.insertId;
     const message = await db.queryOne<any>('SELECT * FROM messages WHERE id = ?', [messageId]);
     if (!message) {
@@ -1830,7 +1869,7 @@ const adminUserRolePatchHandler = async (req: Request, res: Response) => {
     return res.status(500).json({ error: err?.message || 'Failed to update role' });
   }
 };
-app.patch(['/api/admin/users/:id/role', '/admin/users/:id/role'], adminUserRolePatchHandler);
+app.patch(['/api/admin/users/:id/role', '/admin/users/:id/role'], validateParams(idParamSchema), validateBody(adminRoleUpdateSchema), adminUserRolePatchHandler);
 
 const adminReportsHandler = async (req: Request, res: Response) => {
   const user = await requireStaffUser(req, res);
@@ -1882,7 +1921,7 @@ const adminReportActionHandler = async (req: Request, res: Response) => {
     return res.status(500).json({ error: err?.message || 'Failed to apply report action' });
   }
 };
-app.post(['/api/admin/reports/:id/action', '/admin/reports/:id/action'], adminReportActionHandler);
+app.post(['/api/admin/reports/:id/action', '/admin/reports/:id/action'], validateParams(idParamSchema), validateBody(adminReportActionSchema), adminReportActionHandler);
 
 const adminAuditLogHandler = async (req: Request, res: Response) => {
   const user = await requireStaffUser(req, res);
@@ -1995,7 +2034,7 @@ app.post(['/api/admin/tags', '/admin/tags'], async (req: Request, res: Response)
   }
 });
 
-app.patch(['/api/admin/tags/:id', '/admin/tags/:id'], async (req: Request, res: Response) => {
+app.patch(['/api/admin/tags/:id', '/admin/tags/:id'], validateParams(idParamSchema), async (req: Request, res: Response) => {
   const user = await requireAdminUser(req, res);
   if (!user) return;
   const { name, color } = req.body as { name?: string; color?: string };
@@ -2007,7 +2046,7 @@ app.patch(['/api/admin/tags/:id', '/admin/tags/:id'], async (req: Request, res: 
   }
 });
 
-app.delete(['/api/admin/tags/:id', '/admin/tags/:id'], async (req: Request, res: Response) => {
+app.delete(['/api/admin/tags/:id', '/admin/tags/:id'], validateParams(idParamSchema), async (req: Request, res: Response) => {
   const user = await requireAdminUser(req, res);
   if (!user) return;
   try {
@@ -2031,7 +2070,7 @@ app.post(['/api/admin/categories', '/admin/categories'], async (req: Request, re
   }
 });
 
-app.patch(['/api/admin/categories/:id', '/admin/categories/:id'], async (req: Request, res: Response) => {
+app.patch(['/api/admin/categories/:id', '/admin/categories/:id'], validateParams(idParamSchema), async (req: Request, res: Response) => {
   const user = await requireAdminUser(req, res);
   if (!user) return;
   const name = String((req.body as any)?.name || '').trim();
@@ -2044,7 +2083,7 @@ app.patch(['/api/admin/categories/:id', '/admin/categories/:id'], async (req: Re
   }
 });
 
-app.delete(['/api/admin/categories/:id', '/admin/categories/:id'], async (req: Request, res: Response) => {
+app.delete(['/api/admin/categories/:id', '/admin/categories/:id'], validateParams(idParamSchema), async (req: Request, res: Response) => {
   const user = await requireAdminUser(req, res);
   if (!user) return;
   try {
@@ -2070,7 +2109,7 @@ app.post(['/api/admin/forums', '/admin/forums'], async (req: Request, res: Respo
   }
 });
 
-app.patch(['/api/admin/forums/:id', '/admin/forums/:id'], async (req: Request, res: Response) => {
+app.patch(['/api/admin/forums/:id', '/admin/forums/:id'], validateParams(idParamSchema), async (req: Request, res: Response) => {
   const user = await requireAdminUser(req, res);
   if (!user) return;
   const { category_id, name, description, min_role_to_thread, display_order } = req.body as any;
@@ -2085,7 +2124,7 @@ app.patch(['/api/admin/forums/:id', '/admin/forums/:id'], async (req: Request, r
   }
 });
 
-app.delete(['/api/admin/forums/:id', '/admin/forums/:id'], async (req: Request, res: Response) => {
+app.delete(['/api/admin/forums/:id', '/admin/forums/:id'], validateParams(idParamSchema), async (req: Request, res: Response) => {
   const user = await requireAdminUser(req, res);
   if (!user) return;
   try {
@@ -2111,7 +2150,7 @@ app.post(['/api/admin/products', '/admin/products'], async (req: Request, res: R
   }
 });
 
-app.patch(['/api/admin/products/:id', '/admin/products/:id'], async (req: Request, res: Response) => {
+app.patch(['/api/admin/products/:id', '/admin/products/:id'], validateParams(idParamSchema), async (req: Request, res: Response) => {
   const user = await requireAdminUser(req, res);
   if (!user) return;
   const { name, description, price, image_url, category, stock } = req.body as any;
@@ -2126,7 +2165,7 @@ app.patch(['/api/admin/products/:id', '/admin/products/:id'], async (req: Reques
   }
 });
 
-app.delete(['/api/admin/products/:id', '/admin/products/:id'], async (req: Request, res: Response) => {
+app.delete(['/api/admin/products/:id', '/admin/products/:id'], validateParams(idParamSchema), async (req: Request, res: Response) => {
   const user = await requireAdminUser(req, res);
   if (!user) return;
   try {
@@ -2183,12 +2222,12 @@ const adminTicketDetailHandler = async (req: Request, res: Response) => {
 };
 app.get(['/api/admin/tickets/:id', '/admin/tickets/:id'], adminTicketDetailHandler);
 
-app.post(['/api/admin/tickets/:id/messages', '/admin/tickets/:id/messages'], validateBody(ticketMessageSchema), async (req: Request, res: Response) => {
+app.post(['/api/admin/tickets/:id/messages', '/admin/tickets/:id/messages'], validateParams(idParamSchema), validateBody(ticketMessageSchema), async (req: Request, res: Response) => {
   const user = await requireStaffUser(req, res);
   if (!user) return;
   const { message } = req.body as z.infer<typeof ticketMessageSchema>;
   try {
-    await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [req.params.id, user.id, message]);
+    await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [req.params.id, user.id, sanitizeUserText(message)]);
     await db.execute("UPDATE tickets SET status = 'pending' WHERE id = ?", [req.params.id]);
     return res.json({ success: true });
   } catch (err: any) {
@@ -2196,7 +2235,7 @@ app.post(['/api/admin/tickets/:id/messages', '/admin/tickets/:id/messages'], val
   }
 });
 
-app.patch(['/api/admin/tickets/:id', '/admin/tickets/:id'], async (req: Request, res: Response) => {
+app.patch(['/api/admin/tickets/:id', '/admin/tickets/:id'], validateParams(idParamSchema), validateBody(adminTicketStatusSchema), async (req: Request, res: Response) => {
   const user = await requireStaffUser(req, res);
   if (!user) return;
   const status = String((req.body as any)?.status || '').trim();
@@ -2236,7 +2275,7 @@ const notificationReadHandler = async (req: Request, res: Response) => {
     return res.status(500).json({ error: err?.message || 'Failed to update notification' });
   }
 };
-app.patch(['/api/notifications/:id/read', '/notifications/:id/read'], notificationReadHandler);
+app.patch(['/api/notifications/:id/read', '/notifications/:id/read'], validateParams(idParamSchema), notificationReadHandler);
 
 const notificationsReadAllHandler = async (req: Request, res: Response) => {
   try {

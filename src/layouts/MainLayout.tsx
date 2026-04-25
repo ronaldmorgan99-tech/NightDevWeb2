@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, Outlet, useNavigate, useLocation } from 'react-router';
 import { useAuth } from '../context/AuthContext';
+import { isStudioDiscoverableFlag } from '../lib/studioRouting';
 import { useMessaging } from '../context/MessagingContext';
 import NotificationDropdown from '../components/NotificationDropdown';
 import { useQuery } from '@tanstack/react-query';
@@ -185,7 +186,7 @@ const MainLayout: React.FC = () => {
   };
 
   const discordLink = "https://discord.gg/NZbmQNxX";
-  const isStudioDiscoverable = String(import.meta.env.VITE_ENABLE_STUDIO || '').toLowerCase() === 'true';
+  const isStudioDiscoverable = isStudioDiscoverableFlag(import.meta.env.VITE_ENABLE_STUDIO);
 
   const navItems = [
     { label: 'Forums', path: '/', icon: MessageSquare },

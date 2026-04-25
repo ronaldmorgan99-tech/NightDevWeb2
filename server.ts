@@ -26,6 +26,7 @@ import {
   verifyPayPalWebhookSignature,
   verifyStripeWebhookSignature
 } from './src/lib/payments';
+import { sanitizeUserText } from './src/lib/sanitize';
 import dotenv from 'dotenv';
 
 // Load environment variables
@@ -109,6 +110,26 @@ const postCreateSchema = z.object({
   content: z.string().trim().min(1).max(10_000)
 });
 
+const postUpdateSchema = z.object({
+  content: z.string().trim().min(1).max(10_000).optional(),
+  is_hidden: z.boolean().optional(),
+  is_deleted: z.boolean().optional()
+});
+
+const threadUpdateSchema = z.object({
+  is_pinned: z.boolean().optional(),
+  is_locked: z.boolean().optional(),
+  is_solved: z.boolean().optional(),
+  is_hidden: z.boolean().optional()
+});
+
+const supportTicketCreateSchema = z.object({
+  subject: z.string().trim().min(3).max(200),
+  priority: z.enum(['low', 'medium', 'high']).optional().default('medium'),
+  message: z.string().trim().min(1).max(5_000),
+  ticket_type: z.enum(['user', 'admin']).optional().default('user')
+});
+
 const ticketMessageSchema = z.object({
   message: z.string().trim().min(1).max(5_000)
 });
@@ -168,6 +189,19 @@ const forumCreateSchema = z.object({
   description: z.string().trim().max(1000).optional().default(''),
   min_role_to_thread: z.enum(['member', 'moderator', 'admin']).optional().default('member'),
   display_order: z.coerce.number().int().min(0).optional().default(0)
+});
+
+const roleUpdateSchema = z.object({
+  role: z.enum(['admin', 'moderator', 'member', 'suspended'])
+});
+
+const adminReportActionSchema = z.object({
+  action: z.enum(['hide', 'remove', 'suspend', 'dismiss']),
+  reason: z.string().trim().max(1000).optional()
+});
+
+const adminTicketStatusSchema = z.object({
+  status: z.enum(['open', 'pending', 'closed'])
 });
 
 function validateEnv() {
@@ -1099,7 +1133,7 @@ async function start() {
       }
       if (bio !== undefined) {
         updates.push('bio = ?');
-        params.push(bio);
+        params.push(sanitizeUserText(bio));
       }
       
       if (updates.length > 0) {
@@ -1417,6 +1451,8 @@ async function start() {
 
   app.post('/api/threads', authenticate, validateBody(threadCreateSchema), async (req: any, res) => {
     const { forum_id, title, content } = req.body;
+    const sanitizedTitle = sanitizeUserText(title);
+    const sanitizedContent = sanitizeUserText(content);
     try {
       // Fetch forum to check min_role_to_thread permission
       const forum = await db.queryOne<any>('SELECT id, min_role_to_thread FROM forums WHERE id = ?', [forum_id]);
@@ -1429,9 +1465,9 @@ async function start() {
         return res.status(403).json({ error: 'You do not have permission to create threads in this forum' });
       }
 
-      const result = await db.execute('INSERT INTO threads (forum_id, author_id, title) VALUES (?, ?, ?)', [forum_id, req.user.id, title]);
+      const result = await db.execute('INSERT INTO threads (forum_id, author_id, title) VALUES (?, ?, ?)', [forum_id, req.user.id, sanitizedTitle]);
       const threadId = result.lastInsertRowid || result.insertId;
-      await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [threadId, req.user.id, content]);
+      await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [threadId, req.user.id, sanitizedContent]);
       res.json({ id: threadId });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1485,6 +1521,7 @@ async function start() {
 
   app.post('/api/posts', authenticate, validateBody(postCreateSchema), async (req: any, res) => {
     const { thread_id, content } = req.body;
+    const sanitizedContent = sanitizeUserText(content);
     try {
       // Fetch thread and its forum to check permissions
       const thread = await db.queryOne<any>(`
@@ -1503,7 +1540,7 @@ async function start() {
         return res.status(403).json({ error: 'You do not have permission to post in this forum' });
       }
 
-      await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [thread_id, req.user.id, content]);
+      await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [thread_id, req.user.id, sanitizedContent]);
       await db.execute('UPDATE threads SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [thread_id]);
       res.json({ success: true });
     } catch (err: any) {
@@ -1511,7 +1548,7 @@ async function start() {
     }
   });
 
-  app.patch('/api/posts/:id', authenticate, validateParams(idParamSchema), async (req: any, res) => {
+  app.patch('/api/posts/:id', authenticate, validateParams(idParamSchema), validateBody(postUpdateSchema), async (req: any, res) => {
     const { content, is_hidden, is_deleted } = req.body;
     try {
       const post = await db.queryOne<any>('SELECT * FROM posts WHERE id = ?', [req.params.id]);
@@ -1533,7 +1570,7 @@ async function start() {
 
       if (content !== undefined) {
         updates.push('content = ?');
-        params.push(content);
+        params.push(sanitizeUserText(content));
       }
       if (is_hidden !== undefined) {
         updates.push('is_hidden = ?');
@@ -1576,7 +1613,7 @@ async function start() {
     }
   });
 
-  app.patch('/api/threads/:id', authenticate, validateParams(idParamSchema), async (req: any, res) => {
+  app.patch('/api/threads/:id', authenticate, validateParams(idParamSchema), validateBody(threadUpdateSchema), async (req: any, res) => {
     const { is_pinned, is_locked, is_solved, is_hidden } = req.body;
     if (!['admin', 'moderator'].includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
     try {
@@ -2105,12 +2142,12 @@ async function start() {
     }
   });
 
-  app.post('/api/tickets', authenticate, async (req: any, res) => {
+  app.post('/api/tickets', authenticate, validateBody(supportTicketCreateSchema), async (req: any, res) => {
     const { subject, priority, message, ticket_type } = req.body;
     try {
-      const result = await db.execute('INSERT INTO tickets (user_id, subject, priority, ticket_type) VALUES (?, ?, ?, ?)', [req.user.id, subject, priority, ticket_type || 'user']);
+      const result = await db.execute('INSERT INTO tickets (user_id, subject, priority, ticket_type) VALUES (?, ?, ?, ?)', [req.user.id, sanitizeUserText(subject), priority, ticket_type || 'user']);
       const ticketId = result.lastInsertRowid || result.insertId;
-      await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [ticketId, req.user.id, message]);
+      await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [ticketId, req.user.id, sanitizeUserText(message)]);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -2140,12 +2177,12 @@ async function start() {
     }
   });
 
-  app.post('/api/tickets/:id/messages', authenticate, validateBody(ticketMessageSchema), async (req: any, res) => {
+  app.post('/api/tickets/:id/messages', authenticate, validateParams(idParamSchema), validateBody(ticketMessageSchema), async (req: any, res) => {
     const { message } = req.body;
     try {
       const ticket = await db.queryOne<any>('SELECT * FROM tickets WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
       if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
-      await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [req.params.id, req.user.id, message]);
+      await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [req.params.id, req.user.id, sanitizeUserText(message)]);
       await db.execute("UPDATE tickets SET status = 'pending' WHERE id = ?", [req.params.id]);
       res.json({ success: true });
     } catch (err: any) {
@@ -2163,7 +2200,7 @@ async function start() {
     }
   });
 
-  app.patch('/api/admin/users/:id/role', authenticate, isAdmin, validateParams(idParamSchema), async (req: any, res) => {
+  app.patch('/api/admin/users/:id/role', authenticate, isAdmin, validateParams(idParamSchema), validateBody(roleUpdateSchema), async (req: any, res) => {
     const { role } = req.body;
     try {
       await db.execute('UPDATE users SET role = ? WHERE id = ?', [role, req.params.id]);
@@ -2187,7 +2224,7 @@ async function start() {
     }
   });
 
-  app.post('/api/admin/reports/:id/action', authenticate, isAdmin, validateParams(idParamSchema), async (req: any, res) => {
+  app.post('/api/admin/reports/:id/action', authenticate, isAdmin, validateParams(idParamSchema), validateBody(adminReportActionSchema), async (req: any, res) => {
     const { action, reason } = req.body;
     try {
       const report = await db.queryOne<any>('SELECT * FROM reports WHERE id = ?', [req.params.id]);
@@ -2473,7 +2510,7 @@ async function start() {
   app.post('/api/admin/tickets/:id/messages', authenticate, isAdmin, validateParams(idParamSchema), validateBody(ticketMessageSchema), async (req: any, res) => {
     const { message } = req.body;
     try {
-      await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [req.params.id, req.user.id, message]);
+      await db.execute('INSERT INTO ticket_messages (ticket_id, user_id, message) VALUES (?, ?, ?)', [req.params.id, req.user.id, sanitizeUserText(message)]);
       await db.execute("UPDATE tickets SET status = 'pending' WHERE id = ?", [req.params.id]);
       res.json({ success: true });
     } catch (err: any) {
@@ -2481,7 +2518,7 @@ async function start() {
     }
   });
 
-  app.patch('/api/admin/tickets/:id', authenticate, isAdmin, validateParams(idParamSchema), async (req: any, res) => {
+  app.patch('/api/admin/tickets/:id', authenticate, isAdmin, validateParams(idParamSchema), validateBody(adminTicketStatusSchema), async (req: any, res) => {
     const { status } = req.body;
     try {
       await db.execute('UPDATE tickets SET status = ? WHERE id = ?', [status, req.params.id]);
@@ -2539,8 +2576,9 @@ async function start() {
 
   app.post('/api/messages', authenticate, validateBody(directMessageSchema), async (req: any, res) => {
     const { receiver_id, content } = req.body;
+    const sanitizedContent = sanitizeUserText(content);
     try {
-      const result = await db.execute('INSERT INTO messages (sender_id, receiver_id, content) VALUES (?, ?, ?)', [req.user.id, receiver_id, content]);
+      const result = await db.execute('INSERT INTO messages (sender_id, receiver_id, content) VALUES (?, ?, ?)', [req.user.id, receiver_id, sanitizedContent]);
       const messageId = result.lastInsertRowid || result.insertId;
       const message = await db.queryOne<any>('SELECT * FROM messages WHERE id = ?', [messageId]);
       
@@ -2557,7 +2595,7 @@ async function start() {
       // Create notification
       const sender = await db.queryOne<any>('SELECT username FROM users WHERE id = ?', [req.user.id]);
       await db.execute('INSERT INTO notifications (user_id, type, title, content, link) VALUES (?, ?, ?, ?, ?)', 
-        [receiver_id, 'message', `New message from ${sender.username}`, content.substring(0, 50), `/messages?user=${req.user.id}`]);
+        [receiver_id, 'message', `New message from ${sender.username}`, sanitizedContent.substring(0, 50), `/messages?user=${req.user.id}`]);
       
       const notification = await db.queryOne<any>('SELECT * FROM notifications ORDER BY created_at DESC LIMIT 1');
       for (const socketId of receiverSocketIds) {
