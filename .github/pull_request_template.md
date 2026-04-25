@@ -1,5 +1,6 @@
 ## Summary
-- Briefly describe what changed and why.
+- Describe what changed and why.
+- Link related issues/tickets (for example: `Closes #123`).
 
 ## Workflow Checklist
 - [ ] Plan created before implementation.
@@ -10,13 +11,14 @@
 
 ## Definition of Done
 - [ ] Code implemented and tested.
-- [ ] Documentation updated.
+- [ ] Documentation updated (or marked N/A).
 - [ ] Security review completed.
 - [ ] Performance impact assessed.
-- [ ] Deployment verified in staging.
+- [ ] Deployment verification completed (or marked N/A).
 
 ## Testing
-- List the commands you ran and the results.
+- List each command you ran and the result.
+- Include any manual validation steps.
 
 ## Notes
-- Add follow-ups, risks, or rollout/rollback notes if needed.
+- Add follow-ups, risks, rollback notes, or anything reviewers should watch for.
