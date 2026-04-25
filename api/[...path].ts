@@ -35,6 +35,7 @@ const JWT_SECRET = process.env.JWT_SECRET || '';
 const AUTH_COOKIE_NAME = 'token';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const ERROR_TRACKING_WEBHOOK = process.env.ERROR_TRACKING_WEBHOOK || '';
+const ERROR_TRACKING_WEBHOOK_CACHE_MS = 60_000;
 const MEDIA_OPERATION_TTL_MS = 30 * 60 * 1000;
 const MEDIA_MODEL = 'veo-2.0-generate-001';
 const MEDIA_MAX_ANIMATIONS_PER_USER_PER_HOUR = 5;
@@ -129,7 +130,29 @@ const discordWidgetResponseSchema = z.object({
 });
 
 let bootPromise: Promise<void> | null = null;
+let cachedErrorTrackingWebhook: { value: string; fetchedAt: number } | null = null;
 const mediaClient = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
+
+const resolveErrorTrackingWebhook = async () => {
+  if (ERROR_TRACKING_WEBHOOK) {
+    return ERROR_TRACKING_WEBHOOK;
+  }
+
+  const now = Date.now();
+  if (cachedErrorTrackingWebhook && (now - cachedErrorTrackingWebhook.fetchedAt) < ERROR_TRACKING_WEBHOOK_CACHE_MS) {
+    return cachedErrorTrackingWebhook.value;
+  }
+
+  try {
+    const setting = await db.queryOne<{ value?: string }>('SELECT value FROM settings WHERE key = ?', ['discord_webhook_url']);
+    const webhook = String(setting?.value || '').trim();
+    cachedErrorTrackingWebhook = { value: webhook, fetchedAt: now };
+    return webhook;
+  } catch {
+    cachedErrorTrackingWebhook = { value: '', fetchedAt: now };
+    return '';
+  }
+};
 
 type MediaOperationStatus = 'in_progress' | 'done' | 'error';
 type MediaOperationRecord = {
@@ -225,7 +248,8 @@ const captureException = async (error: unknown, context: Record<string, unknown>
   const message = error instanceof Error ? error.message : String(error);
   console.error(JSON.stringify({ event: 'serverless.exception', message, context }));
 
-  if (!ERROR_TRACKING_WEBHOOK) {
+  const errorTrackingWebhook = await resolveErrorTrackingWebhook();
+  if (!errorTrackingWebhook) {
     return;
   }
 
@@ -236,7 +260,7 @@ const captureException = async (error: unknown, context: Record<string, unknown>
       stack: error instanceof Error ? error.stack : undefined,
       context
     };
-    const response = await fetch(ERROR_TRACKING_WEBHOOK, {
+    const response = await fetch(errorTrackingWebhook, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({

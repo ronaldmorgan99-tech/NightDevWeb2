@@ -30,6 +30,7 @@ const CLIENT_ORIGINS = String(process.env.CLIENT_ORIGIN || '')
   .filter(Boolean);
 const HAS_SPLIT_ORIGIN_DEPLOYMENT = CLIENT_ORIGINS.length > 0;
 const ERROR_TRACKING_WEBHOOK = process.env.ERROR_TRACKING_WEBHOOK || '';
+const ERROR_TRACKING_WEBHOOK_CACHE_MS = 60_000;
 const parseEnvNumber = (value: string | undefined, fallback: number) => {
   if (!value) return fallback;
   const parsed = Number.parseInt(value, 10);
@@ -255,6 +256,28 @@ const logStructured = (level: LogLevel, event: string, context: StructuredLogCon
   console.log(serialized);
 };
 
+let cachedErrorTrackingWebhook: { value: string; fetchedAt: number } | null = null;
+const resolveErrorTrackingWebhook = async () => {
+  if (ERROR_TRACKING_WEBHOOK) {
+    return ERROR_TRACKING_WEBHOOK;
+  }
+
+  const now = Date.now();
+  if (cachedErrorTrackingWebhook && (now - cachedErrorTrackingWebhook.fetchedAt) < ERROR_TRACKING_WEBHOOK_CACHE_MS) {
+    return cachedErrorTrackingWebhook.value;
+  }
+
+  try {
+    const setting = await db.queryOne<{ value?: string }>('SELECT value FROM settings WHERE key = ?', ['discord_webhook_url']);
+    const webhook = String(setting?.value || '').trim();
+    cachedErrorTrackingWebhook = { value: webhook, fetchedAt: now };
+    return webhook;
+  } catch {
+    cachedErrorTrackingWebhook = { value: '', fetchedAt: now };
+    return '';
+  }
+};
+
 const captureException = async (error: unknown, context: Record<string, unknown> = {}) => {
   const normalizedMessage = error instanceof Error ? error.message : String(error);
   logStructured('error', 'exception.captured', {
@@ -262,7 +285,8 @@ const captureException = async (error: unknown, context: Record<string, unknown>
     context: JSON.stringify(context)
   });
 
-  if (!ERROR_TRACKING_WEBHOOK) {
+  const errorTrackingWebhook = await resolveErrorTrackingWebhook();
+  if (!errorTrackingWebhook) {
     return;
   }
 
@@ -273,7 +297,7 @@ const captureException = async (error: unknown, context: Record<string, unknown>
       stack: error instanceof Error ? error.stack : undefined,
       context
     };
-    const response = await fetch(ERROR_TRACKING_WEBHOOK, {
+    const response = await fetch(errorTrackingWebhook, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
