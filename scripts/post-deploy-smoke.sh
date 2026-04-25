@@ -93,6 +93,10 @@ echo "[smoke] GET /api/auth/me (unauthenticated)"
 request GET /api/auth/me
 assert_status 401 "/api/auth/me before login"
 
+echo "[smoke] POST /api/auth/login (invalid credentials, expected 401)"
+request POST /api/auth/login "{\"username\":\"$SMOKE_USER\",\"password\":\"${SMOKE_PASSWORD}-invalid\"}"
+assert_status 401 "/api/auth/login invalid credentials"
+
 echo "[smoke] POST /api/auth/login"
 request POST /api/auth/login "{\"username\":\"$SMOKE_USER\",\"password\":\"$SMOKE_PASSWORD\"}"
 assert_status 200 "/api/auth/login"
