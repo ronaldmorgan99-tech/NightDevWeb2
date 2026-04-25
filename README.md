@@ -84,6 +84,16 @@ Together, they keep local UI state and remote API data organized, performant, an
   Set `VITE_API_BASE_URL` to the API origin (for example `https://api.example.com`). In production this enables credentialed CORS responses and sets auth cookies as `SameSite=None; Secure`.
   Socket.IO CORS uses the same `CLIENT_ORIGIN` allowlist (comma-separated entries are supported).
 
+### Security hardening status (2026-04-25)
+
+- **Owner**: Platform Engineering.
+- **Implemented**:
+  - Zod-backed request validation middleware is enforced on auth/content/support write endpoints.
+  - Auth endpoint rate limiting is active for login/register and session mutation endpoints.
+  - User-generated text writes are sanitized server-side (profile bio, thread title, post body, support ticket subject/message, and direct message content).
+- **Rollout caveat**:
+  - Sanitization is currently scoped to user-generated content fields. Admin catalog/config mutation endpoints rely on schema validation but do not sanitize rich text fields yet.
+
 ## Production Deployment Runbook
 
 ### Ownership

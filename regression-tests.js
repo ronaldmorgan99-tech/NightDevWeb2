@@ -202,6 +202,15 @@ async function runTests() {
     if (!r.res.ok) throw new Error(`Register failed: ${JSON.stringify(r.body)}`);
     console.log('✅ Registered', username);
 
+    console.log('⏳ Verifying auth endpoint rejects invalid payload...');
+    r = await request('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username }),
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (r.res.status !== 400) throw new Error(`Expected 400 for invalid login payload; got ${r.res.status}`);
+    console.log('✅ Invalid auth payload rejected (400)');
+
     console.log('⏳ Getting CSRF token from /api/csrf-token...');
     r = await request('/api/csrf-token');
     if (!r.res.ok) throw new Error(`CSRF fetch failed: ${JSON.stringify(r.body)}`);
@@ -237,6 +246,15 @@ async function runTests() {
     if (r.res.status !== 403) throw new Error(`Expected 403 for member in admin-only forum; got ${r.res.status}`);
     console.log('✅ Role gate works (admin-only forbidden for member)');
 
+    console.log('⏳ Verifying content endpoints reject invalid payloads...');
+    r = await request('/api/threads', {
+      method: 'POST',
+      body: JSON.stringify({ forum_id: 3, title: 'x', content: '' }),
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }
+    });
+    if (r.res.status !== 400) throw new Error(`Expected 400 for invalid thread payload; got ${r.res.status}`);
+    console.log('✅ Invalid thread payload rejected (400)');
+
     console.log('⏳ Testing thread creation in member forum (should succeed)...');
     r = await request('/api/threads', {
       method: 'POST',
@@ -245,6 +263,15 @@ async function runTests() {
     });
     if (!r.res.ok || !r.body?.id) throw new Error(`Expected thread create success; got ${r.res.status} ${JSON.stringify(r.body)}`);
     console.log('✅ Member can create in member forum');
+    const createdThreadId = r.body.id;
+
+    r = await request('/api/posts', {
+      method: 'POST',
+      body: JSON.stringify({ thread_id: createdThreadId, content: '' }),
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }
+    });
+    if (r.res.status !== 400) throw new Error(`Expected 400 for invalid post payload; got ${r.res.status}`);
+    console.log('✅ Invalid post payload rejected (400)');
 
   } finally {
     server.kill('SIGTERM');
