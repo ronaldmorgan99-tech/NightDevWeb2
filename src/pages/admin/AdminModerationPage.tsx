@@ -39,6 +39,8 @@ interface AuditLog {
   created_at: string;
 }
 
+const asArray = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : []);
+
 const AdminModerationPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'reports' | 'audit'>('reports');
   const [promptModal, setPromptModal] = useState<{
@@ -83,6 +85,9 @@ const AdminModerationPage: React.FC = () => {
     setPromptModal({ isOpen: true, reportId, action });
   };
 
+  const normalizedReports = asArray(reports);
+  const normalizedAuditLogs = asArray(auditLogs);
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -120,14 +125,14 @@ const AdminModerationPage: React.FC = () => {
           >
             {reportsLoading ? (
               <div className="animate-pulse space-y-4">{[1, 2, 3].map(i => <div key={i} className="h-32 bg-white/5 rounded-2xl" />)}</div>
-            ) : (reports ?? []).length === 0 ? (
+            ) : normalizedReports.length === 0 ? (
               <div className="p-12 text-center bg-[#121214] border border-white/5 rounded-2xl">
                 <CheckCircle className="w-12 h-12 text-emerald-500/20 mx-auto mb-4" />
                 <h3 className="text-xl font-bold text-white">All Clear!</h3>
                 <p className="text-zinc-500">No pending reports to review at this time.</p>
               </div>
             ) : (
-              (reports ?? []).map((report) => (
+              normalizedReports.map((report) => (
                 <div key={report.id} className="bg-[#121214] border border-white/5 rounded-2xl overflow-hidden">
                   <div className="p-6 flex flex-col md:flex-row gap-6">
                     <div className="flex-1 space-y-4">
@@ -202,7 +207,7 @@ const AdminModerationPage: React.FC = () => {
           >
             {auditLoading ? (
               <div className="animate-pulse p-6 space-y-4">{[1, 2, 3].map(i => <div key={i} className="h-16 bg-white/5 rounded-xl" />)}</div>
-            ) : (auditLogs ?? []).length === 0 ? (
+            ) : normalizedAuditLogs.length === 0 ? (
               <div className="p-12 text-center">
                 <History className="w-12 h-12 text-zinc-700/40 mx-auto mb-4" />
                 <p className="text-xs font-black text-zinc-500 uppercase tracking-widest">No moderation audit records returned</p>
@@ -219,7 +224,7 @@ const AdminModerationPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {(auditLogs ?? []).map((log) => (
+                {normalizedAuditLogs.map((log) => (
                   <tr key={log.id} className="hover:bg-white/[0.02] transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">

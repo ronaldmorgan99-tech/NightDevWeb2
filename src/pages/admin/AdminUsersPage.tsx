@@ -13,6 +13,8 @@ interface User {
   last_active: string;
 }
 
+const asArray = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : []);
+
 const AdminUsersPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
@@ -35,7 +37,7 @@ const AdminUsersPage: React.FC = () => {
     }
   });
 
-  const filteredUsers = (users ?? []).filter(u => 
+  const filteredUsers = asArray(users).filter(u => 
     u.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
     u.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
