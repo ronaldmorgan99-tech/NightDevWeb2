@@ -203,6 +203,23 @@ Minimum expected results:
 - If static assets load as `text/html`, adjust route ordering so filesystem assets resolve before SPA fallback rewrites.
 
 ## Studio Feature Support Status (April/May 2026)
+### Vercel environment matrix (`VITE_API_BASE_URL` + API health)
+
+| Environment | Frontend origin example | API deployment model | `VITE_API_BASE_URL` value | Validation rule | Required health checks |
+| --- | --- | --- | --- | --- | --- |
+| Local development | `http://localhost:5173` | Same-origin via local server proxy/runtime routes | Leave unset (recommended) | Unset defaults to same-origin `/api/*`; if set locally, allow `http://localhost:<port>` only. | `GET /api/settings` => `200`; `POST /api/auth/login` => `401` (invalid creds) and `200` (valid creds). |
+| Vercel Preview | `https://<project>-git-<branch>-<user>.vercel.app` | Usually same-origin within one Vercel project | Leave unset for same-project previews. | Do **not** point preview frontend at production API origin unless intentionally running split preview testing. | `GET /api/settings` => `200`; `POST /api/auth/login` => `401` (invalid creds) and `200` (valid creds). |
+| Production | `https://app.example.com` (or production Vercel domain) | Same-origin or split-origin | Same-origin: unset. Split-origin: set `https://api.example.com`. | Require HTTPS when set in production; split deploy must align with `CLIENT_ORIGIN`. | `GET /api/settings` => `200`; `POST /api/auth/login` => `401` (invalid creds) and `200` (valid creds). |
+
+### Deployment checklist additions (preview + production)
+
+- [ ] Confirm `VITE_API_BASE_URL` matches the selected environment model (unset for same-origin, explicit HTTPS API origin for split deployments).
+- [ ] Run post-deploy smoke checks in each environment:
+  - Preview: `BASE_URL="https://<preview-origin>" SMOKE_USER="..." SMOKE_PASSWORD="..." npm run smoke:postdeploy`
+  - Production: `BASE_URL="https://<production-origin>" SMOKE_USER="..." SMOKE_PASSWORD="..." npm run smoke:postdeploy`
+- [ ] Run `npm run check:serverless-imports` before deploy to confirm Node ESM `.js` runtime import extensions remain intact in `api/*` entrypoints.
+
+## Studio Feature Support Status (April 2026)
 
 - **Decision**: `/studio` is **feature-flagged** for April/May 2026 using `VITE_ENABLE_STUDIO`.
 - **User experience**: Visiting `/studio` always resolves to a page: `VITE_ENABLE_STUDIO=true` renders Veo Studio; `VITE_ENABLE_STUDIO=false` renders the Coming Soon page (no redirect).

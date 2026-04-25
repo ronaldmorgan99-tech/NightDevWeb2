@@ -48,19 +48,12 @@ Last reviewed: 2026-04-25
 - **Definition of Done**: All dev environments work without websocket/file loading errors
 
 ### Vercel Split-Deployment API Routing
-#### Completed
-- **Status**: ✅ Completed
-- **Details**: Added Vercel filesystem-first routing for static assets and stabilized serverless API bootstrap with idempotent default auth-user creation.
-
-#### Remaining
-- **Status**: ⚠️ In progress
+- **Status**: ✅ Completed (reviewed 2026-04-25)
 - **Owner**: Platform Engineering
-- **Target review date**: 2026-04-19
-- **Details**: Frontend supports `VITE_API_BASE_URL` for split deployment. For same-origin Vercel API routes, keep `VITE_API_BASE_URL` unset to avoid preview-to-production CORS failures. Serverless runtime also requires explicit emitted `.js` import extensions in Node ESM paths.
-- **Acceptance criteria**:
-  - Vercel project has the correct API origin configured for each environment.
-  - Production `/api/settings` and `/api/auth/login` return 200/401 (not 404/500) after deploy.
-  - Deployment runbook captures split-deployment `VITE_API_BASE_URL` guidance and Node ESM `.js` extension requirement.
+- **Details**:
+  - Added Vercel filesystem-first routing for static assets and stabilized serverless API bootstrap with idempotent default auth-user creation.
+  - Added explicit `VITE_API_BASE_URL` environment validation/fallback logic (same-origin when unset, HTTPS enforcement outside local, preview-safe guidance).
+  - Expanded deployment runbook with a local/preview/production env matrix and checklist steps for post-deploy API health checks (`/api/settings`, `/api/auth/login`) and serverless Node ESM `.js` import-extension verification.
 
 ### Integration Testing
 - **Status**: ✅ Implemented

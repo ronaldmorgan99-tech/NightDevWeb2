@@ -15,7 +15,60 @@ export class ApiError extends Error {
 }
 
 const nativeFetch: typeof fetch = globalThis.fetch.bind(globalThis);
-const apiBaseUrl = ((import.meta as any).env?.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+
+type DeploymentEnv = 'local' | 'preview' | 'production' | 'unknown';
+
+const detectDeploymentEnv = (): DeploymentEnv => {
+  const env = (import.meta as any).env || {};
+  const explicitEnv = String(env.VITE_DEPLOYMENT_ENV || '').trim().toLowerCase();
+  if (explicitEnv === 'local' || explicitEnv === 'preview' || explicitEnv === 'production') {
+    return explicitEnv;
+  }
+
+  if (typeof window === 'undefined') {
+    return 'unknown';
+  }
+
+  const host = window.location.hostname.toLowerCase();
+  if (host === 'localhost' || host === '127.0.0.1') {
+    return 'local';
+  }
+  if (host.includes('-git-') && host.endsWith('.vercel.app')) {
+    return 'preview';
+  }
+
+  return 'production';
+};
+
+const normalizeApiBaseUrl = (): string => {
+  const rawValue = String((import.meta as any).env?.VITE_API_BASE_URL || '').trim();
+  if (!rawValue) {
+    // Same-origin default: use relative /api/* paths from current window origin.
+    return '';
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawValue);
+  } catch {
+    console.warn(`[api] Ignoring invalid VITE_API_BASE_URL="${rawValue}". Falling back to same-origin /api/*.`);
+    return '';
+  }
+
+  const deploymentEnv = detectDeploymentEnv();
+  const isLocalApiOrigin = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+  const allowsHttp = deploymentEnv === 'local' && isLocalApiOrigin;
+  if (parsed.protocol !== 'https:' && !allowsHttp) {
+    console.warn(
+      `[api] Ignoring insecure VITE_API_BASE_URL for ${deploymentEnv} environment: "${rawValue}". Use HTTPS outside local development.`
+    );
+    return '';
+  }
+
+  return parsed.toString().replace(/\/+$/, '');
+};
+
+const apiBaseUrl = normalizeApiBaseUrl();
 
 function resolveRequestInput(input: RequestInfo): RequestInfo {
   if (!apiBaseUrl || typeof input !== 'string') {
