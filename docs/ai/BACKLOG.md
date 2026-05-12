@@ -1,7 +1,7 @@
 # NightDevWeb2 Backlog
 
-Updated on 2026-04-25
-Last reviewed: 2026-04-25
+Updated on 2026-05-12
+Last reviewed: 2026-05-12
 
 ## Document Governance
 
@@ -34,7 +34,7 @@ Last reviewed: 2026-04-25
 
 ### Production Media Provider Setup
 - **Status**: ✅ Release-ready (validation + rollback drill documented)
-- **Details**: `/api/media/animate` + `/api/media/poll` implemented with quota/poll guardrails and observability counters. Alert thresholds for media latency/error/quota are now documented, and scripted post-deploy smoke checks were added for auth/settings/metrics paths.
+- **Details**: `/api/media/animate` + `/api/media/poll` implemented with quota/poll guardrails and observability counters. Alert thresholds for media latency/error/quota are now documented, and sc[...]
 - **Definition of Done**: Complete production validation, verify `/api/admin/observability/metrics` dashboards/alerts, then enable `VITE_ENABLE_STUDIO=true` with rollback drill.
 
 ### Bundle Optimization & Code Splitting
@@ -53,7 +53,7 @@ Last reviewed: 2026-04-25
 - **Details**:
   - Added Vercel filesystem-first routing for static assets and stabilized serverless API bootstrap with idempotent default auth-user creation.
   - Added explicit `VITE_API_BASE_URL` environment validation/fallback logic (same-origin when unset, HTTPS enforcement outside local, preview-safe guidance).
-  - Expanded deployment runbook with a local/preview/production env matrix and checklist steps for post-deploy API health checks (`/api/settings`, `/api/auth/login`) and serverless Node ESM `.js` import-extension verification.
+  - Expanded deployment runbook with a local/preview/production env matrix and checklist steps for post-deploy API health checks (`/api/settings`, `/api/auth/login`) and serverless Node ESM `.js` [...]
 
 ### Integration Testing
 - **Status**: ✅ Implemented
@@ -68,7 +68,7 @@ Last reviewed: 2026-04-25
 - **Escalation path**: Platform Engineering on-call -> Incident Commander -> Head of Engineering
 - **Priority**: High
 - **Status**: ✅ Completed (2026-04-10)
-- **Details**: README now includes a production deployment runbook covering deployment models, environment-variable requirements, DB bootstrap/seed expectations, HTTPS and secrets-management requirements, post-deploy health/smoke checks, rollback flow, and Vite HMR production-domain guidance.
+- **Details**: README now includes a production deployment runbook covering deployment models, environment-variable requirements, DB bootstrap/seed expectations, HTTPS and secrets-management requi[...]
 
 ### Completed (this sprint)
 
@@ -94,7 +94,7 @@ Last reviewed: 2026-04-25
 - Review cookie auth + CORS interaction for cross-domain scenarios — ✅ Completed (owner: Platform Engineering, 2026-04-25)
 - Add input sanitization validation across all endpoints — ✅ Completed for auth/content/profile/support write paths (owner: Platform Engineering, 2026-04-25)
 - Implement rate limiting on auth endpoints — ✅ Completed (owner: Platform Engineering, 2026-04-25)
-- **Rollout caveat**: Sanitization currently strips HTML/control characters on server-side write paths for profile/forum/post/message/ticket content. Non-content admin catalog payloads still rely on schema validation only and should be reviewed in a follow-up hardening pass.
+- **Rollout caveat**: Sanitization currently strips HTML/control characters on server-side write paths for profile/forum/post/message/ticket content. Non-content admin catalog payloads still rely [...]
 
 ### CI/CD Pipeline
 - **Owner**: Platform Engineering
