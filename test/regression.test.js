@@ -309,6 +309,7 @@ test('NightDevWeb2 Regression Tests', async (t) => {
       body: JSON.stringify({ thread_id: 1, content: '' })
     });
     assert.strictEqual(invalidPostRes.status, 400);
+  });
 
   await t.test('Studio route feature-flag behavior', async () => {
     assert.strictEqual(getStudioRouteMode('true'), 'studio-enabled');
