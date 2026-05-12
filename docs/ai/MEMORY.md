@@ -2,6 +2,8 @@
 
 Last reviewed: 2026-05-12
 
+Review note: Verified AI docs freshness check on 2026-05-12.
+
 ## Document Governance
 
 - **Owner**: Platform Engineering (primary) with Admin Operations as contributing reviewers for release communications.
