@@ -609,6 +609,58 @@ const meHandler = async (req: Request, res: Response) => {
 };
 app.get(['/api/auth/me', '/auth/me'], meHandler);
 
+
+const meUpdateSchema = z.object({
+  avatar_url: z.string().trim().optional(),
+  banner_url: z.string().trim().optional(),
+  bio: z.string().trim().max(5_000).optional(),
+  steam_url: z.string().trim().optional(),
+  x_url: z.string().trim().optional(),
+  facebook_url: z.string().trim().optional(),
+  github_url: z.string().trim().optional(),
+  youtube_url: z.string().trim().optional(),
+  kick_url: z.string().trim().optional(),
+  twitch_url: z.string().trim().optional(),
+  discord_url: z.string().trim().optional()
+});
+
+const meUpdateHandler = async (req: Request, res: Response) => {
+  try {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+
+    const parsed = meUpdateSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid profile update payload' });
+    }
+
+    const payload = parsed.data;
+    const updateEntries = Object.entries(payload);
+    if (updateEntries.length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    const columns = updateEntries.map(([key]) => `${key} = ?`).join(', ');
+    const values = updateEntries.map(([, value]) => {
+      if (typeof value !== 'string') return value;
+      const trimmed = value.trim();
+      return trimmed.length ? trimmed : null;
+    });
+
+    await db.execute(`UPDATE users SET ${columns}, last_active = CURRENT_TIMESTAMP WHERE id = ?`, [...values, user.id]);
+
+    const updatedUser = await db.queryOne<any>(
+      'SELECT id, username, email, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?',
+      [user.id]
+    );
+
+    return res.json({ user: updatedUser });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to update profile' });
+  }
+};
+app.patch(['/api/auth/me', '/auth/me'], meUpdateHandler);
+
 const userProfileHandler = async (req: Request, res: Response) => {
   try {
     const user = await db.queryOne<any>(
