@@ -586,6 +586,14 @@ export default function ProfilePage() {
     }
   });
 
+  const openSocialLink = (link: string | null) => {
+    if (!link) {
+      return;
+    }
+
+    window.open(link, '_blank', 'noopener,noreferrer');
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
