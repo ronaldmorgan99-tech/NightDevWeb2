@@ -29,6 +29,18 @@ const DiscordIcon = () => (
   </svg>
 );
 
+const normalizeExternalUrl = (url?: string): string | null => {
+  if (!url) return null;
+  const trimmedUrl = url.trim();
+  if (!trimmedUrl) return null;
+
+  if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(trimmedUrl)) {
+    return trimmedUrl;
+  }
+
+  return `https://${trimmedUrl}`;
+};
+
 interface UserProfile {
   id: number;
   username: string;
@@ -674,8 +686,10 @@ export default function ProfilePage() {
                 <button 
                   key={i}
                   onClick={() => {
-                    const link = profile[social.key as keyof UserProfile] as string | undefined;
-                    if (link) window.open(link, '_blank');
+                    const link = normalizeExternalUrl(profile[social.key as keyof UserProfile] as string | undefined);
+                    if (link) {
+                      window.open(link, '_blank', 'noopener,noreferrer');
+                    }
                   }}
                   className={`w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-zinc-500 transition-all duration-500 ${social.color} hover:bg-white/10 hover:border-white/20 hover:scale-110 active:scale-95 group relative`}
                   title={social.label}
