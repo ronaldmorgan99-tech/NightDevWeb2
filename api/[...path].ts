@@ -41,6 +41,8 @@ app.use((req, res, next) => {
     '/auth/register',
     '/api/auth/logout',
     '/auth/logout',
+    '/api/auth/me',
+    '/auth/me',
     '/api/csrf-token',
     '/csrf-token',
     '/api/payments/stripe/webhook',
