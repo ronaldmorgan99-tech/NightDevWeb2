@@ -107,10 +107,41 @@ export async function initDb() {
       avatar_url TEXT,
       banner_url TEXT,
       bio TEXT,
+      steam_url TEXT,
+      x_url TEXT,
+      facebook_url TEXT,
+      github_url TEXT,
+      youtube_url TEXT,
+      kick_url TEXT,
+      twitch_url TEXT,
+      discord_url TEXT,
       last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // Migration-safe schema updates for users social links
+  const socialColumns = ['steam_url', 'x_url', 'facebook_url', 'github_url', 'youtube_url', 'kick_url', 'twitch_url', 'discord_url'];
+  if (db instanceof SQLiteWrapper) {
+    const userColumns = await db.query<any>('PRAGMA table_info(users)');
+    for (const column of socialColumns) {
+      const hasColumn = userColumns.some((item) => item.name === column);
+      if (!hasColumn) {
+        await db.execute(`ALTER TABLE users ADD COLUMN ${column} TEXT`);
+      }
+    }
+  } else {
+    for (const column of socialColumns) {
+      const existingColumn = await db.queryOne<any>(`
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = ?
+      `, [column]);
+      if (!existingColumn) {
+        await db.execute(`ALTER TABLE users ADD COLUMN ${column} TEXT`);
+      }
+    }
+  }
 
   // Forum Categories
   await run(`

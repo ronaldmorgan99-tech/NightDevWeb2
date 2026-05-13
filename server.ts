@@ -75,6 +75,14 @@ const profileUpdateSchema = z.object({
   avatar_url: z.string().trim().max(2048).optional(),
   banner_url: z.string().trim().max(2048).optional(),
   bio: z.string().trim().max(500).optional(),
+  steam_url: z.string().trim().max(2048).optional(),
+  x_url: z.string().trim().max(2048).optional(),
+  facebook_url: z.string().trim().max(2048).optional(),
+  github_url: z.string().trim().max(2048).optional(),
+  youtube_url: z.string().trim().max(2048).optional(),
+  kick_url: z.string().trim().max(2048).optional(),
+  twitch_url: z.string().trim().max(2048).optional(),
+  discord_url: z.string().trim().max(2048).optional(),
   username: z.string().trim().min(3).max(32).optional(),
   email: z.string().trim().toLowerCase().email().max(320).optional(),
   currentPassword: z.string().max(128).optional(),
@@ -1071,7 +1079,7 @@ async function start() {
   app.get('/api/auth/me', authenticate, csrfProtection, async (req: any, res) => {
     observabilityMetrics.auth.meChecks += 1;
     try {
-      const user = await db.queryOne<any>('SELECT id, username, email, role, avatar_url, banner_url, bio, created_at, last_active FROM users WHERE id = ?', [req.user.id]);
+      const user = await db.queryOne<any>('SELECT id, username, email, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?', [req.user.id]);
       res.json({ user, csrfToken: req.csrfToken() });
     } catch (err: any) {
       void captureException(err, { scope: 'auth', flow: 'me' });
@@ -1080,7 +1088,7 @@ async function start() {
   });
 
   app.patch('/api/auth/me', authenticate, validateBody(profileUpdateSchema), async (req: any, res) => {
-    const { avatar_url, banner_url, bio, username, email, currentPassword, newPassword } = req.body;
+    const { avatar_url, banner_url, bio, username, email, currentPassword, newPassword, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url } = req.body;
     try {
       const updates: string[] = [];
       const params: any[] = [];
@@ -1135,13 +1143,21 @@ async function start() {
         updates.push('bio = ?');
         params.push(sanitizeUserText(bio));
       }
+      if (steam_url !== undefined) { updates.push('steam_url = ?'); params.push(steam_url); }
+      if (x_url !== undefined) { updates.push('x_url = ?'); params.push(x_url); }
+      if (facebook_url !== undefined) { updates.push('facebook_url = ?'); params.push(facebook_url); }
+      if (github_url !== undefined) { updates.push('github_url = ?'); params.push(github_url); }
+      if (youtube_url !== undefined) { updates.push('youtube_url = ?'); params.push(youtube_url); }
+      if (kick_url !== undefined) { updates.push('kick_url = ?'); params.push(kick_url); }
+      if (twitch_url !== undefined) { updates.push('twitch_url = ?'); params.push(twitch_url); }
+      if (discord_url !== undefined) { updates.push('discord_url = ?'); params.push(discord_url); }
       
       if (updates.length > 0) {
         params.push(req.user.id);
         await db.execute(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params);
       }
       
-      const user = await db.queryOne<any>('SELECT id, username, email, role, avatar_url, banner_url, bio, created_at, last_active FROM users WHERE id = ?', [req.user.id]);
+      const user = await db.queryOne<any>('SELECT id, username, email, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?', [req.user.id]);
       res.json({ user });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1156,7 +1172,7 @@ async function start() {
   // Users
   app.get('/api/users/:id', validateParams(idParamSchema), async (req: any, res) => {
     try {
-      const user = await db.queryOne<any>('SELECT id, username, role, avatar_url, banner_url, bio, created_at, last_active FROM users WHERE id = ?', [req.params.id]);
+      const user = await db.queryOne<any>('SELECT id, username, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?', [req.params.id]);
       if (!user) return res.status(404).json({ error: 'User not found' });
       res.json(user);
     } catch (err: any) {
