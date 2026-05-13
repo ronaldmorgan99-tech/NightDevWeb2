@@ -34,14 +34,29 @@ app.use(cookieParser());
 const csrfProtection = csurf({ cookie: true });
 app.use((req, res, next) => {
   const path = req.path || '';
-  if (
-    path === '/api/payments/stripe/webhook' ||
-    path === '/payments/stripe/webhook' ||
-    path === '/api/payments/paypal/webhook' ||
-    path === '/payments/paypal/webhook'
-  ) {
+  const csrfExcludedPaths = new Set([
+    '/api/auth/login',
+    '/auth/login',
+    '/api/auth/register',
+    '/auth/register',
+    '/api/auth/logout',
+    '/auth/logout',
+    '/api/csrf-token',
+    '/csrf-token',
+    '/api/payments/stripe/webhook',
+    '/payments/stripe/webhook',
+    '/api/payments/paypal/webhook',
+    '/payments/paypal/webhook'
+  ]);
+
+  if (csrfExcludedPaths.has(path)) {
     return next();
   }
+
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    return next();
+  }
+
   return csrfProtection(req, res, next);
 });
 
