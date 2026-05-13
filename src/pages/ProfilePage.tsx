@@ -563,9 +563,26 @@ export default function ProfilePage() {
         json: updates
       }),
     onSuccess: (data) => {
+      queryClient.setQueryData(['profile', userId], data.user);
       queryClient.invalidateQueries({ queryKey: ['profile', userId] });
       if (updateProfile) updateProfile(data.user);
+      setSocialLinks({
+        steam_url: data.user?.steam_url || '',
+        x_url: data.user?.x_url || '',
+        facebook_url: data.user?.facebook_url || '',
+        github_url: data.user?.github_url || '',
+        youtube_url: data.user?.youtube_url || '',
+        kick_url: data.user?.kick_url || '',
+        twitch_url: data.user?.twitch_url || '',
+        discord_url: data.user?.discord_url || ''
+      });
       setIsEditing(false);
+    },
+    onError: (error) => {
+      console.error('[ProfilePage] Failed to update dossier', error);
+      if (typeof window !== 'undefined') {
+        window.alert('Failed to update dossier. Please try again.');
+      }
     }
   });
 
