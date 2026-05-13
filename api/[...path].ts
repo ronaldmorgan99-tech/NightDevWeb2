@@ -41,6 +41,8 @@ app.use((req, res, next) => {
     '/auth/register',
     '/api/auth/logout',
     '/auth/logout',
+    '/api/auth/me',
+    '/auth/me',
     '/api/csrf-token',
     '/csrf-token',
     '/api/payments/stripe/webhook',
@@ -573,12 +575,10 @@ const logoutHandler = (_req: Request, res: Response) => {
 };
 app.post(['/api/auth/logout', '/auth/logout'], logoutHandler);
 
-const csrfTokenHandler = (_req: Request, res: Response) => {
-  // Serverless API shim currently does not enforce CSRF middleware.
-  // Return a stable shape expected by the frontend to avoid 404s.
-  return res.json({ csrfToken: null });
+const csrfTokenHandler = (req: Request, res: Response) => {
+  return res.json({ csrfToken: req.csrfToken() });
 };
-app.get(['/api/csrf-token', '/csrf-token'], csrfTokenHandler);
+app.get(['/api/csrf-token', '/csrf-token'], csrfProtection, csrfTokenHandler);
 
 app.post(['/api/telemetry/client-error', '/telemetry/client-error'], async (req: Request, res: Response) => {
   await captureException(req.body?.message || 'Unknown client error', {

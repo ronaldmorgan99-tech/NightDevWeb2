@@ -688,6 +688,17 @@ export default function ProfilePage() {
                   onClick={() => {
                     const rawLink = profile[social.key as keyof UserProfile] as string | undefined;
                     const link = normalizeExternalUrl(rawLink);
+                    if (import.meta.env.DEV) {
+                      console.debug('[ProfilePage] Social button click', {
+                        social: social.label,
+                        key: social.key,
+                        rawLink,
+                        normalizedLink: link,
+                        profileId: profile.id,
+                      });
+                    }
+
+                    if (!link) {
                     console.debug('[ProfilePage] Social button click', {
                       social: social.label,
                       key: social.key,
