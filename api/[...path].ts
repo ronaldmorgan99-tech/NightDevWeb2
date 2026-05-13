@@ -596,7 +596,7 @@ const meHandler = async (req: Request, res: Response) => {
   }
   try {
     const user = await db.queryOne<any>(
-      'SELECT id, username, email, role, avatar_url, banner_url, bio, created_at, last_active FROM users WHERE id = ?',
+      'SELECT id, username, email, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?',
       [payload.id]
     );
     if (!user) {
@@ -612,7 +612,7 @@ app.get(['/api/auth/me', '/auth/me'], meHandler);
 const userProfileHandler = async (req: Request, res: Response) => {
   try {
     const user = await db.queryOne<any>(
-      'SELECT id, username, role, avatar_url, banner_url, bio, created_at, last_active FROM users WHERE id = ?',
+      'SELECT id, username, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?',
       [req.params.id]
     );
 
