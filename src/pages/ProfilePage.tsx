@@ -738,11 +738,7 @@ export default function ProfilePage() {
                   setIsEditing(!isEditing);
                   setEditBio(profile.bio || '');
                 }}
-                className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all duration-500 relative group overflow-hidden shrink-0 ${
-                  isEditing 
-                    ? 'btn-neon-magenta text-[10px]' 
-                    : 'btn-neon-cyan text-[10px]'
-                }`}
+                className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all duration-500 relative group overflow-hidden shrink-0 ${isEditing ? 'btn-neon-magenta text-[10px]' : 'btn-neon-cyan text-[10px]'}`}
               >
                 {isEditing ? (
                   <>
