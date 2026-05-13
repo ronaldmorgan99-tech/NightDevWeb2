@@ -36,6 +36,14 @@ interface UserProfile {
   avatar_url?: string;
   banner_url?: string;
   bio?: string;
+  steam_url?: string;
+  x_url?: string;
+  facebook_url?: string;
+  github_url?: string;
+  youtube_url?: string;
+  kick_url?: string;
+  twitch_url?: string;
+  discord_url?: string;
   created_at: string;
   last_active: string;
 }
@@ -405,6 +413,16 @@ export default function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [editBio, setEditBio] = useState('');
   const [selectedServer, setSelectedServer] = useState<string | null>(null);
+  const [socialLinks, setSocialLinks] = useState<Record<string, string>>({
+    steam_url: '',
+    x_url: '',
+    facebook_url: '',
+    github_url: '',
+    youtube_url: '',
+    kick_url: '',
+    twitch_url: '',
+    discord_url: ''
+  });
 
   const userId = id || currentUser?.id;
 
@@ -492,8 +510,22 @@ export default function ProfilePage() {
     return trend.slice(-7); // Last 7 points
   }, [activeStats, filteredTransactions]);
 
+
+  useEffect(() => {
+    if (!profile) return;
+    setSocialLinks({
+      steam_url: profile.steam_url || '',
+      x_url: profile.x_url || '',
+      facebook_url: profile.facebook_url || '',
+      github_url: profile.github_url || '',
+      youtube_url: profile.youtube_url || '',
+      kick_url: profile.kick_url || '',
+      twitch_url: profile.twitch_url || '',
+      discord_url: profile.discord_url || ''
+    });
+  }, [profile]);
   const updateMutation = useMutation({
-    mutationFn: (updates: { avatar_url?: string; banner_url?: string; bio?: string }) =>
+    mutationFn: (updates: { avatar_url?: string; banner_url?: string; bio?: string; steam_url?: string; x_url?: string; facebook_url?: string; github_url?: string; youtube_url?: string; kick_url?: string; twitch_url?: string; discord_url?: string }) =>
       apiJson<{ user: any }>('/api/auth/me', {
         method: 'PATCH',
         json: updates
@@ -630,18 +662,21 @@ export default function ProfilePage() {
 
             <div className="flex flex-wrap justify-center md:justify-start gap-3">
               {[
-                { icon: SteamIcon, color: 'hover:text-white', label: 'Steam' },
-                { icon: XIcon, color: 'hover:text-white', label: 'X' },
-                { icon: Facebook, color: 'hover:text-[#1877F2]', label: 'Facebook' },
-                { icon: Github, color: 'hover:text-white', label: 'GitHub' },
-                { icon: Youtube, color: 'hover:text-[#FF0000]', label: 'YouTube' },
-                { icon: KickIcon, color: 'hover:text-[#53FC18]', label: 'Kick' },
-                { icon: Twitch, color: 'hover:text-[#9146FF]', label: 'Twitch' },
-                { icon: DiscordIcon, color: 'hover:text-[#5865F2]', label: 'Discord', link: 'https://discord.gg/NZbmQNxX' },
+                { icon: SteamIcon, color: 'hover:text-white', label: 'Steam', key: 'steam_url' },
+                { icon: XIcon, color: 'hover:text-white', label: 'X', key: 'x_url' },
+                { icon: Facebook, color: 'hover:text-[#1877F2]', label: 'Facebook', key: 'facebook_url' },
+                { icon: Github, color: 'hover:text-white', label: 'GitHub', key: 'github_url' },
+                { icon: Youtube, color: 'hover:text-[#FF0000]', label: 'YouTube', key: 'youtube_url' },
+                { icon: KickIcon, color: 'hover:text-[#53FC18]', label: 'Kick', key: 'kick_url' },
+                { icon: Twitch, color: 'hover:text-[#9146FF]', label: 'Twitch', key: 'twitch_url' },
+                { icon: DiscordIcon, color: 'hover:text-[#5865F2]', label: 'Discord', key: 'discord_url' },
               ].map((social, i) => (
                 <button 
                   key={i}
-                  onClick={() => social.link ? window.open(social.link, '_blank') : null}
+                  onClick={() => {
+                    const link = profile[social.key as keyof UserProfile] as string | undefined;
+                    if (link) window.open(link, '_blank');
+                  }}
                   className={`w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-zinc-500 transition-all duration-500 ${social.color} hover:bg-white/10 hover:border-white/20 hover:scale-110 active:scale-95 group relative`}
                   title={social.label}
                 >
@@ -698,6 +733,29 @@ export default function ProfilePage() {
         <h3 className="text-2xl font-black text-white mb-8 italic tracking-tighter uppercase">Operative Dossier</h3>
         {isEditing ? (
           <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[
+                { key: 'steam_url', label: 'Steam URL', placeholder: 'https://steamcommunity.com/id/yourname' },
+                { key: 'x_url', label: 'X URL', placeholder: 'https://x.com/yourname' },
+                { key: 'facebook_url', label: 'Facebook URL', placeholder: 'https://facebook.com/yourname' },
+                { key: 'github_url', label: 'GitHub URL', placeholder: 'https://github.com/yourname' },
+                { key: 'youtube_url', label: 'YouTube URL', placeholder: 'https://youtube.com/@yourname' },
+                { key: 'kick_url', label: 'Kick URL', placeholder: 'https://kick.com/yourname' },
+                { key: 'twitch_url', label: 'Twitch URL', placeholder: 'https://twitch.tv/yourname' },
+                { key: 'discord_url', label: 'Discord Invite URL', placeholder: 'https://discord.gg/yourinvite' }
+              ].map((social) => (
+                <div key={social.key} className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">{social.label}</label>
+                  <input
+                    type="url"
+                    value={socialLinks[social.key] || ''}
+                    onChange={(e) => setSocialLinks((prev) => ({ ...prev, [social.key]: e.target.value }))}
+                    placeholder={social.placeholder}
+                    className="w-full bg-cyber-black border border-white/10 rounded-xl p-3 text-zinc-300 focus:outline-none focus:border-neon-cyan/50 transition-all font-medium text-sm"
+                  />
+                </div>
+              ))}
+            </div>
             <textarea
               value={editBio}
               onChange={(e) => setEditBio(e.target.value)}
@@ -712,7 +770,7 @@ export default function ProfilePage() {
                 Abort
               </button>
               <button 
-                onClick={() => updateMutation.mutate({ bio: editBio })}
+                onClick={() => updateMutation.mutate({ bio: editBio, ...socialLinks })}
                 disabled={updateMutation.isPending}
                 className={`btn-neon-cyan px-6 py-2 text-[10px] ${updateMutation.isPending ? 'opacity-50 cursor-wait' : ''}`}
               >
