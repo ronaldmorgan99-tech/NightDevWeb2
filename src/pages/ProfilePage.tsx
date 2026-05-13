@@ -682,6 +682,38 @@ export default function ProfilePage() {
                 { icon: KickIcon, color: 'hover:text-[#53FC18]', label: 'Kick', key: 'kick_url' },
                 { icon: Twitch, color: 'hover:text-[#9146FF]', label: 'Twitch', key: 'twitch_url' },
                 { icon: DiscordIcon, color: 'hover:text-[#5865F2]', label: 'Discord', key: 'discord_url' },
+              ].map((social, i) => {
+                const SocialIcon = social.icon;
+
+                return (
+                  <button 
+                    key={i}
+                    onClick={() => {
+                      const rawLink = profile[social.key as keyof UserProfile] as string | undefined;
+                      const link = normalizeExternalUrl(rawLink);
+                      if (import.meta.env.DEV) {
+                        console.debug('[ProfilePage] Social button click', {
+                          social: social.label,
+                          key: social.key,
+                          rawLink,
+                          normalizedLink: link,
+                          profileId: profile.id,
+                        });
+                      }
+
+                      if (!link) {
+                        return;
+                      }
+
+                      window.open(link, '_blank', 'noopener,noreferrer');
+                    }}
+                    className={`w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-zinc-500 transition-all duration-500 ${social.color} hover:bg-white/10 hover:border-white/20 hover:scale-110 active:scale-95 group relative`}
+                    title={social.label}
+                  >
+                    <SocialIcon className="w-5 h-5" />
+                  </button>
+                );
+              })}
               ].map((social, i) => (
                 <button 
                   key={i}
