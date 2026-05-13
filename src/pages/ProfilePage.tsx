@@ -41,6 +41,26 @@ const normalizeExternalUrl = (url?: string): string | null => {
   return `https://${trimmedUrl}`;
 };
 
+type SocialKey = 'steam_url' | 'x_url' | 'facebook_url' | 'github_url' | 'youtube_url' | 'kick_url' | 'twitch_url' | 'discord_url';
+
+type SocialItem = {
+  Icon: React.ComponentType<{ className?: string }>;
+  hoverColorClass: string;
+  label: string;
+  key: SocialKey;
+};
+
+const PROFILE_SOCIAL_ITEMS: SocialItem[] = [
+  { Icon: SteamIcon, hoverColorClass: 'hover:text-white', label: 'Steam', key: 'steam_url' },
+  { Icon: XIcon, hoverColorClass: 'hover:text-white', label: 'X', key: 'x_url' },
+  { Icon: Facebook, hoverColorClass: 'hover:text-[#1877F2]', label: 'Facebook', key: 'facebook_url' },
+  { Icon: Github, hoverColorClass: 'hover:text-white', label: 'GitHub', key: 'github_url' },
+  { Icon: Youtube, hoverColorClass: 'hover:text-[#FF0000]', label: 'YouTube', key: 'youtube_url' },
+  { Icon: KickIcon, hoverColorClass: 'hover:text-[#53FC18]', label: 'Kick', key: 'kick_url' },
+  { Icon: Twitch, hoverColorClass: 'hover:text-[#9146FF]', label: 'Twitch', key: 'twitch_url' },
+  { Icon: DiscordIcon, hoverColorClass: 'hover:text-[#5865F2]', label: 'Discord', key: 'discord_url' }
+];
+
 interface UserProfile {
   id: number;
   username: string;
@@ -673,6 +693,22 @@ export default function ProfilePage() {
             </div>
 
             <div className="flex flex-wrap justify-center md:justify-start gap-3">
+              {PROFILE_SOCIAL_ITEMS.map((social) => {
+                const SocialIcon = social.Icon;
+                const rawLink = profile[social.key] || '';
+                const normalizedLink = normalizeExternalUrl(rawLink);
+                const buttonClassName = [
+                  'w-10 h-10 rounded-xl bg-white/5 border border-white/10',
+                  'flex items-center justify-center text-zinc-500',
+                  'transition-all duration-500 hover:bg-white/10 hover:border-white/20',
+                  'hover:scale-110 active:scale-95 group relative',
+                  social.hoverColorClass
+                ].join(' ');
+
+                return (
+                  <button
+                    key={social.key}
+                    onClick={() => {
               {[
                 { icon: SteamIcon, color: 'hover:text-white', label: 'Steam', key: 'steam_url' },
                 { icon: XIcon, color: 'hover:text-white', label: 'X', key: 'x_url' },
@@ -696,6 +732,17 @@ export default function ProfilePage() {
                           social: social.label,
                           key: social.key,
                           rawLink,
+                          normalizedLink,
+                          profileId: profile.id
+                        });
+                      }
+
+                      if (!normalizedLink) return;
+                      window.open(normalizedLink, '_blank', 'noopener,noreferrer');
+                    }}
+                    className={buttonClassName}
+                    title={social.label}
+                    type="button"
                           normalizedLink: link,
                           profileId: profile.id,
                         });
