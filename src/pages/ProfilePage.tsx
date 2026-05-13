@@ -29,6 +29,38 @@ const DiscordIcon = () => (
   </svg>
 );
 
+const normalizeExternalUrl = (url?: string): string | null => {
+  if (!url) return null;
+  const trimmedUrl = url.trim();
+  if (!trimmedUrl) return null;
+
+  if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(trimmedUrl)) {
+    return trimmedUrl;
+  }
+
+  return `https://${trimmedUrl}`;
+};
+
+type SocialKey = 'steam_url' | 'x_url' | 'facebook_url' | 'github_url' | 'youtube_url' | 'kick_url' | 'twitch_url' | 'discord_url';
+
+type SocialItem = {
+  Icon: React.ComponentType<{ className?: string }>;
+  hoverColorClass: string;
+  label: string;
+  key: SocialKey;
+};
+
+const PROFILE_SOCIAL_ITEMS: SocialItem[] = [
+  { Icon: SteamIcon, hoverColorClass: 'hover:text-white', label: 'Steam', key: 'steam_url' },
+  { Icon: XIcon, hoverColorClass: 'hover:text-white', label: 'X', key: 'x_url' },
+  { Icon: Facebook, hoverColorClass: 'hover:text-[#1877F2]', label: 'Facebook', key: 'facebook_url' },
+  { Icon: Github, hoverColorClass: 'hover:text-white', label: 'GitHub', key: 'github_url' },
+  { Icon: Youtube, hoverColorClass: 'hover:text-[#FF0000]', label: 'YouTube', key: 'youtube_url' },
+  { Icon: KickIcon, hoverColorClass: 'hover:text-[#53FC18]', label: 'Kick', key: 'kick_url' },
+  { Icon: Twitch, hoverColorClass: 'hover:text-[#9146FF]', label: 'Twitch', key: 'twitch_url' },
+  { Icon: DiscordIcon, hoverColorClass: 'hover:text-[#5865F2]', label: 'Discord', key: 'discord_url' }
+];
+
 interface UserProfile {
   id: number;
   username: string;
@@ -661,28 +693,43 @@ export default function ProfilePage() {
             </div>
 
             <div className="flex flex-wrap justify-center md:justify-start gap-3">
-              {[
-                { icon: SteamIcon, color: 'hover:text-white', label: 'Steam', key: 'steam_url' },
-                { icon: XIcon, color: 'hover:text-white', label: 'X', key: 'x_url' },
-                { icon: Facebook, color: 'hover:text-[#1877F2]', label: 'Facebook', key: 'facebook_url' },
-                { icon: Github, color: 'hover:text-white', label: 'GitHub', key: 'github_url' },
-                { icon: Youtube, color: 'hover:text-[#FF0000]', label: 'YouTube', key: 'youtube_url' },
-                { icon: KickIcon, color: 'hover:text-[#53FC18]', label: 'Kick', key: 'kick_url' },
-                { icon: Twitch, color: 'hover:text-[#9146FF]', label: 'Twitch', key: 'twitch_url' },
-                { icon: DiscordIcon, color: 'hover:text-[#5865F2]', label: 'Discord', key: 'discord_url' },
-              ].map((social, i) => (
-                <button 
-                  key={i}
-                  onClick={() => {
-                    const link = profile[social.key as keyof UserProfile] as string | undefined;
-                    if (link) window.open(link, '_blank');
-                  }}
-                  className={`w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-zinc-500 transition-all duration-500 ${social.color} hover:bg-white/10 hover:border-white/20 hover:scale-110 active:scale-95 group relative`}
-                  title={social.label}
-                >
-                  <social.icon className="w-5 h-5" />
-                </button>
-              ))}
+              {PROFILE_SOCIAL_ITEMS.map((social) => {
+                const SocialIcon = social.Icon;
+                const rawLink = profile[social.key] || '';
+                const normalizedLink = normalizeExternalUrl(rawLink);
+                const buttonClassName = [
+                  'w-10 h-10 rounded-xl bg-white/5 border border-white/10',
+                  'flex items-center justify-center text-zinc-500',
+                  'transition-all duration-500 hover:bg-white/10 hover:border-white/20',
+                  'hover:scale-110 active:scale-95 group relative',
+                  social.hoverColorClass
+                ].join(' ');
+
+                return (
+                  <button
+                    key={social.key}
+                    onClick={() => {
+                      if (import.meta.env.DEV) {
+                        console.debug('[ProfilePage] Social button click', {
+                          social: social.label,
+                          key: social.key,
+                          rawLink,
+                          normalizedLink,
+                          profileId: profile.id
+                        });
+                      }
+
+                      if (!normalizedLink) return;
+                      window.open(normalizedLink, '_blank', 'noopener,noreferrer');
+                    }}
+                    className={buttonClassName}
+                    title={social.label}
+                    type="button"
+                  >
+                    <SocialIcon className="w-5 h-5" />
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -693,11 +740,7 @@ export default function ProfilePage() {
                   setIsEditing(!isEditing);
                   setEditBio(profile.bio || '');
                 }}
-                className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all duration-500 relative group overflow-hidden shrink-0 ${
-                  isEditing 
-                    ? 'btn-neon-magenta text-[10px]' 
-                    : 'btn-neon-cyan text-[10px]'
-                }`}
+                className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all duration-500 relative group overflow-hidden shrink-0 ${isEditing ? 'btn-neon-magenta text-[10px]' : 'btn-neon-cyan text-[10px]'}`}
               >
                 {isEditing ? (
                   <>
