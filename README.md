@@ -260,6 +260,10 @@ Minimum expected results:
 - **Integration coverage gate**: `validate` enforces minimum integration test line coverage from `coverage/integration` via `INTEGRATION_COVERAGE_THRESHOLD` (default `65`) without rerunning integration tests.
 - Canonical source: if CI behavior changes, update `.github/workflows/ci.yml` first and then sync this section.
 
+## Product Requirements Documentation
+
+- See `docs/product-requirements.md` for formal functional/non-functional requirements, end-to-end user journeys, module documentation outline, RBAC matrix, and moderation policy baseline.
+
 ## AI Workflow Files
 
 The repository includes AI collaboration documents that help track context and planned work:
