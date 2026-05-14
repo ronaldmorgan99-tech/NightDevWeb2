@@ -733,105 +733,15 @@ export default function ProfilePage() {
                 return (
                   <button
                     key={social.key}
-                    onClick={() => {
-              {[
-                { icon: SteamIcon, color: 'hover:text-white', label: 'Steam', key: 'steam_url' },
-                { icon: XIcon, color: 'hover:text-white', label: 'X', key: 'x_url' },
-                { icon: Facebook, color: 'hover:text-[#1877F2]', label: 'Facebook', key: 'facebook_url' },
-                { icon: Github, color: 'hover:text-white', label: 'GitHub', key: 'github_url' },
-                { icon: Youtube, color: 'hover:text-[#FF0000]', label: 'YouTube', key: 'youtube_url' },
-                { icon: KickIcon, color: 'hover:text-[#53FC18]', label: 'Kick', key: 'kick_url' },
-                { icon: Twitch, color: 'hover:text-[#9146FF]', label: 'Twitch', key: 'twitch_url' },
-                { icon: DiscordIcon, color: 'hover:text-[#5865F2]', label: 'Discord', key: 'discord_url' },
-              ].map((social, i) => {
-                const SocialIcon = social.icon;
-
-                return (
-                  <button 
-                    key={i}
-                    onClick={() => {
-                      const rawLink = profile[social.key as keyof UserProfile] as string | undefined;
-                      const link = normalizeExternalUrl(rawLink);
-                      if (import.meta.env.DEV) {
-                        console.debug('[ProfilePage] Social button click', {
-                          social: social.label,
-                          key: social.key,
-                          rawLink,
-                          normalizedLink,
-                          profileId: profile.id
-                        });
-                      }
-
-                      if (!normalizedLink) return;
-                      window.open(normalizedLink, '_blank', 'noopener,noreferrer');
-                    }}
-                    className={buttonClassName}
-                    title={social.label}
                     type="button"
-                          normalizedLink: link,
-                          profileId: profile.id,
-                        });
-                      }
-
-                      if (!link) {
-                        return;
-                      }
-
-                      window.open(link, '_blank', 'noopener,noreferrer');
-                    }}
-                    className={`w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-zinc-500 transition-all duration-500 ${social.color} hover:bg-white/10 hover:border-white/20 hover:scale-110 active:scale-95 group relative`}
+                    className={buttonClassName}
+                    onClick={() => openSocialLink(normalizedLink)}
                     title={social.label}
                   >
                     <SocialIcon className="w-5 h-5" />
                   </button>
                 );
               })}
-              ].map((social, i) => (
-                <button 
-                  key={i}
-                  onClick={() => {
-                    const rawLink = profile[social.key as keyof UserProfile] as string | undefined;
-                    const link = normalizeExternalUrl(rawLink);
-                    if (import.meta.env.DEV) {
-                      console.debug('[ProfilePage] Social button click', {
-                        social: social.label,
-                        key: social.key,
-                        rawLink,
-                        normalizedLink: link,
-                        profileId: profile.id,
-                      });
-                    }
-
-                    if (!link) {
-                    console.debug('[ProfilePage] Social button click', {
-                      social: social.label,
-                      key: social.key,
-                      rawLink,
-                      normalizedLink: link,
-                      profileId: profile.id,
-                    });
-
-                    if (!link) {
-                      console.warn('[ProfilePage] No social link available to open', {
-                        social: social.label,
-                        key: social.key,
-                        profileId: profile.id,
-                      });
-                      return;
-                    }
-
-                    window.open(link, '_blank', 'noopener,noreferrer');
-                    const link = normalizeExternalUrl(profile[social.key as keyof UserProfile] as string | undefined);
-                    if (link) {
-                      window.open(link, '_blank', 'noopener,noreferrer');
-                    }
-                  }}
-                  className={`w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-zinc-500 transition-all duration-500 ${social.color} hover:bg-white/10 hover:border-white/20 hover:scale-110 active:scale-95 group relative`}
-                  title={social.label}
-                >
-                  <social.icon className="w-5 h-5" />
-                </button>
-              ))}
             </div>
           </div>
 
