@@ -536,6 +536,46 @@ export async function initDb() {
     )
   `);
 
+
+  // Migration-safe schema updates for game_stats
+  const gameStatsColumnsToAdd = [
+    { name: 'game_type', sqliteDef: "TEXT NOT NULL DEFAULT 'Rust'", mysqlDef: "VARCHAR(255) NOT NULL DEFAULT 'Rust'" },
+    { name: 'playtime', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
+    { name: 'bank_balance', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
+    { name: 'cash_on_hand', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
+    { name: 'total_wealth', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
+    { name: 'kills', sqliteDef: 'INTEGER DEFAULT 0', mysqlDef: 'INT DEFAULT 0' },
+    { name: 'deaths', sqliteDef: 'INTEGER DEFAULT 0', mysqlDef: 'INT DEFAULT 0' },
+    { name: 'kd_ratio', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
+    { name: 'raids_completed', sqliteDef: 'INTEGER DEFAULT 0', mysqlDef: 'INT DEFAULT 0' },
+    { name: 'vehicles_owned', sqliteDef: 'INTEGER DEFAULT 0', mysqlDef: 'INT DEFAULT 0' },
+    { name: 'wipe_performance', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
+    { name: 'last_updated', sqliteDef: 'DATETIME DEFAULT CURRENT_TIMESTAMP', mysqlDef: 'DATETIME DEFAULT CURRENT_TIMESTAMP' }
+  ];
+
+  if (!(db instanceof MySQLWrapper)) {
+    const gameStatsColumns = await db.query<any>('PRAGMA table_info(game_stats)');
+    const existingGameStatsColumns = new Set(gameStatsColumns.map((column) => column.name));
+    for (const column of gameStatsColumnsToAdd) {
+      if (!existingGameStatsColumns.has(column.name)) {
+        await db.execute(`ALTER TABLE game_stats ADD COLUMN ${column.name} ${column.sqliteDef}`);
+      }
+    }
+  } else {
+    for (const column of gameStatsColumnsToAdd) {
+      const existingColumn = await db.queryOne<any>(`
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'game_stats'
+          AND COLUMN_NAME = ?
+      `, [column.name]);
+      if (!existingColumn) {
+        await db.execute(`ALTER TABLE game_stats ADD COLUMN ${column.name} ${column.mysqlDef}`);
+      }
+    }
+  }
+
   // Game Transactions
   await run(`
     CREATE TABLE IF NOT EXISTS game_transactions (
