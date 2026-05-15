@@ -301,10 +301,10 @@ setInterval(pruneExpiredMediaOperations, 60_000).unref();
 
 async function ensureDefaultAuthUsers() {
   const hashedPassword = bcrypt.hashSync('password', 10);
-  const isSQLite = 'pragma' in db;
-  const insertUser = isSQLite
-    ? 'INSERT OR IGNORE INTO users (username, email, password, role, bio) VALUES (?, ?, ?, ?, ?)'
-    : 'INSERT IGNORE INTO users (username, email, password, role, bio) VALUES (?, ?, ?, ?, ?)';
+  const isMySQL = Boolean(process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('mysql'));
+  const insertUser = isMySQL
+    ? 'INSERT IGNORE INTO users (username, email, password, role, bio) VALUES (?, ?, ?, ?, ?)'
+    : 'INSERT OR IGNORE INTO users (username, email, password, role, bio) VALUES (?, ?, ?, ?, ?)';
 
   await db.execute(insertUser, ['admin', 'admin@nightrespawn.com', hashedPassword, 'admin', 'The platform administrator.']);
   await db.execute(insertUser, ['member', 'member@nightrespawn.com', hashedPassword, 'member', 'A regular community member.']);
