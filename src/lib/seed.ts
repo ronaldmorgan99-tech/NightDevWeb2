@@ -105,9 +105,18 @@ export async function seedDb() {
   await db.execute(insertTag, ['Discussion', '#8b5cf6']);
 
   // Thread Tags
-  const insertThreadTag = 'INSERT INTO thread_tags (thread_id, tag_id) VALUES (?, ?)';
-  await db.execute(insertThreadTag, [1, 1]);
-  await db.execute(insertThreadTag, [2, 4]);
+  const insertThreadTag = isMySQL ? 'INSERT IGNORE INTO thread_tags (thread_id, tag_id) VALUES (?, ?)' : 'INSERT OR IGNORE INTO thread_tags (thread_id, tag_id) VALUES (?, ?)';
+  const welcomeThreadRow = await db.queryOne<{ id: number }>('SELECT id FROM threads WHERE title = ?', ['Welcome to NightRespawn!']);
+  const weekendThreadRow = await db.queryOne<{ id: number }>('SELECT id FROM threads WHERE title = ?', ['What are you playing this weekend?']);
+  const officialTagRow = await db.queryOne<{ id: number }>('SELECT id FROM tags WHERE name = ?', ['Official']);
+  const discussionTagRow = await db.queryOne<{ id: number }>('SELECT id FROM tags WHERE name = ?', ['Discussion']);
+
+  if (welcomeThreadRow?.id && officialTagRow?.id) {
+    await db.execute(insertThreadTag, [welcomeThreadRow.id, officialTagRow.id]);
+  }
+  if (weekendThreadRow?.id && discussionTagRow?.id) {
+    await db.execute(insertThreadTag, [weekendThreadRow.id, discussionTagRow.id]);
+  }
 
   // Products
   const insertProduct = 'INSERT INTO products (name, description, price, category) VALUES (?, ?, ?, ?)';

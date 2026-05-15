@@ -1,7 +1,9 @@
-import Database from 'better-sqlite3';
+import { createRequire } from 'module';
 import mysql from 'mysql2/promise';
 import { createClient, type Client as LibsqlClient } from '@libsql/client';
 import path from 'path';
+
+const require = createRequire(import.meta.url);
 
 // Database Interface to abstract differences
 export interface IDatabase {
@@ -15,7 +17,8 @@ class SQLiteWrapper implements IDatabase {
   private db: any;
   constructor() {
     const dbPath = resolveSqlitePath();
-    this.db = new Database(dbPath);
+    const BetterSqlite3 = require('better-sqlite3');
+    this.db = new BetterSqlite3(dbPath);
     this.db.pragma('foreign_keys = ON');
   }
   async execute(sql: string, params: any[] = []) {
@@ -535,6 +538,47 @@ export async function initDb() {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
+
+
+  // Migration-safe schema updates for game_stats
+  const gameStatsColumnsToAdd = [
+    { name: 'game_type', sqliteDef: "TEXT NOT NULL DEFAULT 'Rust'", mysqlDef: "VARCHAR(255) NOT NULL DEFAULT 'Rust'" },
+    { name: 'playtime', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
+    { name: 'bank_balance', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
+    { name: 'cash_on_hand', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
+    { name: 'total_wealth', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
+    { name: 'kills', sqliteDef: 'INTEGER DEFAULT 0', mysqlDef: 'INT DEFAULT 0' },
+    { name: 'deaths', sqliteDef: 'INTEGER DEFAULT 0', mysqlDef: 'INT DEFAULT 0' },
+    { name: 'kd_ratio', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
+    { name: 'raids_completed', sqliteDef: 'INTEGER DEFAULT 0', mysqlDef: 'INT DEFAULT 0' },
+    { name: 'vehicles_owned', sqliteDef: 'INTEGER DEFAULT 0', mysqlDef: 'INT DEFAULT 0' },
+    { name: 'wipe_performance', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
+    { name: 'last_updated', sqliteDef: 'DATETIME', mysqlDef: 'DATETIME DEFAULT CURRENT_TIMESTAMP' }
+  ];
+
+  if (isMySQL) {
+    for (const column of gameStatsColumnsToAdd) {
+      const existingColumn = await db.queryOne<any>(`
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'game_stats'
+          AND COLUMN_NAME = ?
+      `, [column.name]);
+      if (!existingColumn) {
+        await db.execute(`ALTER TABLE game_stats ADD COLUMN ${column.name} ${column.mysqlDef}`);
+      }
+    }
+  } else {
+    const gameStatsColumns = await db.query<any>('PRAGMA table_info(game_stats)');
+    const existingGameStatsColumns = new Set(gameStatsColumns.map((column) => column.name));
+    for (const column of gameStatsColumnsToAdd) {
+      if (!existingGameStatsColumns.has(column.name)) {
+        await db.execute(`ALTER TABLE game_stats ADD COLUMN ${column.name} ${column.sqliteDef}`);
+      }
+    }
+    await db.execute("UPDATE game_stats SET last_updated = COALESCE(last_updated, CURRENT_TIMESTAMP)");
+  }
 
   // Game Transactions
   await run(`
