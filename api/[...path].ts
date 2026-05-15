@@ -576,7 +576,8 @@ const logoutHandler = (_req: Request, res: Response) => {
 app.post(['/api/auth/logout', '/auth/logout'], logoutHandler);
 
 const csrfTokenHandler = (req: Request, res: Response) => {
-  return res.json({ csrfToken: req.csrfToken() });
+  const csrfToken = (req as Request & { csrfToken?: () => string }).csrfToken?.() || null;
+  return res.json({ csrfToken });
 };
 app.get(['/api/csrf-token', '/csrf-token'], csrfProtection, csrfTokenHandler);
 

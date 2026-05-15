@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import mysql from 'mysql2/promise';
+import { createClient, type Client as LibsqlClient } from '@libsql/client';
 import path from 'path';
 
 // Database Interface to abstract differences
@@ -50,6 +51,29 @@ class MySQLWrapper implements IDatabase {
   }
 }
 
+
+class TursoWrapper implements IDatabase {
+  private client: LibsqlClient;
+
+  constructor(url: string, authToken?: string) {
+    this.client = createClient({ url, authToken });
+  }
+
+  async execute(sql: string, params: any[] = []) {
+    return this.client.execute({ sql, args: params });
+  }
+
+  async query<T>(sql: string, params: any[] = []) {
+    const result = await this.client.execute({ sql, args: params });
+    return result.rows as unknown as T[];
+  }
+
+  async queryOne<T>(sql: string, params: any[] = []) {
+    const rows = await this.query<T>(sql, params);
+    return rows[0] || null;
+  }
+}
+
 // Initialize the correct database
 let db: IDatabase;
 
@@ -64,9 +88,16 @@ function resolveSqlitePath() {
   return 'nightrespawn.db';
 }
 
-if (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('://')) {
+const databaseUrl = process.env.DATABASE_URL || process.env.TURSO_DATABASE_URL;
+const isTurso = Boolean(databaseUrl && databaseUrl.startsWith('libsql://'));
+const isMySQL = Boolean(databaseUrl && databaseUrl.startsWith('mysql'));
+
+if (isTurso && databaseUrl) {
+  console.log('Connecting to Turso (LibSQL) Database...');
+  db = new TursoWrapper(databaseUrl, process.env.TURSO_AUTH_TOKEN);
+} else if (isMySQL && databaseUrl) {
   console.log('Connecting to MySQL Database...');
-  db = new MySQLWrapper(process.env.DATABASE_URL);
+  db = new MySQLWrapper(databaseUrl);
 } else {
   const dbPath = resolveSqlitePath();
   console.log(`Using Local SQLite Database at ${dbPath}...`);
@@ -76,7 +107,7 @@ if (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('://')) {
 export async function initDb() {
   const run = async (sql: string) => {
     let finalSql = sql;
-    if (!(db instanceof SQLiteWrapper)) {
+    if (db instanceof MySQLWrapper) {
       // Basic translation for MySQL
       finalSql = finalSql.replace(/INTEGER PRIMARY KEY AUTOINCREMENT/g, 'INT AUTO_INCREMENT PRIMARY KEY');
       finalSql = finalSql.replace(/REAL/g, 'DECIMAL(10,2)');
