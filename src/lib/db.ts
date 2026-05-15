@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import mysql from 'mysql2/promise';
+import { createClient, type Client as LibsqlClient } from '@libsql/client';
 import path from 'path';
 
 // Database Interface to abstract differences
@@ -50,6 +51,29 @@ class MySQLWrapper implements IDatabase {
   }
 }
 
+
+class TursoWrapper implements IDatabase {
+  private client: LibsqlClient;
+
+  constructor(url: string, authToken?: string) {
+    this.client = createClient({ url, authToken });
+  }
+
+  async execute(sql: string, params: any[] = []) {
+    return this.client.execute({ sql, args: params });
+  }
+
+  async query<T>(sql: string, params: any[] = []) {
+    const result = await this.client.execute({ sql, args: params });
+    return result.rows as unknown as T[];
+  }
+
+  async queryOne<T>(sql: string, params: any[] = []) {
+    const rows = await this.query<T>(sql, params);
+    return rows[0] || null;
+  }
+}
+
 // Initialize the correct database
 let db: IDatabase;
 
@@ -64,9 +88,16 @@ function resolveSqlitePath() {
   return 'nightrespawn.db';
 }
 
-if (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('://')) {
+const databaseUrl = process.env.DATABASE_URL || process.env.TURSO_DATABASE_URL;
+const isTurso = Boolean(databaseUrl && databaseUrl.startsWith('libsql://'));
+const isMySQL = Boolean(databaseUrl && databaseUrl.startsWith('mysql'));
+
+if (isTurso && databaseUrl) {
+  console.log('Connecting to Turso (LibSQL) Database...');
+  db = new TursoWrapper(databaseUrl, process.env.TURSO_AUTH_TOKEN);
+} else if (isMySQL && databaseUrl) {
   console.log('Connecting to MySQL Database...');
-  db = new MySQLWrapper(process.env.DATABASE_URL);
+  db = new MySQLWrapper(databaseUrl);
 } else {
   const dbPath = resolveSqlitePath();
   console.log(`Using Local SQLite Database at ${dbPath}...`);
@@ -76,7 +107,7 @@ if (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('://')) {
 export async function initDb() {
   const run = async (sql: string) => {
     let finalSql = sql;
-    if (!(db instanceof SQLiteWrapper)) {
+    if (db instanceof MySQLWrapper) {
       // Basic translation for MySQL
       finalSql = finalSql.replace(/INTEGER PRIMARY KEY AUTOINCREMENT/g, 'INT AUTO_INCREMENT PRIMARY KEY');
       finalSql = finalSql.replace(/REAL/g, 'DECIMAL(10,2)');
@@ -122,7 +153,7 @@ export async function initDb() {
 
   // Migration-safe schema updates for users social links
   const socialColumns = ['steam_url', 'x_url', 'facebook_url', 'github_url', 'youtube_url', 'kick_url', 'twitch_url', 'discord_url'];
-  if (db instanceof SQLiteWrapper) {
+  if (!(db instanceof MySQLWrapper)) {
     const userColumns = await db.query<any>('PRAGMA table_info(users)');
     for (const column of socialColumns) {
       const hasColumn = userColumns.some((item) => item.name === column);
@@ -170,7 +201,7 @@ export async function initDb() {
   `);
 
   // Migration-safe schema updates for forums
-  if (db instanceof SQLiteWrapper) {
+  if (!(db instanceof MySQLWrapper)) {
     const forumColumns = await db.query<any>('PRAGMA table_info(forums)');
     const hasIsHidden = forumColumns.some((column) => column.name === 'is_hidden');
     if (!hasIsHidden) {
@@ -296,7 +327,7 @@ export async function initDb() {
   `);
 
   // Migration-safe schema updates for orders payment webhook replay protection fields
-  if (db instanceof SQLiteWrapper) {
+  if (!(db instanceof MySQLWrapper)) {
     const orderColumns = await db.query<any>('PRAGMA table_info(orders)');
     const ensureOrderColumn = async (name: string, definition: string) => {
       const exists = orderColumns.some((column) => column.name === name);
@@ -439,7 +470,7 @@ export async function initDb() {
   `);
 
   // Migration-safe schema updates for server_nodes
-  if (db instanceof SQLiteWrapper) {
+  if (!(db instanceof MySQLWrapper)) {
     const serverColumns = await db.query<any>('PRAGMA table_info(server_nodes)');
     const hasPlayersCurrent = serverColumns.some((column) => column.name === 'players_current');
     if (!hasPlayersCurrent) {
@@ -576,10 +607,10 @@ export async function initDb() {
   ];
 
   for (const setting of defaultSettings) {
-    if (db instanceof SQLiteWrapper) {
-      await db.execute('INSERT OR IGNORE INTO site_settings (key, value) VALUES (?, ?)', [setting.key, setting.value]);
-    } else {
+    if (db instanceof MySQLWrapper) {
       await db.execute('INSERT IGNORE INTO site_settings (key, value) VALUES (?, ?)', [setting.key, setting.value]);
+    } else {
+      await db.execute('INSERT OR IGNORE INTO site_settings (key, value) VALUES (?, ?)', [setting.key, setting.value]);
     }
   }
 }
