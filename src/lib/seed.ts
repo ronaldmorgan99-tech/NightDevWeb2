@@ -67,17 +67,35 @@ export async function seedDb() {
   await db.execute(insertForum, [2, 'Introductions', 'Introduce yourself to the community', 2, 'member']);
   await db.execute(insertForum, [3, 'FPS Games', 'Call of Duty, Battlefield, CS:GO, etc.', 1, 'member']);
 
-  // Threads
-  const insertThread = 'INSERT INTO threads (forum_id, author_id, title, is_pinned) VALUES (?, ?, ?, ?)';
-  await db.execute(insertThread, [1, 1, 'Welcome to NightRespawn!', 1]);
-  await db.execute(insertThread, [3, 2, 'What are you playing this weekend?', 0]);
-  await db.execute(insertThread, [5, 2, 'Looking for a squad in Warzone', 0]);
+  const adminUser = await db.queryOne<{ id: number }>('SELECT id FROM users WHERE username = ?', ['admin']);
+  const memberUser = await db.queryOne<{ id: number }>('SELECT id FROM users WHERE username = ?', ['member']);
+  const announcementsForum = await db.queryOne<{ id: number }>('SELECT id FROM forums WHERE name = ?', ['Announcements']);
+  const generalDiscussionForum = await db.queryOne<{ id: number }>('SELECT id FROM forums WHERE name = ?', ['General Discussion']);
+  const fpsForum = await db.queryOne<{ id: number }>('SELECT id FROM forums WHERE name = ?', ['FPS Games']);
 
-  // Posts
-  const insertPost = 'INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)';
-  await db.execute(insertPost, [1, 1, 'Welcome everyone to our new community platform! We hope you enjoy your stay.']);
-  await db.execute(insertPost, [2, 2, 'I am planning to dive back into Elden Ring. How about you guys?']);
-  await db.execute(insertPost, [3, 2, 'Hey, I am looking for some chill people to play Warzone with tonight. Hit me up!']);
+  if (!adminUser || !memberUser || !announcementsForum || !generalDiscussionForum || !fpsForum) {
+    throw new Error('Seed prerequisite rows are missing (users/forums), aborting seed to avoid foreign-key violations.');
+  }
+
+  // Threads + starter posts are seeded only for empty forums to keep seeding idempotent.
+  const existingThreadCount = await db.queryOne<{ count: number }>('SELECT COUNT(*) as count FROM threads');
+  if (!existingThreadCount || existingThreadCount.count === 0) {
+    const insertThread = 'INSERT INTO threads (forum_id, author_id, title, is_pinned) VALUES (?, ?, ?, ?)';
+    const welcomeThread = await db.execute(insertThread, [announcementsForum.id, adminUser.id, 'Welcome to NightRespawn!', 1]);
+    const weekendThread = await db.execute(insertThread, [generalDiscussionForum.id, memberUser.id, 'What are you playing this weekend?', 0]);
+    const squadThread = await db.execute(insertThread, [fpsForum.id, memberUser.id, 'Looking for a squad in Warzone', 0]);
+
+    const insertPost = 'INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)';
+    const welcomeThreadId = welcomeThread.lastID ?? (await db.queryOne<{ id: number }>('SELECT id FROM threads WHERE title = ?', ['Welcome to NightRespawn!']))?.id;
+    const weekendThreadId = weekendThread.lastID ?? (await db.queryOne<{ id: number }>('SELECT id FROM threads WHERE title = ?', ['What are you playing this weekend?']))?.id;
+    const squadThreadId = squadThread.lastID ?? (await db.queryOne<{ id: number }>('SELECT id FROM threads WHERE title = ?', ['Looking for a squad in Warzone']))?.id;
+
+    if (welcomeThreadId && weekendThreadId && squadThreadId) {
+      await db.execute(insertPost, [welcomeThreadId, adminUser.id, 'Welcome everyone to our new community platform! We hope you enjoy your stay.']);
+      await db.execute(insertPost, [weekendThreadId, memberUser.id, 'I am planning to dive back into Elden Ring. How about you guys?']);
+      await db.execute(insertPost, [squadThreadId, memberUser.id, 'Hey, I am looking for some chill people to play Warzone with tonight. Hit me up!']);
+    }
+  }
 
   // Tags
   const insertTag = isMySQL ? 'INSERT IGNORE INTO tags (name, color) VALUES (?, ?)' : 'INSERT OR IGNORE INTO tags (name, color) VALUES (?, ?)';
