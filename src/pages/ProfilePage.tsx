@@ -556,6 +556,21 @@ export default function ProfilePage() {
       discord_url: profile.discord_url || ''
     });
   }, [profile]);
+
+  const buildProfileUpdatePayload = (updates: { [key: string]: unknown }) =>
+    Object.fromEntries(
+      Object.entries(updates)
+        .filter(([, value]) => value !== undefined)
+        .map(([key, value]) => {
+          if (typeof value !== 'string') return [key, value];
+          const trimmed = value.trim();
+          if (key.endsWith('_url')) {
+            return [key, normalizeExternalUrl(trimmed) || null];
+          }
+          return [key, trimmed];
+        })
+    );
+
   const updateMutation = useMutation({
     mutationFn: (updates: { avatar_url?: string; banner_url?: string; bio?: string; steam_url?: string; x_url?: string; facebook_url?: string; github_url?: string; youtube_url?: string; kick_url?: string; twitch_url?: string; discord_url?: string }) => {
       const cleanedUpdates = Object.fromEntries(
