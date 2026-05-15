@@ -60,7 +60,7 @@ export async function seedDb() {
   await db.execute(insertCategory, ['Gaming', 'Talk about your favorite games', 3]);
 
   // Forums
-  const insertForum = 'INSERT INTO forums (category_id, name, description, display_order, min_role_to_thread) VALUES (?, ?, ?, ?, ?)';
+  const insertForum = isMySQL ? 'INSERT IGNORE INTO forums (category_id, name, description, display_order, min_role_to_thread) VALUES (?, ?, ?, ?, ?)' : 'INSERT OR IGNORE INTO forums (category_id, name, description, display_order, min_role_to_thread) VALUES (?, ?, ?, ?, ?)';
   await db.execute(insertForum, [1, 'Announcements', 'Stay up to date with the latest news', 1, 'admin']);
   await db.execute(insertForum, [1, 'Rules & Info', 'Important information about the community', 2, 'admin']);
   await db.execute(insertForum, [2, 'General Discussion', 'Talk about anything', 1, 'member']);
@@ -80,7 +80,7 @@ export async function seedDb() {
   await db.execute(insertPost, [3, 2, 'Hey, I am looking for some chill people to play Warzone with tonight. Hit me up!']);
 
   // Tags
-  const insertTag = 'INSERT INTO tags (name, color) VALUES (?, ?)';
+  const insertTag = isMySQL ? 'INSERT IGNORE INTO tags (name, color) VALUES (?, ?)' : 'INSERT OR IGNORE INTO tags (name, color) VALUES (?, ?)';
   await db.execute(insertTag, ['Official', '#ef4444']);
   await db.execute(insertTag, ['Question', '#3b82f6']);
   await db.execute(insertTag, ['Guide', '#10b981']);

@@ -557,6 +557,21 @@ export default function ProfilePage() {
     });
   }, [profile]);
 
+  const buildProfileUpdatePayload = (updates: { avatar_url?: string; banner_url?: string; bio?: string; steam_url?: string; x_url?: string; facebook_url?: string; github_url?: string; youtube_url?: string; kick_url?: string; twitch_url?: string; discord_url?: string }) => {
+    const payload: Record<string, string> = {};
+
+    if (updates.avatar_url !== undefined) payload.avatar_url = updates.avatar_url.trim();
+    if (updates.banner_url !== undefined) payload.banner_url = updates.banner_url.trim();
+    if (updates.bio !== undefined) payload.bio = updates.bio.trim();
+
+    (['steam_url', 'x_url', 'facebook_url', 'github_url', 'youtube_url', 'kick_url', 'twitch_url', 'discord_url'] as const).forEach((key) => {
+      const rawValue = updates[key];
+      if (rawValue === undefined) return;
+      payload[key] = normalizeExternalUrl(rawValue.trim()) || '';
+    });
+
+    return payload;
+  };
   const buildProfileUpdatePayload = (updates: { [key: string]: unknown }) =>
     Object.fromEntries(
       Object.entries(updates)
@@ -593,6 +608,7 @@ export default function ProfilePage() {
       });
 
       queryClient.invalidateQueries({ queryKey: ['authUser'] });
+      queryClient.refetchQueries({ queryKey: ['profile'] });
       if (updateProfile) updateProfile(data.user);
       setSocialLinks({
         steam_url: data.user?.steam_url || '',
