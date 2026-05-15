@@ -1,7 +1,9 @@
-import Database from 'better-sqlite3';
+import { createRequire } from 'module';
 import mysql from 'mysql2/promise';
 import { createClient, type Client as LibsqlClient } from '@libsql/client';
 import path from 'path';
+
+const require = createRequire(import.meta.url);
 
 // Database Interface to abstract differences
 export interface IDatabase {
@@ -15,7 +17,8 @@ class SQLiteWrapper implements IDatabase {
   private db: any;
   constructor() {
     const dbPath = resolveSqlitePath();
-    this.db = new Database(dbPath);
+    const BetterSqlite3 = require('better-sqlite3');
+    this.db = new BetterSqlite3(dbPath);
     this.db.pragma('foreign_keys = ON');
   }
   async execute(sql: string, params: any[] = []) {
