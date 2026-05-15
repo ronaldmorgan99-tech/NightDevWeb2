@@ -556,15 +556,43 @@ export default function ProfilePage() {
       discord_url: profile.discord_url || ''
     });
   }, [profile]);
+
+  const buildProfileUpdatePayload = (updates: { [key: string]: unknown }) =>
+    Object.fromEntries(
+      Object.entries(updates)
+        .filter(([, value]) => value !== undefined)
+        .map(([key, value]) => {
+          if (typeof value !== 'string') return [key, value];
+          const trimmed = value.trim();
+          if (key.endsWith('_url')) {
+            return [key, normalizeExternalUrl(trimmed) || ''];
+          }
+          return [key, trimmed];
+        })
+    );
+
   const updateMutation = useMutation({
-    mutationFn: (updates: { avatar_url?: string; banner_url?: string; bio?: string; steam_url?: string; x_url?: string; facebook_url?: string; github_url?: string; youtube_url?: string; kick_url?: string; twitch_url?: string; discord_url?: string }) =>
-      apiJson<{ user: any }>('/api/auth/me', {
+    mutationFn: (updates: { avatar_url?: string; banner_url?: string; bio?: string; steam_url?: string; x_url?: string; facebook_url?: string; github_url?: string; youtube_url?: string; kick_url?: string; twitch_url?: string; discord_url?: string }) => {
+      return apiJson<{ user: any }>('/api/auth/me', {
         method: 'PATCH',
-        json: updates
-      }),
+        json: buildProfileUpdatePayload(updates)
+      });
+    },
     onSuccess: (data) => {
-      queryClient.setQueryData(['profile', userId], data.user);
-      queryClient.invalidateQueries({ queryKey: ['profile', userId] });
+      const resolvedId = data.user?.id ?? userId;
+      const idVariants = [resolvedId, String(resolvedId), Number(resolvedId)].filter((value) => value !== undefined && !Number.isNaN(value as number));
+
+      idVariants.forEach((idKey) => {
+        queryClient.setQueryData(['profile', idKey], data.user);
+        queryClient.invalidateQueries({ queryKey: ['profile', idKey] });
+      });
+
+      queryClient.setQueriesData({ queryKey: ['profile'] }, (existing: any) => {
+        if (!existing || existing.id !== data.user?.id) return existing;
+        return { ...existing, ...data.user };
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['authUser'] });
       if (updateProfile) updateProfile(data.user);
       setSocialLinks({
         steam_url: data.user?.steam_url || '',
