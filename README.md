@@ -57,6 +57,16 @@ Together, they keep local UI state and remote API data organized, performant, an
 
 **Impact:** Resolved moderator/admin access flow failures from navigation reload mismatches and prevented runtime crashes across admin sections when upstream API data is delayed, empty, or partial.
 
+## Current Developer Commands (source: `package.json`)
+
+- `npm run dev` — starts the Node/Express app via `tsx server.ts`.
+- `npm run lint` — runs `tsc --noEmit`.
+- `npm run build` — runs `npm run check:profilepage-clean && vite build`.
+- `npm run test` / `npm run test:regression` — runs Node regression suite (`test/regression.test.js`).
+- `npm run test:integration` — runs `regression-tests.js`.
+- `npm run smoke:postdeploy` — executes post-deploy smoke checks script.
+- `npm run check:serverless-imports` — verifies serverless ESM `.js` imports.
+
 ## Run Locally
 
 **Prerequisites:** Node.js
@@ -258,7 +268,7 @@ Minimum expected results:
 ### CI coverage requirements
 
 - **Unit coverage gate**: `validate` enforces minimum unit test line coverage via `COVERAGE_THRESHOLD` (default `75`).
-- **Integration coverage gate**: `validate` enforces minimum integration test line coverage from `coverage/integration` via `INTEGRATION_COVERAGE_THRESHOLD` (default `65`) without rerunning integration tests.
+- **Integration coverage gate**: `validate` enforces minimum integration test line coverage from `coverage/integration` via `INTEGRATION_COVERAGE_THRESHOLD` (default `50`) without rerunning integration tests.
 - Canonical source: if CI behavior changes, update `.github/workflows/ci.yml` first and then sync this section.
 
 ## Product Requirements Documentation
