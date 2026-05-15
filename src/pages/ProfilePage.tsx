@@ -573,9 +573,17 @@ export default function ProfilePage() {
 
   const updateMutation = useMutation({
     mutationFn: (updates: { avatar_url?: string; banner_url?: string; bio?: string; steam_url?: string; x_url?: string; facebook_url?: string; github_url?: string; youtube_url?: string; kick_url?: string; twitch_url?: string; discord_url?: string }) => {
+      const cleanedUpdates = Object.fromEntries(
+        Object.entries(updates).map(([key, value]) => {
+          if (typeof value !== 'string') return [key, value];
+          const trimmed = value.trim();
+          return [key, trimmed];
+        })
+      );
+
       return apiJson<{ user: any }>('/api/auth/me', {
         method: 'PATCH',
-        json: buildProfileUpdatePayload(updates)
+        json: cleanedUpdates
       });
     },
     onSuccess: (data) => {
@@ -583,7 +591,6 @@ export default function ProfilePage() {
       queryClient.setQueryData(['profile', String(data.user?.id ?? userId)], data.user);
       queryClient.invalidateQueries({ queryKey: ['profile', userId] });
       queryClient.invalidateQueries({ queryKey: ['profile', String(data.user?.id ?? userId)] });
-      queryClient.invalidateQueries({ queryKey: ['authUser'] });
       if (updateProfile) updateProfile(data.user);
       setSocialLinks({
         steam_url: data.user?.steam_url || '',
