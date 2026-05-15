@@ -24,10 +24,11 @@ The frontend is built with **React 19** for modern component-based UI developmen
 ### Backend: Express.js + Node.js (via `server.ts`)
 The server runs on **Node.js** and uses **Express.js** to handle API routes, middleware, and server-side logic. The main backend entry point is `server.ts`, which centralizes server configuration and startup behavior.
 
-### Database: SQLite (local) + MySQL (production)
+### Database: SQLite (local) + Turso/LibSQL or MySQL (production)
 The data layer supports both runtime environments:
 - **SQLite** for local development (simple setup, file-based storage, ideal for quick iteration).
-- **MySQL** for production (robust, scalable, and better suited for deployed workloads).
+- **Turso/LibSQL** for production serverless persistence on Vercel (SQLite-compatible, managed, and durable).
+- **MySQL** as an alternative production backend (robust and scalable for traditional deployments).
 
 This allows developers to get started quickly while keeping production infrastructure reliable.
 

@@ -7,7 +7,7 @@ description: Multi-agent workflow definitions for NightDevWeb2 project
 
 ## Stack Summary
 - **Frontend**: React 19 + TypeScript + Vite + Tailwind CSS + TanStack Query
-- **Backend**: Node.js + Express + SQLite (local) + MySQL (production) + Socket.IO + JWT auth
+- **Backend**: Node.js + Express + SQLite (local) + Turso/LibSQL or MySQL (production) + Socket.IO + JWT auth
 - **Testing**: Node test runner + regression tests
 - **Deployment**: Vite build + Express server
 
