@@ -9,13 +9,13 @@ description: Comprehensive checklist for preparing code releases - run before me
 
 ### Code Quality
 - [ ] `npm run lint` passes (TypeScript strict mode)
-- [ ] `npm run build` succeeds without warnings
-- [ ] Bundle size optimized (<500kB chunks)
+- [ ] `npm run build` succeeds (includes `check:profilepage-clean` precheck)
+- [ ] Bundle size reviewed and no unexpected regressions in build output
 - [ ] No console errors or warnings in dev mode
 
 ### Testing
 - [ ] `npm run test:integration` passes (real server/database)
-- [ ] Mocked tests still pass (`npm test`)
+- [ ] Regression tests pass (`npm test` / `npm run test:regression`)
 - [ ] Edge cases tested (error conditions, network failures)
 - [ ] Cross-browser compatibility verified
 
