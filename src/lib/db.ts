@@ -553,6 +553,10 @@ export async function initDb() {
     { name: 'raids_completed', sqliteDef: 'INTEGER DEFAULT 0', mysqlDef: 'INT DEFAULT 0' },
     { name: 'vehicles_owned', sqliteDef: 'INTEGER DEFAULT 0', mysqlDef: 'INT DEFAULT 0' },
     { name: 'wipe_performance', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
+    { name: 'last_updated', sqliteDef: 'DATETIME', mysqlDef: 'DATETIME DEFAULT CURRENT_TIMESTAMP' }
+  ];
+
+  if (isMySQL) {
     { name: 'last_updated', sqliteDef: 'DATETIME DEFAULT CURRENT_TIMESTAMP', mysqlDef: 'DATETIME DEFAULT CURRENT_TIMESTAMP' }
   ];
 
@@ -585,6 +589,8 @@ export async function initDb() {
       if (!existingGameStatsColumns.has(column.name)) {
         await db.execute(`ALTER TABLE game_stats ADD COLUMN ${column.name} ${column.sqliteDef}`);
       }
+    }
+    await db.execute("UPDATE game_stats SET last_updated = COALESCE(last_updated, CURRENT_TIMESTAMP)");
   if (!(db instanceof MySQLWrapper)) {
     const gameStatsColumns = await db.query<any>('PRAGMA table_info(game_stats)');
     const hasGameType = gameStatsColumns.some((column) => column.name === 'game_type');
