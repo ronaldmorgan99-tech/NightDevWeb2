@@ -539,30 +539,24 @@ export async function initDb() {
     )
   `);
 
-
   // Migration-safe schema updates for game_stats
-  const gameStatsColumnsToAdd = [
-    { name: 'game_type', sqliteDef: "TEXT NOT NULL DEFAULT 'Rust'", mysqlDef: "VARCHAR(255) NOT NULL DEFAULT 'Rust'" },
-    { name: 'playtime', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
-    { name: 'bank_balance', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
-    { name: 'cash_on_hand', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
-    { name: 'total_wealth', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
-    { name: 'kills', sqliteDef: 'INTEGER DEFAULT 0', mysqlDef: 'INT DEFAULT 0' },
-    { name: 'deaths', sqliteDef: 'INTEGER DEFAULT 0', mysqlDef: 'INT DEFAULT 0' },
-    { name: 'kd_ratio', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
-    { name: 'raids_completed', sqliteDef: 'INTEGER DEFAULT 0', mysqlDef: 'INT DEFAULT 0' },
-    { name: 'vehicles_owned', sqliteDef: 'INTEGER DEFAULT 0', mysqlDef: 'INT DEFAULT 0' },
-    { name: 'wipe_performance', sqliteDef: 'REAL DEFAULT 0', mysqlDef: 'DOUBLE DEFAULT 0' },
-    { name: 'last_updated', sqliteDef: 'DATETIME', mysqlDef: 'DATETIME DEFAULT CURRENT_TIMESTAMP' }
-  ];
-
-  if (isMySQL) {
-    { name: 'last_updated', sqliteDef: 'DATETIME DEFAULT CURRENT_TIMESTAMP', mysqlDef: 'DATETIME DEFAULT CURRENT_TIMESTAMP' }
-  ];
-
-  if (isMySQL) {
   if (!(db instanceof MySQLWrapper)) {
     const gameStatsColumns = await db.query<any>('PRAGMA table_info(game_stats)');
+    const gameStatsColumnsToAdd = [
+      { name: 'game_type', sqliteDef: "TEXT NOT NULL DEFAULT 'Rust'" },
+      { name: 'playtime', sqliteDef: 'REAL DEFAULT 0' },
+      { name: 'bank_balance', sqliteDef: 'REAL DEFAULT 0' },
+      { name: 'cash_on_hand', sqliteDef: 'REAL DEFAULT 0' },
+      { name: 'total_wealth', sqliteDef: 'REAL DEFAULT 0' },
+      { name: 'kills', sqliteDef: 'INTEGER DEFAULT 0' },
+      { name: 'deaths', sqliteDef: 'INTEGER DEFAULT 0' },
+      { name: 'kd_ratio', sqliteDef: 'REAL DEFAULT 0' },
+      { name: 'raids_completed', sqliteDef: 'INTEGER DEFAULT 0' },
+      { name: 'vehicles_owned', sqliteDef: 'INTEGER DEFAULT 0' },
+      { name: 'wipe_performance', sqliteDef: 'REAL DEFAULT 0' },
+      { name: 'last_updated', sqliteDef: 'DATETIME DEFAULT CURRENT_TIMESTAMP' }
+    ];
+
     const existingGameStatsColumns = new Set(gameStatsColumns.map((column) => column.name));
     for (const column of gameStatsColumnsToAdd) {
       if (!existingGameStatsColumns.has(column.name)) {
@@ -570,6 +564,21 @@ export async function initDb() {
       }
     }
   } else {
+    const gameStatsColumnsToAdd = [
+      { name: 'game_type', mysqlDef: "VARCHAR(255) NOT NULL DEFAULT 'Rust'" },
+      { name: 'playtime', mysqlDef: 'DOUBLE DEFAULT 0' },
+      { name: 'bank_balance', mysqlDef: 'DOUBLE DEFAULT 0' },
+      { name: 'cash_on_hand', mysqlDef: 'DOUBLE DEFAULT 0' },
+      { name: 'total_wealth', mysqlDef: 'DOUBLE DEFAULT 0' },
+      { name: 'kills', mysqlDef: 'INT DEFAULT 0' },
+      { name: 'deaths', mysqlDef: 'INT DEFAULT 0' },
+      { name: 'kd_ratio', mysqlDef: 'DOUBLE DEFAULT 0' },
+      { name: 'raids_completed', mysqlDef: 'INT DEFAULT 0' },
+      { name: 'vehicles_owned', mysqlDef: 'INT DEFAULT 0' },
+      { name: 'wipe_performance', mysqlDef: 'DOUBLE DEFAULT 0' },
+      { name: 'last_updated', mysqlDef: 'DATETIME DEFAULT CURRENT_TIMESTAMP' }
+    ];
+
     for (const column of gameStatsColumnsToAdd) {
       const existingColumn = await db.queryOne<any>(`
         SELECT COLUMN_NAME
@@ -581,32 +590,6 @@ export async function initDb() {
       if (!existingColumn) {
         await db.execute(`ALTER TABLE game_stats ADD COLUMN ${column.name} ${column.mysqlDef}`);
       }
-    }
-  } else {
-    const gameStatsColumns = await db.query<any>('PRAGMA table_info(game_stats)');
-    const existingGameStatsColumns = new Set(gameStatsColumns.map((column) => column.name));
-    for (const column of gameStatsColumnsToAdd) {
-      if (!existingGameStatsColumns.has(column.name)) {
-        await db.execute(`ALTER TABLE game_stats ADD COLUMN ${column.name} ${column.sqliteDef}`);
-      }
-    }
-    await db.execute("UPDATE game_stats SET last_updated = COALESCE(last_updated, CURRENT_TIMESTAMP)");
-  if (!(db instanceof MySQLWrapper)) {
-    const gameStatsColumns = await db.query<any>('PRAGMA table_info(game_stats)');
-    const hasGameType = gameStatsColumns.some((column) => column.name === 'game_type');
-    if (!hasGameType) {
-      await db.execute("ALTER TABLE game_stats ADD COLUMN game_type TEXT NOT NULL DEFAULT 'Rust'");
-    }
-  } else {
-    const gameTypeColumn = await db.queryOne<any>(`
-      SELECT COLUMN_NAME
-      FROM INFORMATION_SCHEMA.COLUMNS
-      WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_NAME = 'game_stats'
-        AND COLUMN_NAME = 'game_type'
-    `);
-    if (!gameTypeColumn) {
-      await db.execute("ALTER TABLE game_stats ADD COLUMN game_type VARCHAR(255) NOT NULL DEFAULT 'Rust'");
     }
   }
 
