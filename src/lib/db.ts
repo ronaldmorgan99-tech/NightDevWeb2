@@ -557,6 +557,19 @@ export async function initDb() {
   ];
 
   if (isMySQL) {
+    { name: 'last_updated', sqliteDef: 'DATETIME DEFAULT CURRENT_TIMESTAMP', mysqlDef: 'DATETIME DEFAULT CURRENT_TIMESTAMP' }
+  ];
+
+  if (isMySQL) {
+  if (!(db instanceof MySQLWrapper)) {
+    const gameStatsColumns = await db.query<any>('PRAGMA table_info(game_stats)');
+    const existingGameStatsColumns = new Set(gameStatsColumns.map((column) => column.name));
+    for (const column of gameStatsColumnsToAdd) {
+      if (!existingGameStatsColumns.has(column.name)) {
+        await db.execute(`ALTER TABLE game_stats ADD COLUMN ${column.name} ${column.sqliteDef}`);
+      }
+    }
+  } else {
     for (const column of gameStatsColumnsToAdd) {
       const existingColumn = await db.queryOne<any>(`
         SELECT COLUMN_NAME
@@ -578,6 +591,23 @@ export async function initDb() {
       }
     }
     await db.execute("UPDATE game_stats SET last_updated = COALESCE(last_updated, CURRENT_TIMESTAMP)");
+  if (!(db instanceof MySQLWrapper)) {
+    const gameStatsColumns = await db.query<any>('PRAGMA table_info(game_stats)');
+    const hasGameType = gameStatsColumns.some((column) => column.name === 'game_type');
+    if (!hasGameType) {
+      await db.execute("ALTER TABLE game_stats ADD COLUMN game_type TEXT NOT NULL DEFAULT 'Rust'");
+    }
+  } else {
+    const gameTypeColumn = await db.queryOne<any>(`
+      SELECT COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'game_stats'
+        AND COLUMN_NAME = 'game_type'
+    `);
+    if (!gameTypeColumn) {
+      await db.execute("ALTER TABLE game_stats ADD COLUMN game_type VARCHAR(255) NOT NULL DEFAULT 'Rust'");
+    }
   }
 
   // Game Transactions
