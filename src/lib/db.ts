@@ -573,6 +573,22 @@ export async function initDb() {
       if (!existingColumn) {
         await db.execute(`ALTER TABLE game_stats ADD COLUMN ${column.name} ${column.mysqlDef}`);
       }
+  if (!(db instanceof MySQLWrapper)) {
+    const gameStatsColumns = await db.query<any>('PRAGMA table_info(game_stats)');
+    const hasGameType = gameStatsColumns.some((column) => column.name === 'game_type');
+    if (!hasGameType) {
+      await db.execute("ALTER TABLE game_stats ADD COLUMN game_type TEXT NOT NULL DEFAULT 'Rust'");
+    }
+  } else {
+    const gameTypeColumn = await db.queryOne<any>(`
+      SELECT COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'game_stats'
+        AND COLUMN_NAME = 'game_type'
+    `);
+    if (!gameTypeColumn) {
+      await db.execute("ALTER TABLE game_stats ADD COLUMN game_type VARCHAR(255) NOT NULL DEFAULT 'Rust'");
     }
   }
 
