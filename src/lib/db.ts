@@ -553,6 +553,7 @@ export async function initDb() {
     { name: 'last_updated', sqliteDef: 'DATETIME DEFAULT CURRENT_TIMESTAMP', mysqlDef: 'DATETIME DEFAULT CURRENT_TIMESTAMP' }
   ];
 
+  if (isMySQL) {
   if (!(db instanceof MySQLWrapper)) {
     const gameStatsColumns = await db.query<any>('PRAGMA table_info(game_stats)');
     const existingGameStatsColumns = new Set(gameStatsColumns.map((column) => column.name));
@@ -572,6 +573,14 @@ export async function initDb() {
       `, [column.name]);
       if (!existingColumn) {
         await db.execute(`ALTER TABLE game_stats ADD COLUMN ${column.name} ${column.mysqlDef}`);
+      }
+    }
+  } else {
+    const gameStatsColumns = await db.query<any>('PRAGMA table_info(game_stats)');
+    const existingGameStatsColumns = new Set(gameStatsColumns.map((column) => column.name));
+    for (const column of gameStatsColumnsToAdd) {
+      if (!existingGameStatsColumns.has(column.name)) {
+        await db.execute(`ALTER TABLE game_stats ADD COLUMN ${column.name} ${column.sqliteDef}`);
       }
   if (!(db instanceof MySQLWrapper)) {
     const gameStatsColumns = await db.query<any>('PRAGMA table_info(game_stats)');
