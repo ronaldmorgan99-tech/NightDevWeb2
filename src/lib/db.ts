@@ -153,7 +153,7 @@ export async function initDb() {
 
   // Migration-safe schema updates for users social links
   const socialColumns = ['steam_url', 'x_url', 'facebook_url', 'github_url', 'youtube_url', 'kick_url', 'twitch_url', 'discord_url'];
-  if (db instanceof SQLiteWrapper) {
+  if (!(db instanceof MySQLWrapper)) {
     const userColumns = await db.query<any>('PRAGMA table_info(users)');
     for (const column of socialColumns) {
       const hasColumn = userColumns.some((item) => item.name === column);
@@ -201,7 +201,7 @@ export async function initDb() {
   `);
 
   // Migration-safe schema updates for forums
-  if (db instanceof SQLiteWrapper) {
+  if (!(db instanceof MySQLWrapper)) {
     const forumColumns = await db.query<any>('PRAGMA table_info(forums)');
     const hasIsHidden = forumColumns.some((column) => column.name === 'is_hidden');
     if (!hasIsHidden) {
@@ -327,7 +327,7 @@ export async function initDb() {
   `);
 
   // Migration-safe schema updates for orders payment webhook replay protection fields
-  if (db instanceof SQLiteWrapper) {
+  if (!(db instanceof MySQLWrapper)) {
     const orderColumns = await db.query<any>('PRAGMA table_info(orders)');
     const ensureOrderColumn = async (name: string, definition: string) => {
       const exists = orderColumns.some((column) => column.name === name);
@@ -470,7 +470,7 @@ export async function initDb() {
   `);
 
   // Migration-safe schema updates for server_nodes
-  if (db instanceof SQLiteWrapper) {
+  if (!(db instanceof MySQLWrapper)) {
     const serverColumns = await db.query<any>('PRAGMA table_info(server_nodes)');
     const hasPlayersCurrent = serverColumns.some((column) => column.name === 'players_current');
     if (!hasPlayersCurrent) {
@@ -607,10 +607,10 @@ export async function initDb() {
   ];
 
   for (const setting of defaultSettings) {
-    if (db instanceof SQLiteWrapper) {
-      await db.execute('INSERT OR IGNORE INTO site_settings (key, value) VALUES (?, ?)', [setting.key, setting.value]);
-    } else {
+    if (db instanceof MySQLWrapper) {
       await db.execute('INSERT IGNORE INTO site_settings (key, value) VALUES (?, ?)', [setting.key, setting.value]);
+    } else {
+      await db.execute('INSERT OR IGNORE INTO site_settings (key, value) VALUES (?, ?)', [setting.key, setting.value]);
     }
   }
 }
