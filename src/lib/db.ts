@@ -39,16 +39,22 @@ class MySQLWrapper implements IDatabase {
   private pool: mysql.Pool;
   constructor(url: string) {
     this.pool = mysql.createPool(url);
+    if (shouldLogDbQueries()) {
+      console.log(`[DB] Connecting to MySQL host=${getDbHost(url)} ${IS_TURSO ? '(TURSO detected)' : ''}`);
+    }
   }
   async execute(sql: string, params: any[] = []) {
+    logDbQuery(sql, params);
     const [result] = await this.pool.query(sql, params);
     return result;
   }
   async query<T>(sql: string, params: any[] = []) {
+    logDbQuery(sql, params);
     const [rows] = await this.pool.query(sql, params);
     return rows as T[];
   }
   async queryOne<T>(sql: string, params: any[] = []) {
+    logDbQuery(sql, params);
     const [rows]: any = await this.pool.query(sql, params);
     return rows[0] || null;
   }
