@@ -13,6 +13,29 @@ export interface IDatabase {
   pragma?(sql: string): void;
 }
 
+// Helper functions for MySQL logging
+function shouldLogDbQueries(): boolean {
+  return process.env.DEBUG_DB === 'true' || process.env.NODE_ENV === 'development';
+}
+
+function getDbHost(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname;
+  } catch {
+    return 'unknown';
+  }
+}
+
+function logDbQuery(sql: string, params: any[]): void {
+  if (shouldLogDbQueries()) {
+    console.log('[DB Query]', sql);
+    if (params && params.length > 0) {
+      console.log('[DB Params]', params);
+    }
+  }
+}
+
 class SQLiteWrapper implements IDatabase {
   private db: any;
   constructor() {
@@ -40,7 +63,7 @@ class MySQLWrapper implements IDatabase {
   constructor(url: string) {
     this.pool = mysql.createPool(url);
     if (shouldLogDbQueries()) {
-      console.log(`[DB] Connecting to MySQL host=${getDbHost(url)} ${IS_TURSO ? '(TURSO detected)' : ''}`);
+      console.log(`[DB] Connecting to MySQL host=${getDbHost(url)} ${isTurso ? '(TURSO detected)' : ''}`);
     }
   }
   async execute(sql: string, params: any[] = []) {
