@@ -24,10 +24,11 @@ The frontend is built with **React 19** for modern component-based UI developmen
 ### Backend: Express.js + Node.js (via `server.ts`)
 The server runs on **Node.js** and uses **Express.js** to handle API routes, middleware, and server-side logic. The main backend entry point is `server.ts`, which centralizes server configuration and startup behavior.
 
-### Database: SQLite (local) + MySQL (production)
+### Database: SQLite (local) + Turso/LibSQL or MySQL (production)
 The data layer supports both runtime environments:
 - **SQLite** for local development (simple setup, file-based storage, ideal for quick iteration).
-- **MySQL** for production (robust, scalable, and better suited for deployed workloads).
+- **Turso/LibSQL** for production serverless persistence on Vercel (SQLite-compatible, managed, and durable).
+- **MySQL** as an alternative production backend (robust and scalable for traditional deployments).
 
 This allows developers to get started quickly while keeping production infrastructure reliable.
 
@@ -55,6 +56,16 @@ Together, they keep local UI state and remote API data organized, performant, an
 - Clarified known Jest/ts-jest limitation: `import.meta` handling can fail in Jest CJS transforms without ESM-aware configuration; this is a tooling constraint and separate from these runtime/admin functional fixes.
 
 **Impact:** Resolved moderator/admin access flow failures from navigation reload mismatches and prevented runtime crashes across admin sections when upstream API data is delayed, empty, or partial.
+
+## Current Developer Commands (source: `package.json`)
+
+- `npm run dev` — starts the Node/Express app via `tsx server.ts`.
+- `npm run lint` — runs `tsc --noEmit`.
+- `npm run build` — runs `npm run check:profilepage-clean && vite build`.
+- `npm run test` / `npm run test:regression` — runs Node regression suite (`test/regression.test.js`).
+- `npm run test:integration` — runs `regression-tests.js`.
+- `npm run smoke:postdeploy` — executes post-deploy smoke checks script.
+- `npm run check:serverless-imports` — verifies serverless ESM `.js` imports.
 
 ## Run Locally
 
@@ -257,7 +268,7 @@ Minimum expected results:
 ### CI coverage requirements
 
 - **Unit coverage gate**: `validate` enforces minimum unit test line coverage via `COVERAGE_THRESHOLD` (default `75`).
-- **Integration coverage gate**: `validate` enforces minimum integration test line coverage from `coverage/integration` via `INTEGRATION_COVERAGE_THRESHOLD` (default `65`) without rerunning integration tests.
+- **Integration coverage gate**: `validate` enforces minimum integration test line coverage from `coverage/integration` via `INTEGRATION_COVERAGE_THRESHOLD` (default `50`) without rerunning integration tests.
 - Canonical source: if CI behavior changes, update `.github/workflows/ci.yml` first and then sync this section.
 
 ## Product Requirements Documentation

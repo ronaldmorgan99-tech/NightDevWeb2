@@ -1,35 +1,9 @@
-import Database from 'better-sqlite3';
+import { createRequire } from 'module';
 import mysql from 'mysql2/promise';
+import { createClient, type Client as LibsqlClient } from '@libsql/client';
 import path from 'path';
 
-const DB_DEBUG = ['true', '1'].includes((process.env.DB_DEBUG || '').toLowerCase());
-const VERCEL_PREVIEW = process.env.VERCEL === '1';
-const IS_TURSO = Boolean(process.env.DATABASE_URL?.includes('turso'));
-
-function shouldLogDbQueries() {
-  return DB_DEBUG || VERCEL_PREVIEW;
-}
-
-function safeLogParams(params: any[]) {
-  try {
-    return JSON.stringify(params);
-  } catch {
-    return '[unserializable params]';
-  }
-}
-
-function getDbHost(url: string) {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
-}
-
-function logDbQuery(sql: string, params: any[]) {
-  if (!shouldLogDbQueries()) return;
-  console.log(`[DB] ${IS_TURSO ? '[TURSO]' : '[MySQL]'} SQL: ${sql} PARAMS: ${safeLogParams(params)}`);
-}
+const require = createRequire(import.meta.url);
 
 // Database Interface to abstract differences
 export interface IDatabase {
@@ -43,7 +17,8 @@ class SQLiteWrapper implements IDatabase {
   private db: any;
   constructor() {
     const dbPath = resolveSqlitePath();
-    this.db = new Database(dbPath);
+    const BetterSqlite3 = require('better-sqlite3');
+    this.db = new BetterSqlite3(dbPath);
     this.db.pragma('foreign_keys = ON');
   }
   async execute(sql: string, params: any[] = []) {
@@ -85,6 +60,29 @@ class MySQLWrapper implements IDatabase {
   }
 }
 
+
+class TursoWrapper implements IDatabase {
+  private client: LibsqlClient;
+
+  constructor(url: string, authToken?: string) {
+    this.client = createClient({ url, authToken });
+  }
+
+  async execute(sql: string, params: any[] = []) {
+    return this.client.execute({ sql, args: params });
+  }
+
+  async query<T>(sql: string, params: any[] = []) {
+    const result = await this.client.execute({ sql, args: params });
+    return result.rows as unknown as T[];
+  }
+
+  async queryOne<T>(sql: string, params: any[] = []) {
+    const rows = await this.query<T>(sql, params);
+    return rows[0] || null;
+  }
+}
+
 // Initialize the correct database
 let db: IDatabase;
 
@@ -99,9 +97,16 @@ function resolveSqlitePath() {
   return 'nightrespawn.db';
 }
 
-if (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('://')) {
+const databaseUrl = process.env.DATABASE_URL || process.env.TURSO_DATABASE_URL;
+const isTurso = Boolean(databaseUrl && databaseUrl.startsWith('libsql://'));
+const isMySQL = Boolean(databaseUrl && databaseUrl.startsWith('mysql'));
+
+if (isTurso && databaseUrl) {
+  console.log('Connecting to Turso (LibSQL) Database...');
+  db = new TursoWrapper(databaseUrl, process.env.TURSO_AUTH_TOKEN);
+} else if (isMySQL && databaseUrl) {
   console.log('Connecting to MySQL Database...');
-  db = new MySQLWrapper(process.env.DATABASE_URL);
+  db = new MySQLWrapper(databaseUrl);
 } else {
   const dbPath = resolveSqlitePath();
   console.log(`Using Local SQLite Database at ${dbPath}...`);
@@ -111,7 +116,7 @@ if (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('://')) {
 export async function initDb() {
   const run = async (sql: string) => {
     let finalSql = sql;
-    if (!(db instanceof SQLiteWrapper)) {
+    if (db instanceof MySQLWrapper) {
       // Basic translation for MySQL
       finalSql = finalSql.replace(/INTEGER PRIMARY KEY AUTOINCREMENT/g, 'INT AUTO_INCREMENT PRIMARY KEY');
       finalSql = finalSql.replace(/REAL/g, 'DECIMAL(10,2)');
@@ -157,7 +162,7 @@ export async function initDb() {
 
   // Migration-safe schema updates for users social links
   const socialColumns = ['steam_url', 'x_url', 'facebook_url', 'github_url', 'youtube_url', 'kick_url', 'twitch_url', 'discord_url'];
-  if (db instanceof SQLiteWrapper) {
+  if (!(db instanceof MySQLWrapper)) {
     const userColumns = await db.query<any>('PRAGMA table_info(users)');
     for (const column of socialColumns) {
       const hasColumn = userColumns.some((item) => item.name === column);
@@ -205,7 +210,7 @@ export async function initDb() {
   `);
 
   // Migration-safe schema updates for forums
-  if (db instanceof SQLiteWrapper) {
+  if (!(db instanceof MySQLWrapper)) {
     const forumColumns = await db.query<any>('PRAGMA table_info(forums)');
     const hasIsHidden = forumColumns.some((column) => column.name === 'is_hidden');
     if (!hasIsHidden) {
@@ -331,7 +336,7 @@ export async function initDb() {
   `);
 
   // Migration-safe schema updates for orders payment webhook replay protection fields
-  if (db instanceof SQLiteWrapper) {
+  if (!(db instanceof MySQLWrapper)) {
     const orderColumns = await db.query<any>('PRAGMA table_info(orders)');
     const ensureOrderColumn = async (name: string, definition: string) => {
       const exists = orderColumns.some((column) => column.name === name);
@@ -474,7 +479,7 @@ export async function initDb() {
   `);
 
   // Migration-safe schema updates for server_nodes
-  if (db instanceof SQLiteWrapper) {
+  if (!(db instanceof MySQLWrapper)) {
     const serverColumns = await db.query<any>('PRAGMA table_info(server_nodes)');
     const hasPlayersCurrent = serverColumns.some((column) => column.name === 'players_current');
     if (!hasPlayersCurrent) {
@@ -539,6 +544,60 @@ export async function initDb() {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
+
+  // Migration-safe schema updates for game_stats
+  if (!(db instanceof MySQLWrapper)) {
+    const gameStatsColumns = await db.query<any>('PRAGMA table_info(game_stats)');
+    const gameStatsColumnsToAdd = [
+      { name: 'game_type', sqliteDef: "TEXT NOT NULL DEFAULT 'Rust'" },
+      { name: 'playtime', sqliteDef: 'REAL DEFAULT 0' },
+      { name: 'bank_balance', sqliteDef: 'REAL DEFAULT 0' },
+      { name: 'cash_on_hand', sqliteDef: 'REAL DEFAULT 0' },
+      { name: 'total_wealth', sqliteDef: 'REAL DEFAULT 0' },
+      { name: 'kills', sqliteDef: 'INTEGER DEFAULT 0' },
+      { name: 'deaths', sqliteDef: 'INTEGER DEFAULT 0' },
+      { name: 'kd_ratio', sqliteDef: 'REAL DEFAULT 0' },
+      { name: 'raids_completed', sqliteDef: 'INTEGER DEFAULT 0' },
+      { name: 'vehicles_owned', sqliteDef: 'INTEGER DEFAULT 0' },
+      { name: 'wipe_performance', sqliteDef: 'REAL DEFAULT 0' },
+      { name: 'last_updated', sqliteDef: 'DATETIME DEFAULT CURRENT_TIMESTAMP' }
+    ];
+
+    const existingGameStatsColumns = new Set(gameStatsColumns.map((column) => column.name));
+    for (const column of gameStatsColumnsToAdd) {
+      if (!existingGameStatsColumns.has(column.name)) {
+        await db.execute(`ALTER TABLE game_stats ADD COLUMN ${column.name} ${column.sqliteDef}`);
+      }
+    }
+  } else {
+    const gameStatsColumnsToAdd = [
+      { name: 'game_type', mysqlDef: "VARCHAR(255) NOT NULL DEFAULT 'Rust'" },
+      { name: 'playtime', mysqlDef: 'DOUBLE DEFAULT 0' },
+      { name: 'bank_balance', mysqlDef: 'DOUBLE DEFAULT 0' },
+      { name: 'cash_on_hand', mysqlDef: 'DOUBLE DEFAULT 0' },
+      { name: 'total_wealth', mysqlDef: 'DOUBLE DEFAULT 0' },
+      { name: 'kills', mysqlDef: 'INT DEFAULT 0' },
+      { name: 'deaths', mysqlDef: 'INT DEFAULT 0' },
+      { name: 'kd_ratio', mysqlDef: 'DOUBLE DEFAULT 0' },
+      { name: 'raids_completed', mysqlDef: 'INT DEFAULT 0' },
+      { name: 'vehicles_owned', mysqlDef: 'INT DEFAULT 0' },
+      { name: 'wipe_performance', mysqlDef: 'DOUBLE DEFAULT 0' },
+      { name: 'last_updated', mysqlDef: 'DATETIME DEFAULT CURRENT_TIMESTAMP' }
+    ];
+
+    for (const column of gameStatsColumnsToAdd) {
+      const existingColumn = await db.queryOne<any>(`
+        SELECT COLUMN_NAME
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'game_stats'
+          AND COLUMN_NAME = ?
+      `, [column.name]);
+      if (!existingColumn) {
+        await db.execute(`ALTER TABLE game_stats ADD COLUMN ${column.name} ${column.mysqlDef}`);
+      }
+    }
+  }
 
   // Game Transactions
   await run(`
@@ -611,10 +670,10 @@ export async function initDb() {
   ];
 
   for (const setting of defaultSettings) {
-    if (db instanceof SQLiteWrapper) {
-      await db.execute('INSERT OR IGNORE INTO site_settings (key, value) VALUES (?, ?)', [setting.key, setting.value]);
-    } else {
+    if (db instanceof MySQLWrapper) {
       await db.execute('INSERT IGNORE INTO site_settings (key, value) VALUES (?, ?)', [setting.key, setting.value]);
+    } else {
+      await db.execute('INSERT OR IGNORE INTO site_settings (key, value) VALUES (?, ?)', [setting.key, setting.value]);
     }
   }
 }
