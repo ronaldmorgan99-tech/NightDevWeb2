@@ -2,6 +2,35 @@ import Database from 'better-sqlite3';
 import mysql from 'mysql2/promise';
 import path from 'path';
 
+const DB_DEBUG = ['true', '1'].includes((process.env.DB_DEBUG || '').toLowerCase());
+const VERCEL_PREVIEW = process.env.VERCEL === '1';
+const IS_TURSO = Boolean(process.env.DATABASE_URL?.includes('turso'));
+
+function shouldLogDbQueries() {
+  return DB_DEBUG || VERCEL_PREVIEW;
+}
+
+function safeLogParams(params: any[]) {
+  try {
+    return JSON.stringify(params);
+  } catch {
+    return '[unserializable params]';
+  }
+}
+
+function getDbHost(url: string) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+function logDbQuery(sql: string, params: any[]) {
+  if (!shouldLogDbQueries()) return;
+  console.log(`[DB] ${IS_TURSO ? '[TURSO]' : '[MySQL]'} SQL: ${sql} PARAMS: ${safeLogParams(params)}`);
+}
+
 // Database Interface to abstract differences
 export interface IDatabase {
   execute(sql: string, params?: any[]): Promise<any>;
@@ -35,16 +64,22 @@ class MySQLWrapper implements IDatabase {
   private pool: mysql.Pool;
   constructor(url: string) {
     this.pool = mysql.createPool(url);
+    if (shouldLogDbQueries()) {
+      console.log(`[DB] Connecting to MySQL host=${getDbHost(url)} ${IS_TURSO ? '(TURSO detected)' : ''}`);
+    }
   }
   async execute(sql: string, params: any[] = []) {
+    logDbQuery(sql, params);
     const [result] = await this.pool.query(sql, params);
     return result;
   }
   async query<T>(sql: string, params: any[] = []) {
+    logDbQuery(sql, params);
     const [rows] = await this.pool.query(sql, params);
     return rows as T[];
   }
   async queryOne<T>(sql: string, params: any[] = []) {
+    logDbQuery(sql, params);
     const [rows]: any = await this.pool.query(sql, params);
     return rows[0] || null;
   }

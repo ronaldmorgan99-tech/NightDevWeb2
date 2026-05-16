@@ -1089,6 +1089,25 @@ async function start() {
 
   app.patch('/api/auth/me', authenticate, validateBody(profileUpdateSchema), async (req: any, res) => {
     const { avatar_url, banner_url, bio, username, email, currentPassword, newPassword, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url } = req.body;
+    const profileUpdateDebug = process.env.DB_DEBUG === 'true' || process.env.VERCEL === '1';
+    if (profileUpdateDebug) {
+      console.log('[Profile Update] /api/auth/me', {
+        username,
+        email,
+        avatar_url: avatar_url ?? null,
+        banner_url: banner_url ?? null,
+        social_updates: {
+          steam_url,
+          x_url,
+          facebook_url,
+          github_url,
+          youtube_url,
+          kick_url,
+          twitch_url,
+          discord_url,
+        },
+      });
+    }
     try {
       const updates: string[] = [];
       const params: any[] = [];
@@ -1154,7 +1173,11 @@ async function start() {
       
       if (updates.length > 0) {
         params.push(req.user.id);
-        await db.execute(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params);
+        const updateSql = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
+        if (profileUpdateDebug) {
+          console.log('[Profile Update] SQL:', updateSql, 'params:', JSON.stringify(params));
+        }
+        await db.execute(updateSql, params);
       }
       
       const user = await db.queryOne<any>('SELECT id, username, email, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?', [req.user.id]);
