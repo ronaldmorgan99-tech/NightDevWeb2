@@ -38,6 +38,7 @@ export default function MessagesPage() {
   const [isSearching, setIsSearching] = useState(false);
   const [isMessagesLoading, setIsMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
+  const [userBootstrapError, setUserBootstrapError] = useState<string | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isInitialLoadRef = useRef(true);
@@ -138,46 +139,84 @@ export default function MessagesPage() {
 
     if (!userIdParam) {
       setSelectedUser(null);
+      setUserBootstrapError(null);
       return;
     }
 
     if (!user) return;
 
+    const clearInvalidUserSelection = (message: string) => {
+      setSelectedUser(null);
+      setMessages([]);
+      setMessagesError(null);
+      setUserBootstrapError(message);
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('user');
+        return next;
+      });
+    };
+
     const conv = conversations.find(c => c.id === Number(userIdParam));
     if (conv) {
       setSelectedUser(conv);
+      setUserBootstrapError(null);
       return;
     }
 
     const controller = new AbortController();
 
-    // If not in conversations, fetch user info
-    fetch(`/api/users/${userIdParam}`, { signal: controller.signal })
-      .then(res => res.json())
-      .then(userData => {
-        const activeUserIdParam = searchParams.get('user');
-        if (controller.signal.aborted || activeUserIdParam !== userIdParam) return;
+    const bootstrapSelectedUser = async () => {
+      try {
+        const res = await fetch(`/api/users/${userIdParam}`, { signal: controller.signal });
+        if (controller.signal.aborted || searchParams.get('user') !== userIdParam) return;
 
-        if (userData && userData.id && String(userData.id) === userIdParam) {
+        if (!res.ok) {
+          clearInvalidUserSelection('Unable to open that conversation. Please choose a user from search.');
+          return;
+        }
+
+        let userData: unknown;
+        try {
+          userData = await res.json();
+        } catch {
+          clearInvalidUserSelection('Unable to open that conversation right now. Please try again.');
+          return;
+        }
+
+        if (
+          userData &&
+          typeof userData === 'object' &&
+          'id' in userData &&
+          String((userData as { id: number | string }).id) === userIdParam
+        ) {
+          const typedUserData = userData as { id: number; username: string; avatar_url: string | null };
           setSelectedUser({
-            id: userData.id,
-            username: userData.username,
-            avatar_url: userData.avatar_url,
+            id: typedUserData.id,
+            username: typedUserData.username,
+            avatar_url: typedUserData.avatar_url,
             last_message: '',
             last_message_at: new Date().toISOString(),
             unread_count: 0
           });
+          setUserBootstrapError(null);
+          return;
         }
-      })
-      .catch(err => {
-        if (controller.signal.aborted) return;
+
+        clearInvalidUserSelection('That user could not be found. Please choose a valid recipient.');
+      } catch (err) {
+        if (controller.signal.aborted || searchParams.get('user') !== userIdParam) return;
         console.error('Failed to fetch user for message:', err);
-      });
+        clearInvalidUserSelection('Unable to open conversation due to a network issue. Please try again.');
+      }
+    };
+
+    void bootstrapSelectedUser();
 
     return () => {
       controller.abort();
     };
-  }, [searchParams, conversations, user]);
+  }, [searchParams, conversations, user, setSearchParams]);
 
   useEffect(() => {
     if (!selectedUser || !user) return;
@@ -299,6 +338,11 @@ export default function MessagesPage() {
         </div>
         
         <div className="flex-1 min-h-0 overflow-y-auto">
+          {userBootstrapError && (
+            <div className="mx-3 mt-3 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              {userBootstrapError}
+            </div>
+          )}
           {userSearch.length >= 2 ? (
             <div className="p-2 space-y-1">
               <p className="px-3 py-2 text-[10px] uppercase tracking-widest font-black text-zinc-600">Search Results</p>
