@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useMessaging } from '../context/MessagingContext';
 import { format } from 'date-fns';
 import { useSearchParams, Navigate } from 'react-router';
+import { buildMembersSearchUrl } from '../lib/messagesSearch';
 
 interface Conversation {
   id: number;
@@ -129,7 +130,8 @@ export default function MessagesPage() {
       }
       setIsSearching(true);
       try {
-        const res = await fetch(`/api/members?search=${userSearch}`);
+        const searchUrl = buildMembersSearchUrl(userSearch);
+        const res = await fetch(searchUrl);
         if (res.ok) {
           const data = await res.json();
           const members = Array.isArray(data) ? data : [];
@@ -512,10 +514,42 @@ export default function MessagesPage() {
                 </div>
               </div>
               <div className="flex items-center gap-4 text-zinc-400">
-                <button className="hover:text-neon-cyan transition-colors" aria-label="Start voice call"><Phone className="w-5 h-5" /></button>
-                <button className="hover:text-neon-cyan transition-colors" aria-label="Start video call"><Video className="w-5 h-5" /></button>
-                <button className="hover:text-neon-cyan transition-colors" aria-label="View conversation info"><Info className="w-5 h-5" /></button>
-                <button className="hover:text-neon-cyan transition-colors" aria-label="Open conversation actions"><MoreVertical className="w-5 h-5" /></button>
+                <button
+                  type="button"
+                  className="transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Start voice call (coming soon)"
+                  title="Start voice call (coming soon)"
+                  disabled
+                >
+                  <Phone className="w-5 h-5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Start video call (coming soon)"
+                  title="Start video call (coming soon)"
+                  disabled
+                >
+                  <Video className="w-5 h-5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="View conversation info (coming soon)"
+                  title="View conversation info (coming soon)"
+                  disabled
+                >
+                  <Info className="w-5 h-5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Open conversation menu (coming soon)"
+                  title="Open conversation menu (coming soon)"
+                  disabled
+                >
+                  <MoreVertical className="w-5 h-5" aria-hidden="true" />
+                </button>
               </div>
             </div>
 
