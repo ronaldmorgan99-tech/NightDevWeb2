@@ -512,10 +512,42 @@ export default function MessagesPage() {
                 </div>
               </div>
               <div className="flex items-center gap-4 text-zinc-400">
-                <button className="hover:text-neon-cyan transition-colors"><Phone className="w-5 h-5" /></button>
-                <button className="hover:text-neon-cyan transition-colors"><Video className="w-5 h-5" /></button>
-                <button className="hover:text-neon-cyan transition-colors"><Info className="w-5 h-5" /></button>
-                <button className="hover:text-neon-cyan transition-colors"><MoreVertical className="w-5 h-5" /></button>
+                <button
+                  type="button"
+                  className="transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Start voice call (coming soon)"
+                  title="Start voice call (coming soon)"
+                  disabled
+                >
+                  <Phone className="w-5 h-5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Start video call (coming soon)"
+                  title="Start video call (coming soon)"
+                  disabled
+                >
+                  <Video className="w-5 h-5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="View conversation info (coming soon)"
+                  title="View conversation info (coming soon)"
+                  disabled
+                >
+                  <Info className="w-5 h-5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Open conversation menu (coming soon)"
+                  title="Open conversation menu (coming soon)"
+                  disabled
+                >
+                  <MoreVertical className="w-5 h-5" aria-hidden="true" />
+                </button>
               </div>
             </div>
 
