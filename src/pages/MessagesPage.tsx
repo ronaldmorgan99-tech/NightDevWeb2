@@ -36,10 +36,14 @@ export default function MessagesPage() {
   const [userSearch, setUserSearch] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isMessagesLoading, setIsMessagesLoading] = useState(false);
+  const [messagesError, setMessagesError] = useState<string | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isInitialLoadRef = useRef(true);
   const wasNearBottomRef = useRef(true);
+  const messagesRequestControllerRef = useRef<AbortController | null>(null);
+  const requestSeqRef = useRef(0);
 
   const getIsNearBottom = () => {
     const container = messagesContainerRef.current;
@@ -153,9 +157,13 @@ export default function MessagesPage() {
   }, [searchParams, conversations, user]);
 
   useEffect(() => {
-    if (selectedUser && user) {
-      fetchMessages(selectedUser.id);
-    }
+    if (!selectedUser || !user) return;
+
+    fetchMessages(selectedUser.id);
+
+    return () => {
+      messagesRequestControllerRef.current?.abort();
+    };
   }, [selectedUser, user]);
 
   useEffect(() => {
@@ -192,17 +200,42 @@ export default function MessagesPage() {
   };
 
   const fetchMessages = async (userId: number) => {
+    messagesRequestControllerRef.current?.abort();
+
+    const controller = new AbortController();
+    messagesRequestControllerRef.current = controller;
+    requestSeqRef.current += 1;
+    const requestToken = requestSeqRef.current;
+
+    setIsMessagesLoading(true);
+    setMessagesError(null);
+
     try {
-      const res = await fetch(`/api/messages/${userId}`);
-      if (res.ok) {
-        const data = await res.json();
-        wasNearBottomRef.current = getIsNearBottom();
-        setMessages(dedupeMessagesById(data));
-        // Update unread count locally
-        setConversations(prev => prev.map(c => c.id === userId ? { ...c, unread_count: 0 } : c));
+      const res = await fetch(`/api/messages/${userId}`, { signal: controller.signal });
+      if (!res.ok) {
+        throw new Error('Failed to load messages');
       }
+
+      const data = await res.json();
+      const isStaleRequest = controller.signal.aborted || requestToken !== requestSeqRef.current || selectedUser?.id !== userId;
+      if (isStaleRequest) {
+        return;
+      }
+
+      wasNearBottomRef.current = getIsNearBottom();
+      setMessages(dedupeMessagesById(data));
+      setConversations(prev => prev.map(c => c.id === userId ? { ...c, unread_count: 0 } : c));
     } catch (err) {
+      if (controller.signal.aborted || requestToken !== requestSeqRef.current || selectedUser?.id !== userId) {
+        return;
+      }
+
       console.error('Failed to fetch messages:', err);
+      setMessagesError('Failed to load messages');
+    } finally {
+      if (!controller.signal.aborted && requestToken === requestSeqRef.current && selectedUser?.id === userId) {
+        setIsMessagesLoading(false);
+      }
     }
   };
 
@@ -342,6 +375,12 @@ export default function MessagesPage() {
 
             {/* Messages */}
             <div ref={messagesContainerRef} className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-4">
+              {isMessagesLoading && (
+                <div className="text-center text-zinc-500 text-xs animate-pulse">Loading messages...</div>
+              )}
+              {messagesError && !isMessagesLoading && (
+                <div className="text-center text-red-400 text-xs">{messagesError}</div>
+              )}
               {messages.map((msg, idx) => {
                 const isMe = msg.sender_id === user?.id;
                 const showDate = idx === 0 || format(new Date(messages[idx-1].created_at), 'yyyy-MM-dd') !== format(new Date(msg.created_at), 'yyyy-MM-dd');
