@@ -45,6 +45,11 @@ export default function MessagesPage() {
   const messagesRequestControllerRef = useRef<AbortController | null>(null);
   const requestSeqRef = useRef(0);
 
+  const conversationsRequestControllerRef = useRef<AbortController | null>(null);
+  const conversationsRequestSeqRef = useRef(0);
+  const conversationsRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+
   const isConversationOpen = Boolean(selectedUser);
   const showSidebarOnMobile = !isConversationOpen;
   const showChatOnMobile = isConversationOpen;
@@ -105,7 +110,14 @@ export default function MessagesPage() {
     if (user) {
       fetchConversations();
     }
-  }, [user]);
+  }, [user, fetchConversations]);
+
+  useEffect(() => () => {
+    if (conversationsRefreshTimerRef.current) {
+      clearTimeout(conversationsRefreshTimerRef.current);
+    }
+    conversationsRequestControllerRef.current?.abort();
+  }, []);
 
   useEffect(() => {
     const searchUsers = async () => {
@@ -197,7 +209,7 @@ export default function MessagesPage() {
         wasNearBottomRef.current = getIsNearBottom();
         setMessages(prev => dedupeMessagesById([...prev, message]));
       }
-      fetchConversations();
+      scheduleConversationsRefresh();
     };
 
     socket.on('new_message', onNewMessage);
@@ -206,24 +218,77 @@ export default function MessagesPage() {
       // Use handler-specific cleanup so we don't remove listeners from other components/screens.
       socket.off('new_message', onNewMessage);
     };
-  }, [socket, selectedUser, user]);
+  }, [socket, selectedUser, user, scheduleConversationsRefresh]);
 
   if (authLoading) return <div className="h-full flex items-center justify-center text-neon-cyan animate-pulse">Initializing Neural Link...</div>;
   if (!user) return <Navigate to="/login" />;
 
-  const fetchConversations = async () => {
+  const mergeConversationsMonotonic = (nextConversations: Conversation[]) => {
+    setConversations(prevConversations => {
+      const previousById = new Map<number, Conversation>(prevConversations.map(conversation => [conversation.id, conversation]));
+      const merged = nextConversations.map(conversation => {
+        const previous = previousById.get(conversation.id);
+        if (!previous) return conversation;
+
+        const nextTime = new Date(conversation.last_message_at).getTime();
+        const prevTime = new Date(previous.last_message_at).getTime();
+
+        if (Number.isNaN(nextTime) || Number.isNaN(prevTime)) {
+          return { ...conversation, unread_count: Math.max(conversation.unread_count, previous.unread_count) };
+        }
+
+        if (nextTime < prevTime) {
+          return { ...previous, unread_count: Math.max(previous.unread_count, conversation.unread_count) };
+        }
+
+        return { ...conversation, unread_count: Math.max(conversation.unread_count, previous.unread_count) };
+      });
+
+      return merged.sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
+    });
+  };
+
+  async function fetchConversations() {
+    conversationsRequestControllerRef.current?.abort();
+
+    const controller = new AbortController();
+    conversationsRequestControllerRef.current = controller;
+    conversationsRequestSeqRef.current += 1;
+    const requestToken = conversationsRequestSeqRef.current;
+
     try {
-      const res = await fetch('/api/messages/conversations');
-      if (res.ok) {
-        const data = await res.json();
-        setConversations(data);
+      const res = await fetch('/api/messages/conversations', { signal: controller.signal });
+      if (!res.ok) return;
+
+      const data = await res.json();
+      if (controller.signal.aborted || requestToken !== conversationsRequestSeqRef.current) {
+        return;
       }
+
+      const conversationsData = Array.isArray(data) ? data : [];
+      mergeConversationsMonotonic(conversationsData);
     } catch (err) {
+      if (controller.signal.aborted || requestToken !== conversationsRequestSeqRef.current) {
+        return;
+      }
       console.error('Failed to fetch conversations:', err);
     } finally {
-      setIsLoading(false);
+      if (!controller.signal.aborted && requestToken === conversationsRequestSeqRef.current) {
+        setIsLoading(false);
+      }
     }
-  };
+  }
+
+  function scheduleConversationsRefresh(delayMs = 300) {
+    if (conversationsRefreshTimerRef.current) {
+      clearTimeout(conversationsRefreshTimerRef.current);
+    }
+
+    conversationsRefreshTimerRef.current = setTimeout(() => {
+      fetchConversations();
+      conversationsRefreshTimerRef.current = null;
+    }, delayMs);
+  }
 
   const fetchMessages = async (userId: number) => {
     messagesRequestControllerRef.current?.abort();
@@ -274,7 +339,7 @@ export default function MessagesPage() {
       wasNearBottomRef.current = getIsNearBottom();
       setMessages(prev => dedupeMessagesById([...prev, sentMessage]));
       setNewMessage('');
-      fetchConversations();
+      scheduleConversationsRefresh();
     } catch (err) {
       console.error('Failed to send message:', err);
     }
