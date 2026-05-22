@@ -209,9 +209,9 @@ const SupportPage: React.FC = () => {
         </motion.div>
       </div>
 
-      <div className="grid grid-cols-12 gap-8 h-[calc(100vh-20rem)]">
+      <div className="grid grid-cols-12 gap-8 min-h-[50vh] lg:h-[calc(100dvh-20rem)] lg:min-h-0">
         {/* Tickets List */}
-        <div className={`col-span-12 lg:col-span-4 flex flex-col gap-4 overflow-y-auto pr-2 custom-scrollbar ${selectedTicketId ? 'hidden lg:flex' : 'flex'}`}>
+        <div className={`col-span-12 lg:col-span-4 min-h-0 flex-col gap-4 overflow-y-auto pr-2 custom-scrollbar ${selectedTicketId ? 'hidden lg:flex' : 'flex'}`}>
           {tickets?.map((ticket) => (
             <motion.button
               key={ticket.id}
@@ -254,7 +254,7 @@ const SupportPage: React.FC = () => {
         </div>
 
         {/* Ticket Detail */}
-        <div className={`col-span-12 lg:col-span-8 flex flex-col cyber-card border-white/5 overflow-hidden ${selectedTicketId ? 'flex' : 'hidden lg:flex items-center justify-center bg-white/[0.01]'}`}>
+        <div className={`col-span-12 lg:col-span-8 min-h-0 flex-col cyber-card border-white/5 overflow-hidden ${selectedTicketId ? 'flex' : 'hidden lg:flex items-center justify-center bg-white/[0.01]'}`}>
           {selectedTicketId ? (
             <>
               <div className="p-8 bg-white/[0.02] border-b border-white/5 flex items-center justify-between">
