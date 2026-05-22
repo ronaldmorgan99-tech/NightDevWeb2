@@ -127,29 +127,48 @@ export default function MessagesPage() {
 
   useEffect(() => {
     const userIdParam = searchParams.get('user');
-    if (userIdParam && user) {
-      const conv = conversations.find(c => c.id === Number(userIdParam));
-      if (conv) {
-        setSelectedUser(conv);
-      } else {
-        // If not in conversations, fetch user info
-        fetch(`/api/users/${userIdParam}`)
-          .then(res => res.json())
-          .then(userData => {
-            if (userData && userData.id) {
-              setSelectedUser({
-                id: userData.id,
-                username: userData.username,
-                avatar_url: userData.avatar_url,
-                last_message: '',
-                last_message_at: new Date().toISOString(),
-                unread_count: 0
-              });
-            }
-          })
-          .catch(err => console.error('Failed to fetch user for message:', err));
-      }
+
+    if (!userIdParam) {
+      setSelectedUser(null);
+      return;
     }
+
+    if (!user) return;
+
+    const conv = conversations.find(c => c.id === Number(userIdParam));
+    if (conv) {
+      setSelectedUser(conv);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    // If not in conversations, fetch user info
+    fetch(`/api/users/${userIdParam}`, { signal: controller.signal })
+      .then(res => res.json())
+      .then(userData => {
+        const activeUserIdParam = searchParams.get('user');
+        if (controller.signal.aborted || activeUserIdParam !== userIdParam) return;
+
+        if (userData && userData.id && String(userData.id) === userIdParam) {
+          setSelectedUser({
+            id: userData.id,
+            username: userData.username,
+            avatar_url: userData.avatar_url,
+            last_message: '',
+            last_message_at: new Date().toISOString(),
+            unread_count: 0
+          });
+        }
+      })
+      .catch(err => {
+        if (controller.signal.aborted) return;
+        console.error('Failed to fetch user for message:', err);
+      });
+
+    return () => {
+      controller.abort();
+    };
   }, [searchParams, conversations, user]);
 
   useEffect(() => {
