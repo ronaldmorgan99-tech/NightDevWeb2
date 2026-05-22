@@ -178,19 +178,22 @@ export default function MessagesPage() {
   }, [selectedUser, user]);
 
   useEffect(() => {
-    if (socket && user) {
-      socket.on('new_message', (message: Message) => {
-        if (selectedUser && (message.sender_id === selectedUser.id || message.receiver_id === selectedUser.id)) {
-          wasNearBottomRef.current = getIsNearBottom();
-          setMessages(prev => dedupeMessagesById([...prev, message]));
-        }
-        fetchConversations();
-      });
+    if (!socket || !user) return;
 
-      return () => {
-        socket.off('new_message');
-      };
-    }
+    const onNewMessage = (message: Message) => {
+      if (selectedUser && (message.sender_id === selectedUser.id || message.receiver_id === selectedUser.id)) {
+        wasNearBottomRef.current = getIsNearBottom();
+        setMessages(prev => dedupeMessagesById([...prev, message]));
+      }
+      fetchConversations();
+    };
+
+    socket.on('new_message', onNewMessage);
+
+    return () => {
+      // Use handler-specific cleanup so we don't remove listeners from other components/screens.
+      socket.off('new_message', onNewMessage);
+    };
   }, [socket, selectedUser, user]);
 
   if (authLoading) return <div className="h-full flex items-center justify-center text-neon-cyan animate-pulse">Initializing Neural Link...</div>;
