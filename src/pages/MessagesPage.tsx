@@ -49,6 +49,8 @@ export default function MessagesPage() {
   const conversationsRequestControllerRef = useRef<AbortController | null>(null);
   const conversationsRequestSeqRef = useRef(0);
   const conversationsRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const userSearchRequestControllerRef = useRef<AbortController | null>(null);
+  const userSearchRequestSeqRef = useRef(0);
 
 
   const isConversationOpen = Boolean(selectedUser);
@@ -121,29 +123,58 @@ export default function MessagesPage() {
   }, []);
 
   useEffect(() => {
-    const searchUsers = async () => {
-      if (userSearch.length < 2) {
-        setSearchResults([]);
-        setIsSearching(false);
-        return;
-      }
+    if (userSearch.length < 2) {
+      userSearchRequestControllerRef.current?.abort();
+      userSearchRequestSeqRef.current += 1;
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    userSearchRequestSeqRef.current += 1;
+    const requestToken = userSearchRequestSeqRef.current;
+
+    const timer = setTimeout(() => {
+      userSearchRequestControllerRef.current?.abort();
+
+      const controller = new AbortController();
+      userSearchRequestControllerRef.current = controller;
       setIsSearching(true);
-      try {
-        const res = await fetch(`/api/members?search=${userSearch}`);
-        if (res.ok) {
+
+      const searchUsers = async () => {
+        try {
+          const res = await fetch(`/api/members?search=${userSearch}`, { signal: controller.signal });
+
+          if (!res.ok || controller.signal.aborted || requestToken !== userSearchRequestSeqRef.current) {
+            return;
+          }
+
           const data = await res.json();
+          if (controller.signal.aborted || requestToken !== userSearchRequestSeqRef.current) {
+            return;
+          }
+
           const members = Array.isArray(data) ? data : [];
           setSearchResults(members.filter((u: any) => u.id !== user?.id));
+        } catch (err) {
+          if (controller.signal.aborted || requestToken !== userSearchRequestSeqRef.current) {
+            return;
+          }
+          console.error('Failed to search users:', err);
+        } finally {
+          if (!controller.signal.aborted && requestToken === userSearchRequestSeqRef.current) {
+            setIsSearching(false);
+          }
         }
-      } catch (err) {
-        console.error('Failed to search users:', err);
-      } finally {
-        setIsSearching(false);
-      }
-    };
+      };
 
-    const timer = setTimeout(searchUsers, 300);
-    return () => clearTimeout(timer);
+      void searchUsers();
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+      userSearchRequestControllerRef.current?.abort();
+    };
   }, [userSearch, user]);
 
   useEffect(() => {
