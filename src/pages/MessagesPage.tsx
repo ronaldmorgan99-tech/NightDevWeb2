@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useMessaging } from '../context/MessagingContext';
 import { format } from 'date-fns';
 import { useSearchParams, Navigate } from 'react-router';
-import { normalizeSearchUserResults, type SearchUserResult } from '../lib/messageSearch';
+import { buildMembersSearchUrl } from '../lib/messagesSearch';
 
 interface Conversation {
   id: number;
@@ -50,6 +50,8 @@ export default function MessagesPage() {
   const conversationsRequestControllerRef = useRef<AbortController | null>(null);
   const conversationsRequestSeqRef = useRef(0);
   const conversationsRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const userSearchRequestControllerRef = useRef<AbortController | null>(null);
+  const userSearchRequestSeqRef = useRef(0);
 
 
   const isConversationOpen = Boolean(selectedUser);
@@ -122,112 +124,138 @@ export default function MessagesPage() {
   }, []);
 
   useEffect(() => {
-    const searchUsers = async () => {
-      if (userSearch.length < 2) {
-        setSearchResults([]);
-        setIsSearching(false);
-        return;
-      }
+    if (userSearch.length < 2) {
+      userSearchRequestControllerRef.current?.abort();
+      userSearchRequestSeqRef.current += 1;
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    userSearchRequestSeqRef.current += 1;
+    const requestToken = userSearchRequestSeqRef.current;
+
+    const timer = setTimeout(() => {
+      userSearchRequestControllerRef.current?.abort();
+
+      const controller = new AbortController();
+      userSearchRequestControllerRef.current = controller;
       setIsSearching(true);
       try {
-        const res = await fetch(`/api/members?search=${userSearch}`);
+        const searchUrl = buildMembersSearchUrl(userSearch);
+        const res = await fetch(searchUrl);
         if (res.ok) {
           const data = await res.json();
-          setSearchResults(normalizeSearchUserResults(data, user?.id));
-        }
-      } catch (err) {
-        console.error('Failed to search users:', err);
-      } finally {
-        setIsSearching(false);
-      }
-    };
+          if (controller.signal.aborted || requestToken !== userSearchRequestSeqRef.current) {
+            return;
+          }
 
-    const timer = setTimeout(searchUsers, 300);
-    return () => clearTimeout(timer);
+          const members = Array.isArray(data) ? data : [];
+          setSearchResults(members.filter((u: any) => u.id !== user?.id));
+        } catch (err) {
+          if (controller.signal.aborted || requestToken !== userSearchRequestSeqRef.current) {
+            return;
+          }
+          console.error('Failed to search users:', err);
+        } finally {
+          if (!controller.signal.aborted && requestToken === userSearchRequestSeqRef.current) {
+            setIsSearching(false);
+          }
+        }
+      };
+
+      void searchUsers();
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+      userSearchRequestControllerRef.current?.abort();
+    };
   }, [userSearch, user]);
 
   useEffect(() => {
     const userIdParam = searchParams.get('user');
 
-    if (!userIdParam) {
-      setSelectedUser(null);
-      setUserBootstrapError(null);
-      return;
-    }
+    if (userIdParam) {
+      if (!user) return;
 
-    if (!user) return;
+      const clearInvalidUserSelection = (message: string) => {
+        setSelectedUser(null);
+        setMessages([]);
+        setMessagesError(null);
+        setUserBootstrapError(message);
+        setSearchParams(prev => {
+          const next = new URLSearchParams(prev);
+          next.delete('user');
+          return next;
+        });
+      };
 
-    const clearInvalidUserSelection = (message: string) => {
+      const conv = conversations.find(c => c.id === Number(userIdParam));
+      if (conv) {
+        setSelectedUser(conv);
+        setUserBootstrapError(null);
+        return;
+      }
+
+      const controller = new AbortController();
+
+      const bootstrapSelectedUser = async () => {
+        try {
+          const res = await fetch(`/api/users/${userIdParam}`, { signal: controller.signal });
+          if (controller.signal.aborted || searchParams.get('user') !== userIdParam) return;
+
+          if (!res.ok) {
+            clearInvalidUserSelection('Unable to open that conversation. Please choose a user from search.');
+            return;
+          }
+
+          let userData: unknown;
+          try {
+            userData = await res.json();
+          } catch {
+            clearInvalidUserSelection('Unable to open that conversation right now. Please try again.');
+            return;
+          }
+
+          if (
+            userData &&
+            typeof userData === 'object' &&
+            'id' in userData &&
+            String((userData as { id: number | string }).id) === userIdParam
+          ) {
+            const typedUserData = userData as { id: number; username: string; avatar_url: string | null };
+            setSelectedUser({
+              id: typedUserData.id,
+              username: typedUserData.username,
+              avatar_url: typedUserData.avatar_url,
+              last_message: '',
+              last_message_at: new Date().toISOString(),
+              unread_count: 0
+            });
+            setUserBootstrapError(null);
+            return;
+          }
+
+          clearInvalidUserSelection('That user could not be found. Please choose a valid recipient.');
+        } catch (err) {
+          if (controller.signal.aborted || searchParams.get('user') !== userIdParam) return;
+          console.error('Failed to fetch user for message:', err);
+          clearInvalidUserSelection('Unable to open conversation due to a network issue. Please try again.');
+        }
+      };
+
+      void bootstrapSelectedUser();
+
+      return () => {
+        controller.abort();
+      };
+    } else {
       setSelectedUser(null);
       setMessages([]);
       setMessagesError(null);
-      setUserBootstrapError(message);
-      setSearchParams(prev => {
-        const next = new URLSearchParams(prev);
-        next.delete('user');
-        return next;
-      });
-    };
-
-    const conv = conversations.find(c => c.id === Number(userIdParam));
-    if (conv) {
-      setSelectedUser(conv);
       setUserBootstrapError(null);
-      return;
     }
-
-    const controller = new AbortController();
-
-    const bootstrapSelectedUser = async () => {
-      try {
-        const res = await fetch(`/api/users/${userIdParam}`, { signal: controller.signal });
-        if (controller.signal.aborted || searchParams.get('user') !== userIdParam) return;
-
-        if (!res.ok) {
-          clearInvalidUserSelection('Unable to open that conversation. Please choose a user from search.');
-          return;
-        }
-
-        let userData: unknown;
-        try {
-          userData = await res.json();
-        } catch {
-          clearInvalidUserSelection('Unable to open that conversation right now. Please try again.');
-          return;
-        }
-
-        if (
-          userData &&
-          typeof userData === 'object' &&
-          'id' in userData &&
-          String((userData as { id: number | string }).id) === userIdParam
-        ) {
-          const typedUserData = userData as { id: number; username: string; avatar_url: string | null };
-          setSelectedUser({
-            id: typedUserData.id,
-            username: typedUserData.username,
-            avatar_url: typedUserData.avatar_url,
-            last_message: '',
-            last_message_at: new Date().toISOString(),
-            unread_count: 0
-          });
-          setUserBootstrapError(null);
-          return;
-        }
-
-        clearInvalidUserSelection('That user could not be found. Please choose a valid recipient.');
-      } catch (err) {
-        if (controller.signal.aborted || searchParams.get('user') !== userIdParam) return;
-        console.error('Failed to fetch user for message:', err);
-        clearInvalidUserSelection('Unable to open conversation due to a network issue. Please try again.');
-      }
-    };
-
-    void bootstrapSelectedUser();
-
-    return () => {
-      controller.abort();
-    };
   }, [searchParams, conversations, user, setSearchParams]);
 
   useEffect(() => {
@@ -512,10 +540,42 @@ export default function MessagesPage() {
                 </div>
               </div>
               <div className="flex items-center gap-4 text-zinc-400">
-                <button className="hover:text-neon-cyan transition-colors"><Phone className="w-5 h-5" /></button>
-                <button className="hover:text-neon-cyan transition-colors"><Video className="w-5 h-5" /></button>
-                <button className="hover:text-neon-cyan transition-colors"><Info className="w-5 h-5" /></button>
-                <button className="hover:text-neon-cyan transition-colors"><MoreVertical className="w-5 h-5" /></button>
+                <button
+                  type="button"
+                  className="transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Start voice call (coming soon)"
+                  title="Start voice call (coming soon)"
+                  disabled
+                >
+                  <Phone className="w-5 h-5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Start video call (coming soon)"
+                  title="Start video call (coming soon)"
+                  disabled
+                >
+                  <Video className="w-5 h-5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="View conversation info (coming soon)"
+                  title="View conversation info (coming soon)"
+                  disabled
+                >
+                  <Info className="w-5 h-5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Open conversation menu (coming soon)"
+                  title="Open conversation menu (coming soon)"
+                  disabled
+                >
+                  <MoreVertical className="w-5 h-5" aria-hidden="true" />
+                </button>
               </div>
             </div>
 
@@ -574,6 +634,7 @@ export default function MessagesPage() {
                   type="submit"
                   disabled={!newMessage.trim()}
                   className="bg-neon-cyan text-black p-3 rounded-xl hover:bg-white transition-all hover:shadow-[0_0_20px_rgba(0,243,255,0.5)] disabled:opacity-50 disabled:hover:shadow-none"
+                  aria-label="Send message"
                 >
                   <Send className="w-5 h-5" />
                 </button>
