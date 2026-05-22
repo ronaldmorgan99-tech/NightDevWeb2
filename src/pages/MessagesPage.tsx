@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, User, Search, MoreVertical, Phone, Video, Info } from 'lucide-react';
+import { Send, User, Search, MoreVertical, Phone, Video, Info, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useMessaging } from '../context/MessagingContext';
 import { format } from 'date-fns';
@@ -44,6 +44,10 @@ export default function MessagesPage() {
   const wasNearBottomRef = useRef(true);
   const messagesRequestControllerRef = useRef<AbortController | null>(null);
   const requestSeqRef = useRef(0);
+
+  const isConversationOpen = Boolean(selectedUser);
+  const showSidebarOnMobile = !isConversationOpen;
+  const showChatOnMobile = isConversationOpen;
 
   const getIsNearBottom = () => {
     const container = messagesContainerRef.current;
@@ -279,7 +283,7 @@ export default function MessagesPage() {
   return (
     <div className="flex h-[calc(100dvh-120px)] min-h-0 md:min-h-[420px] bg-cyber-black/40 border border-white/5 rounded-xl overflow-hidden backdrop-blur-sm">
       {/* Sidebar */}
-      <div className="w-80 border-r border-white/5 flex flex-col min-h-0 bg-cyber-dark">
+      <div className={`w-full md:w-80 md:border-r border-white/5 flex flex-col min-h-0 bg-cyber-dark ${showSidebarOnMobile ? 'flex' : 'hidden'} md:flex`}>
         <div className="p-4 border-b border-white/5">
           <h2 className="text-xl font-orbitron font-bold text-neon-cyan mb-4 uppercase tracking-tighter italic">Messages</h2>
           <div className="relative">
@@ -369,12 +373,23 @@ export default function MessagesPage() {
       </div>
 
       {/* Chat Area */}
-      <div className="flex-1 min-h-0 flex flex-col bg-cyber-black/20">
+      <div className={`w-full flex-1 min-h-0 flex-col bg-cyber-black/20 ${showChatOnMobile ? 'flex' : 'hidden'} md:flex`}>
         {selectedUser ? (
           <div className="flex flex-1 min-h-0 flex-col">
             {/* Header */}
             <div className="p-4 border-b border-white/5 flex items-center justify-between bg-cyber-black/40">
               <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedUser(null);
+                    setSearchParams({});
+                  }}
+                  className="md:hidden inline-flex items-center justify-center text-zinc-400 hover:text-neon-cyan transition-colors"
+                  aria-label="Back to conversations"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
                 {selectedUser.avatar_url ? (
                   <img src={selectedUser.avatar_url} alt={selectedUser.username} className="w-10 h-10 rounded-full object-cover border border-white/10" referrerPolicy="no-referrer" />
                 ) : (
