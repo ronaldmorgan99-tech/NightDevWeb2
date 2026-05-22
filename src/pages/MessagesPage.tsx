@@ -141,17 +141,20 @@ export default function MessagesPage() {
       const controller = new AbortController();
       userSearchRequestControllerRef.current = controller;
       setIsSearching(true);
-      try {
-        const searchUrl = buildMembersSearchUrl(userSearch);
-        const res = await fetch(searchUrl);
-        if (res.ok) {
-          const data = await res.json();
-          if (controller.signal.aborted || requestToken !== userSearchRequestSeqRef.current) {
-            return;
-          }
 
-          const members = Array.isArray(data) ? data : [];
-          setSearchResults(members.filter((u: any) => u.id !== user?.id));
+      const searchUsers = async () => {
+        try {
+          const searchUrl = buildMembersSearchUrl(userSearch);
+          const res = await fetch(searchUrl);
+          if (res.ok) {
+            const data = await res.json();
+            if (controller.signal.aborted || requestToken !== userSearchRequestSeqRef.current) {
+              return;
+            }
+
+            const members = Array.isArray(data) ? data : [];
+            setSearchResults(members.filter((u: any) => u.id !== user?.id));
+          }
         } catch (err) {
           if (controller.signal.aborted || requestToken !== userSearchRequestSeqRef.current) {
             return;
