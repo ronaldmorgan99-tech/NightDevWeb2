@@ -178,7 +178,7 @@ jobs:
         run: >
           node --experimental-test-coverage
           --test-coverage-lines="$COVERAGE_THRESHOLD"
-          --test test/regression.test.js
+          --test test/regression.test.js test/frontend-regression.test.js
 
       - name: Enforce integration line coverage threshold from existing V8 output
         if: steps.integration.outputs.exit_code == '0' || steps.integration_retry.outputs.exit_code == '0'
