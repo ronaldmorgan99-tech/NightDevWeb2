@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useMessaging } from '../context/MessagingContext';
 import { format } from 'date-fns';
 import { useSearchParams, Navigate } from 'react-router';
+import { buildMembersSearchUrl } from '../lib/messagesSearch';
 
 interface Conversation {
   id: number;
@@ -129,7 +130,8 @@ export default function MessagesPage() {
       }
       setIsSearching(true);
       try {
-        const res = await fetch(`/api/members?search=${userSearch}`);
+        const searchUrl = buildMembersSearchUrl(userSearch);
+        const res = await fetch(searchUrl);
         if (res.ok) {
           const data = await res.json();
           const members = Array.isArray(data) ? data : [];
