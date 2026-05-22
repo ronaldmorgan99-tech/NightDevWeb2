@@ -149,85 +149,86 @@ export default function MessagesPage() {
   useEffect(() => {
     const userIdParam = searchParams.get('user');
 
-    if (!userIdParam) {
-      setSelectedUser(null);
-      setUserBootstrapError(null);
-      return;
-    }
+    if (userIdParam) {
+      if (!user) return;
 
-    if (!user) return;
+      const clearInvalidUserSelection = (message: string) => {
+        setSelectedUser(null);
+        setMessages([]);
+        setMessagesError(null);
+        setUserBootstrapError(message);
+        setSearchParams(prev => {
+          const next = new URLSearchParams(prev);
+          next.delete('user');
+          return next;
+        });
+      };
 
-    const clearInvalidUserSelection = (message: string) => {
+      const conv = conversations.find(c => c.id === Number(userIdParam));
+      if (conv) {
+        setSelectedUser(conv);
+        setUserBootstrapError(null);
+        return;
+      }
+
+      const controller = new AbortController();
+
+      const bootstrapSelectedUser = async () => {
+        try {
+          const res = await fetch(`/api/users/${userIdParam}`, { signal: controller.signal });
+          if (controller.signal.aborted || searchParams.get('user') !== userIdParam) return;
+
+          if (!res.ok) {
+            clearInvalidUserSelection('Unable to open that conversation. Please choose a user from search.');
+            return;
+          }
+
+          let userData: unknown;
+          try {
+            userData = await res.json();
+          } catch {
+            clearInvalidUserSelection('Unable to open that conversation right now. Please try again.');
+            return;
+          }
+
+          if (
+            userData &&
+            typeof userData === 'object' &&
+            'id' in userData &&
+            String((userData as { id: number | string }).id) === userIdParam
+          ) {
+            const typedUserData = userData as { id: number; username: string; avatar_url: string | null };
+            setSelectedUser({
+              id: typedUserData.id,
+              username: typedUserData.username,
+              avatar_url: typedUserData.avatar_url,
+              last_message: '',
+              last_message_at: new Date().toISOString(),
+              unread_count: 0
+            });
+            setUserBootstrapError(null);
+            return;
+          }
+
+          clearInvalidUserSelection('That user could not be found. Please choose a valid recipient.');
+        } catch (err) {
+          if (controller.signal.aborted || searchParams.get('user') !== userIdParam) return;
+          console.error('Failed to fetch user for message:', err);
+          clearInvalidUserSelection('Unable to open conversation due to a network issue. Please try again.');
+        }
+      };
+
+      void bootstrapSelectedUser();
+
+      return () => {
+        controller.abort();
+      };
+    } else {
       setSelectedUser(null);
       setMessages([]);
       setMessagesError(null);
-      setUserBootstrapError(message);
-      setSearchParams(prev => {
-        const next = new URLSearchParams(prev);
-        next.delete('user');
-        return next;
-      });
-    };
-
-    const conv = conversations.find(c => c.id === Number(userIdParam));
-    if (conv) {
-      setSelectedUser(conv);
       setUserBootstrapError(null);
-      return;
     }
-
-    const controller = new AbortController();
-
-    const bootstrapSelectedUser = async () => {
-      try {
-        const res = await fetch(`/api/users/${userIdParam}`, { signal: controller.signal });
-        if (controller.signal.aborted || searchParams.get('user') !== userIdParam) return;
-
-        if (!res.ok) {
-          clearInvalidUserSelection('Unable to open that conversation. Please choose a user from search.');
-          return;
-        }
-
-        let userData: unknown;
-        try {
-          userData = await res.json();
-        } catch {
-          clearInvalidUserSelection('Unable to open that conversation right now. Please try again.');
-          return;
-        }
-
-        if (
-          userData &&
-          typeof userData === 'object' &&
-          'id' in userData &&
-          String((userData as { id: number | string }).id) === userIdParam
-        ) {
-          const typedUserData = userData as { id: number; username: string; avatar_url: string | null };
-          setSelectedUser({
-            id: typedUserData.id,
-            username: typedUserData.username,
-            avatar_url: typedUserData.avatar_url,
-            last_message: '',
-            last_message_at: new Date().toISOString(),
-            unread_count: 0
-          });
-          setUserBootstrapError(null);
-          return;
-        }
-
-        clearInvalidUserSelection('That user could not be found. Please choose a valid recipient.');
-      } catch (err) {
-        if (controller.signal.aborted || searchParams.get('user') !== userIdParam) return;
-        console.error('Failed to fetch user for message:', err);
-        clearInvalidUserSelection('Unable to open conversation due to a network issue. Please try again.');
-      }
-    };
-
-    void bootstrapSelectedUser();
-
-    return () => {
-      controller.abort();
-    };
   }, [searchParams, conversations, user, setSearchParams]);
 
   useEffect(() => {
