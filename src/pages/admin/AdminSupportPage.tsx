@@ -108,9 +108,9 @@ const AdminSupportPage: React.FC = () => {
   if (isLoadingTickets) return <div className="animate-pulse space-y-8">{[1, 2, 3].map(i => <div key={i} className="h-24 bg-white/5 rounded-3xl" />)}</div>;
 
   return (
-    <div className="h-[calc(100vh-12rem)] flex gap-8">
+    <div className="min-h-[50vh] lg:h-[calc(100dvh-12rem)] lg:min-h-0 flex gap-8">
       {/* Tickets List */}
-      <div className={`flex-1 flex flex-col gap-8 ${selectedTicketId ? 'hidden lg:flex' : 'flex'}`}>
+      <div className={`min-h-0 flex-1 flex-col gap-8 ${selectedTicketId ? 'hidden lg:flex' : 'flex'}`}>
         <div className="flex justify-between items-end">
           <div>
             <h1 className="text-5xl font-black text-white italic tracking-tighter uppercase leading-none mb-4">Support <span className="text-neon-cyan neon-glow-cyan">Terminal</span></h1>
@@ -130,7 +130,7 @@ const AdminSupportPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto pr-2 space-y-4 custom-scrollbar">
+        <div className="min-h-0 flex-1 overflow-y-auto pr-2 space-y-4 custom-scrollbar">
           {safeFilteredTickets.map((ticket) => (
             <motion.button
               key={ticket.id}
@@ -185,7 +185,7 @@ const AdminSupportPage: React.FC = () => {
       </div>
 
       {/* Ticket Detail */}
-      <div className={`flex-[1.5] flex flex-col cyber-card border-white/5 overflow-hidden ${selectedTicketId ? 'flex' : 'hidden lg:flex items-center justify-center bg-white/[0.01]'}`}>
+      <div className={`min-h-0 flex-[1.5] flex-col cyber-card border-white/5 overflow-hidden ${selectedTicketId ? 'flex' : 'hidden lg:flex items-center justify-center bg-white/[0.01]'}`}>
         {selectedTicketId && isLoadingDetail ? (
           <div className="animate-pulse p-8 space-y-4">{[1, 2, 3].map(i => <div key={i} className="h-16 bg-white/5 rounded-xl" />)}</div>
         ) : selectedTicketId && ticketDetail ? (
