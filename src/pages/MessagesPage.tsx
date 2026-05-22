@@ -277,7 +277,7 @@ export default function MessagesPage() {
   };
 
   return (
-    <div className="flex h-[calc(100dvh-120px)] min-h-[420px] bg-cyber-black/40 border border-white/5 rounded-xl overflow-hidden backdrop-blur-sm">
+    <div className="flex h-[calc(100dvh-120px)] min-h-0 md:min-h-[420px] bg-cyber-black/40 border border-white/5 rounded-xl overflow-hidden backdrop-blur-sm">
       {/* Sidebar */}
       <div className="w-80 border-r border-white/5 flex flex-col min-h-0 bg-cyber-dark">
         <div className="p-4 border-b border-white/5">
@@ -371,7 +371,7 @@ export default function MessagesPage() {
       {/* Chat Area */}
       <div className="flex-1 min-h-0 flex flex-col bg-cyber-black/20">
         {selectedUser ? (
-          <>
+          <div className="flex flex-1 min-h-0 flex-col">
             {/* Header */}
             <div className="p-4 border-b border-white/5 flex items-center justify-between bg-cyber-black/40">
               <div className="flex items-center gap-3">
@@ -455,7 +455,7 @@ export default function MessagesPage() {
                 </button>
               </form>
             </div>
-          </>
+          </div>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-zinc-500 p-8 text-center">
             <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center mb-4 border border-white/10">
