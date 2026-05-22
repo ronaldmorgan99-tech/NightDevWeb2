@@ -222,9 +222,9 @@ export default function MessagesPage() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-120px)] bg-cyber-black/40 border border-white/5 rounded-xl overflow-hidden backdrop-blur-sm">
+    <div className="flex h-[calc(100dvh-120px)] max-h-[calc(100dvh-120px)] min-h-[420px] bg-cyber-black/40 border border-white/5 rounded-xl overflow-hidden backdrop-blur-sm">
       {/* Sidebar */}
-      <div className="w-80 border-r border-white/5 flex flex-col bg-cyber-dark">
+      <div className="w-80 border-r border-white/5 flex flex-col min-h-0 bg-cyber-dark">
         <div className="p-4 border-b border-white/5">
           <h2 className="text-xl font-orbitron font-bold text-neon-cyan mb-4 uppercase tracking-tighter italic">Messages</h2>
           <div className="relative">
@@ -239,7 +239,7 @@ export default function MessagesPage() {
           </div>
         </div>
         
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {userSearch.length >= 2 ? (
             <div className="p-2 space-y-1">
               <p className="px-3 py-2 text-[10px] uppercase tracking-widest font-black text-zinc-600">Search Results</p>
@@ -314,7 +314,7 @@ export default function MessagesPage() {
       </div>
 
       {/* Chat Area */}
-      <div className="flex-1 flex flex-col bg-cyber-black/20">
+      <div className="flex-1 min-h-0 flex flex-col bg-cyber-black/20">
         {selectedUser ? (
           <>
             {/* Header */}
@@ -341,7 +341,7 @@ export default function MessagesPage() {
             </div>
 
             {/* Messages */}
-            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-6 space-y-4">
+            <div ref={messagesContainerRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-6 space-y-4">
               {messages.map((msg, idx) => {
                 const isMe = msg.sender_id === user?.id;
                 const showDate = idx === 0 || format(new Date(messages[idx-1].created_at), 'yyyy-MM-dd') !== format(new Date(msg.created_at), 'yyyy-MM-dd');
