@@ -12,7 +12,7 @@
     "test": "node --test test/regression.test.js test/messagesSearch.test.js",
     "test:regression": "node --test test/regression.test.js test/messagesSearch.test.js",
     "test:integration": "node regression-tests.js",
-    "test:unit:coverage": "node --experimental-test-coverage --test test/regression.test.js",
+    "test:unit:coverage": "node --experimental-test-coverage --test test/regression.test.js test/frontend-regression.test.js",
     "smoke:postdeploy": "bash scripts/post-deploy-smoke.sh",
     "check:serverless-imports": "node scripts/verify-serverless-esm-imports.mjs",
     "check:profilepage-clean": "node scripts/verify-profilepage-clean.mjs"

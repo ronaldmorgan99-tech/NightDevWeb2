@@ -608,6 +608,7 @@ export default function MessagesPage() {
                   type="submit"
                   disabled={!newMessage.trim()}
                   className="bg-neon-cyan text-black p-3 rounded-xl hover:bg-white transition-all hover:shadow-[0_0_20px_rgba(0,243,255,0.5)] disabled:opacity-50 disabled:hover:shadow-none"
+                  aria-label="Send message"
                 >
                   <Send className="w-5 h-5" />
                 </button>
