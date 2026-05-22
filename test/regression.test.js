@@ -433,4 +433,15 @@ test('NightDevWeb2 Regression Tests', async (t) => {
     });
     assert.strictEqual(addToCartRes.status, 200);
   });
+
+  await t.test('Messages route query-param navigation clears selected user param', async () => {
+    const fromConversationRoute = new URL('https://nightdev.local/messages?user=123');
+    assert.strictEqual(fromConversationRoute.pathname, '/messages');
+    assert.strictEqual(fromConversationRoute.searchParams.get('user'), '123');
+
+    const toMessagesListRoute = new URL('/messages', fromConversationRoute.origin);
+    assert.strictEqual(toMessagesListRoute.pathname, '/messages');
+    assert.strictEqual(toMessagesListRoute.searchParams.get('user'), null);
+    assert.strictEqual(toMessagesListRoute.toString(), 'https://nightdev.local/messages');
+  });
 });
