@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useMessaging } from '../context/MessagingContext';
 import { format } from 'date-fns';
 import { useSearchParams, Navigate } from 'react-router';
+import { normalizeSearchUserResults, type SearchUserResult } from '../lib/messageSearch';
 
 interface Conversation {
   id: number;
@@ -34,7 +35,7 @@ export default function MessagesPage() {
   const [newMessage, setNewMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [userSearch, setUserSearch] = useState('');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchUserResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isMessagesLoading, setIsMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
@@ -132,8 +133,7 @@ export default function MessagesPage() {
         const res = await fetch(`/api/members?search=${userSearch}`);
         if (res.ok) {
           const data = await res.json();
-          const members = Array.isArray(data) ? data : [];
-          setSearchResults(members.filter((u: any) => u.id !== user?.id));
+          setSearchResults(normalizeSearchUserResults(data, user?.id));
         }
       } catch (err) {
         console.error('Failed to search users:', err);
@@ -427,7 +427,7 @@ export default function MessagesPage() {
                       {u.avatar_url ? (
                         <img src={u.avatar_url} alt={u.username} className="w-full h-full object-cover" />
                       ) : (
-                        u.username.charAt(0).toUpperCase()
+                        u.username?.charAt(0)?.toUpperCase() || '?'
                       )}
                     </div>
                     <div className="text-left">
