@@ -35,7 +35,7 @@ export default function MessagesPage() {
   const [newMessage, setNewMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [userSearch, setUserSearch] = useState('');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchUserResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isMessagesLoading, setIsMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
@@ -455,7 +455,7 @@ export default function MessagesPage() {
                       {u.avatar_url ? (
                         <img src={u.avatar_url} alt={u.username} className="w-full h-full object-cover" />
                       ) : (
-                        u.username.charAt(0).toUpperCase()
+                        u.username?.charAt(0)?.toUpperCase() || '?'
                       )}
                     </div>
                     <div className="text-left">
