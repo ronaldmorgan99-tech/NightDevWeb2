@@ -512,10 +512,10 @@ export default function MessagesPage() {
                 </div>
               </div>
               <div className="flex items-center gap-4 text-zinc-400">
-                <button className="hover:text-neon-cyan transition-colors"><Phone className="w-5 h-5" /></button>
-                <button className="hover:text-neon-cyan transition-colors"><Video className="w-5 h-5" /></button>
-                <button className="hover:text-neon-cyan transition-colors"><Info className="w-5 h-5" /></button>
-                <button className="hover:text-neon-cyan transition-colors"><MoreVertical className="w-5 h-5" /></button>
+                <button className="hover:text-neon-cyan transition-colors" aria-label="Start voice call"><Phone className="w-5 h-5" /></button>
+                <button className="hover:text-neon-cyan transition-colors" aria-label="Start video call"><Video className="w-5 h-5" /></button>
+                <button className="hover:text-neon-cyan transition-colors" aria-label="View conversation info"><Info className="w-5 h-5" /></button>
+                <button className="hover:text-neon-cyan transition-colors" aria-label="Open conversation actions"><MoreVertical className="w-5 h-5" /></button>
               </div>
             </div>
 
@@ -574,6 +574,7 @@ export default function MessagesPage() {
                   type="submit"
                   disabled={!newMessage.trim()}
                   className="bg-neon-cyan text-black p-3 rounded-xl hover:bg-white transition-all hover:shadow-[0_0_20px_rgba(0,243,255,0.5)] disabled:opacity-50 disabled:hover:shadow-none"
+                  aria-label="Send message"
                 >
                   <Send className="w-5 h-5" />
                 </button>
