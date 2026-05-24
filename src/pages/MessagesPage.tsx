@@ -6,6 +6,7 @@ import { useMessaging } from '../context/MessagingContext';
 import { format } from 'date-fns';
 import { useSearchParams, Navigate } from 'react-router';
 import { buildMembersSearchUrl } from '../lib/messagesSearch';
+import type { SearchUserResult } from '../lib/messageSearch';
 
 interface Conversation {
   id: number;
@@ -114,7 +115,7 @@ export default function MessagesPage() {
     if (user) {
       fetchConversations();
     }
-  }, [user, fetchConversations]);
+  }, [user]);
 
   useEffect(() => () => {
     if (conversationsRefreshTimerRef.current) {
@@ -288,7 +289,7 @@ export default function MessagesPage() {
       // Use handler-specific cleanup so we don't remove listeners from other components/screens.
       socket.off('new_message', onNewMessage);
     };
-  }, [socket, selectedUser, user, scheduleConversationsRefresh]);
+  }, [socket, selectedUser, user]);
 
   if (authLoading) return <div className="h-full flex items-center justify-center text-neon-cyan animate-pulse">Initializing Neural Link...</div>;
   if (!user) return <Navigate to="/login" />;
