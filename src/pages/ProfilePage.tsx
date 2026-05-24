@@ -264,20 +264,31 @@ const ServerWheel = ({
     if (!container) return;
 
     const handleWheelRaw = (e: WheelEvent) => {
+      const currentX = x.get();
+      const atRightEdge = currentX >= constraints.right - 0.5;
+      const atLeftEdge = currentX <= constraints.left + 0.5;
+      const isScrollingUp = e.deltaY < 0;
+      const isScrollingDown = e.deltaY > 0;
+      const shouldAllowPageScroll = (isScrollingUp && atRightEdge) || (isScrollingDown && atLeftEdge);
+
+      if (shouldAllowPageScroll) {
+        setIsInteracting(false);
+        return;
+      }
+
       e.preventDefault();
       setIsInteracting(true);
-      
-      const currentX = x.get();
+
       const newX = currentX - e.deltaY;
       const clampedX = Math.min(constraints.right, Math.max(constraints.left, newX));
-      
+
       // Use a fast tween for immediate following of the wheel
       animate(x, clampedX, {
         type: 'tween',
         ease: 'easeOut',
         duration: 0.1
       });
-      
+
       // Debounced snap
       const timeoutId = (window as any)._wheelTimeout;
       if (timeoutId) clearTimeout(timeoutId);
@@ -285,7 +296,7 @@ const ServerWheel = ({
         const index = Math.round(Math.abs(x.get()) / itemWidth);
         const safeIndex = Math.max(0, Math.min(servers.length - 1, index));
         const targetServer = servers[safeIndex].server_name;
-        
+
         if (targetServer !== selectedServer) {
           onSelect(targetServer);
         }
