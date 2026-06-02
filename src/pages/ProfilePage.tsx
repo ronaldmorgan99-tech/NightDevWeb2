@@ -265,21 +265,14 @@ const ServerWheel = ({
     if (!container) return;
 
     const handleWheelRaw = (e: WheelEvent) => {
-      const isHorizontalGesture = Math.abs(e.deltaX) > Math.abs(e.deltaY);
-
-      if (!isHorizontalGesture) {
-        setIsInteracting(false);
-        return;
-      }
-
       const currentX = x.get();
       const atRightEdge = currentX >= constraints.right - 0.5;
       const atLeftEdge = currentX <= constraints.left + 0.5;
-      const isMovingRight = e.deltaX < 0;
-      const isMovingLeft = e.deltaX > 0;
-      const shouldAllowNativeScroll = (isMovingRight && atRightEdge) || (isMovingLeft && atLeftEdge);
+      const isScrollingUp = e.deltaY < 0;
+      const isScrollingDown = e.deltaY > 0;
+      const shouldAllowPageScroll = (isScrollingUp && atRightEdge) || (isScrollingDown && atLeftEdge);
 
-      if (shouldAllowNativeScroll) {
+      if (shouldAllowPageScroll) {
         setIsInteracting(false);
         return;
       }
@@ -287,7 +280,7 @@ const ServerWheel = ({
       e.preventDefault();
       setIsInteracting(true);
 
-      const newX = currentX - e.deltaX;
+      const newX = currentX - e.deltaY;
       const clampedX = Math.min(constraints.right, Math.max(constraints.left, newX));
 
       // Use a fast tween for immediate following of the wheel
