@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { HashRouter, Routes, Route } from 'react-router';
+import { HashRouter, Routes, Route, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useLayoutEffect, lazy, Suspense } from 'react';
 import { AuthProvider } from './context/AuthContext';
 import { MessagingProvider } from './context/MessagingContext';
 import MainLayout from './layouts/MainLayout';
@@ -24,6 +24,20 @@ const LoadingFallback = () => (
     </div>
   </div>
 );
+
+const ScrollToTop = () => {
+  const { pathname, search } = useLocation();
+
+  useLayoutEffect(() => {
+    if ('scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual';
+    }
+
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [pathname, search]);
+
+  return null;
+};
 const ForumsPage = lazy(() => import('./pages/ForumsPage'));
 const ForumViewPage = lazy(() => import('./pages/ForumViewPage'));
 const ThreadViewPage = lazy(() => import('./pages/ThreadViewPage'));
@@ -124,6 +138,7 @@ export default function App() {
         <MessagingProvider>
           <CustomCursor />
           <HashRouter>
+            <ScrollToTop />
             <Routes>
               <Route path="/" element={<MainLayout />}>
                 <Route index element={<Suspense fallback={<LoadingFallback />}><ForumsPage /></Suspense>} />

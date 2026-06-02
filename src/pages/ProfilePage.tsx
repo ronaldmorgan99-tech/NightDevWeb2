@@ -205,6 +205,7 @@ const ServerWheel = ({
   onSelect: (name: string) => void 
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const wheelSnapTimeoutRef = useRef<number | null>(null);
   const [constraints, setConstraints] = useState({ left: 0, right: 0 });
   const [isInteracting, setIsInteracting] = useState(false);
   const x = useMotionValue(0);
@@ -290,9 +291,8 @@ const ServerWheel = ({
       });
 
       // Debounced snap
-      const timeoutId = (window as any)._wheelTimeout;
-      if (timeoutId) clearTimeout(timeoutId);
-      (window as any)._wheelTimeout = setTimeout(() => {
+      if (wheelSnapTimeoutRef.current) clearTimeout(wheelSnapTimeoutRef.current);
+      wheelSnapTimeoutRef.current = window.setTimeout(() => {
         const index = Math.round(Math.abs(x.get()) / itemWidth);
         const safeIndex = Math.max(0, Math.min(servers.length - 1, index));
         const targetServer = servers[safeIndex].server_name;
@@ -301,11 +301,18 @@ const ServerWheel = ({
           onSelect(targetServer);
         }
         setIsInteracting(false);
+        wheelSnapTimeoutRef.current = null;
       }, 200);
     };
 
     container.addEventListener('wheel', handleWheelRaw, { passive: false });
-    return () => container.removeEventListener('wheel', handleWheelRaw);
+    return () => {
+      container.removeEventListener('wheel', handleWheelRaw);
+      if (wheelSnapTimeoutRef.current) {
+        clearTimeout(wheelSnapTimeoutRef.current);
+        wheelSnapTimeoutRef.current = null;
+      }
+    };
   }, [constraints, servers, x, onSelect, selectedServer]);
 
   const activeServerData = useMemo(() => 
