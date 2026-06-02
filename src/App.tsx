@@ -25,19 +25,6 @@ const LoadingFallback = () => (
   </div>
 );
 
-const ScrollToTop = () => {
-  const { pathname, search } = useLocation();
-
-  useLayoutEffect(() => {
-    if ('scrollRestoration' in window.history) {
-      window.history.scrollRestoration = 'manual';
-    }
-
-    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-  }, [pathname, search]);
-
-  return null;
-};
 const ForumsPage = lazy(() => import('./pages/ForumsPage'));
 const ForumViewPage = lazy(() => import('./pages/ForumViewPage'));
 const ThreadViewPage = lazy(() => import('./pages/ThreadViewPage'));
