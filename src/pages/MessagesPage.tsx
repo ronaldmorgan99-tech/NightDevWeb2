@@ -43,6 +43,7 @@ export default function MessagesPage() {
   const [userBootstrapError, setUserBootstrapError] = useState<string | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const programmaticScrollRef = useRef(false);
   const isInitialLoadRef = useRef(true);
   const wasNearBottomRef = useRef(true);
   const messagesRequestControllerRef = useRef<AbortController | null>(null);
@@ -73,13 +74,12 @@ export default function MessagesPage() {
   };
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-
-    container.scrollTo({
-      top: container.scrollHeight,
-      behavior
-    });
+    // Mark that this scroll is initiated by code so the scroll handler
+    // doesn't treat it as a user scroll and overwrite `wasNearBottomRef`.
+    programmaticScrollRef.current = true;
+    messagesEndRef.current?.scrollIntoView({ behavior });
+    // Clear the flag shortly after to allow normal user scroll handling.
+    window.setTimeout(() => { programmaticScrollRef.current = false; }, 250);
   };
 
   const dedupeMessagesById = (items: Message[]) => {
@@ -112,6 +112,8 @@ export default function MessagesPage() {
     if (!container) return;
 
     const handleScroll = () => {
+      // Ignore scroll events that were caused by our own programmatic scrolling.
+      if (programmaticScrollRef.current) return;
       wasNearBottomRef.current = getIsNearBottom();
     };
 
