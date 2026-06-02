@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { HashRouter, Routes, Route } from 'react-router';
+import { HashRouter, Routes, Route, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { AuthProvider } from './context/AuthContext';
 import { MessagingProvider } from './context/MessagingContext';
 import MainLayout from './layouts/MainLayout';
@@ -117,6 +117,22 @@ const CustomCursor = () => {
   );
 };
 
+const ScrollToTop = () => {
+  const { pathname, search } = useLocation();
+
+  useEffect(() => {
+    if ('scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual';
+    }
+  }, []);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [pathname, search]);
+
+  return null;
+};
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -124,6 +140,7 @@ export default function App() {
         <MessagingProvider>
           <CustomCursor />
           <HashRouter>
+            <ScrollToTop />
             <Routes>
               <Route path="/" element={<MainLayout />}>
                 <Route index element={<Suspense fallback={<LoadingFallback />}><ForumsPage /></Suspense>} />

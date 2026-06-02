@@ -48,6 +48,8 @@ export default function MessagesPage() {
   const messagesRequestControllerRef = useRef<AbortController | null>(null);
   const requestSeqRef = useRef(0);
 
+  const selectedUserIdParam = searchParams.get('user');
+
   const conversationsRequestControllerRef = useRef<AbortController | null>(null);
   const conversationsRequestSeqRef = useRef(0);
   const conversationsRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -59,6 +61,16 @@ export default function MessagesPage() {
   const showSidebarOnMobile = !isConversationOpen;
   const showChatOnMobile = isConversationOpen;
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+
+    const resetAfterConversationPaint = window.setTimeout(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }, 0);
+
+    return () => window.clearTimeout(resetAfterConversationPaint);
+  }, [selectedUserIdParam]);
+
   const getIsNearBottom = () => {
     const container = messagesContainerRef.current;
     if (!container) return true;
@@ -67,7 +79,13 @@ export default function MessagesPage() {
   };
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
-    messagesEndRef.current?.scrollIntoView({ behavior });
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior
+    });
   };
 
   const dedupeMessagesById = (items: Message[]) => {
@@ -178,7 +196,7 @@ export default function MessagesPage() {
   }, [userSearch, user]);
 
   useEffect(() => {
-    const userIdParam = searchParams.get('user');
+    const userIdParam = selectedUserIdParam;
 
     if (userIdParam) {
       if (!user) return;
@@ -260,7 +278,7 @@ export default function MessagesPage() {
       setMessagesError(null);
       setUserBootstrapError(null);
     }
-  }, [searchParams, conversations, user, setSearchParams]);
+  }, [selectedUserIdParam, searchParams, conversations, user, setSearchParams]);
 
   useEffect(() => {
     if (!selectedUser || !user) return;
