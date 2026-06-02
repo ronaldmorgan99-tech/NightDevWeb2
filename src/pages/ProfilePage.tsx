@@ -205,6 +205,7 @@ const ServerWheel = ({
   onSelect: (name: string) => void 
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const wheelSnapTimeoutRef = useRef<number | null>(null);
   const [constraints, setConstraints] = useState({ left: 0, right: 0 });
   const [isInteracting, setIsInteracting] = useState(false);
   const x = useMotionValue(0);
@@ -264,37 +265,61 @@ const ServerWheel = ({
     if (!container) return;
 
     const handleWheelRaw = (e: WheelEvent) => {
+      const isHorizontalGesture = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+
+      if (!isHorizontalGesture) {
+        setIsInteracting(false);
+        return;
+      }
+
+      const currentX = x.get();
+      const atRightEdge = currentX >= constraints.right - 0.5;
+      const atLeftEdge = currentX <= constraints.left + 0.5;
+      const isMovingRight = e.deltaX < 0;
+      const isMovingLeft = e.deltaX > 0;
+      const shouldAllowNativeScroll = (isMovingRight && atRightEdge) || (isMovingLeft && atLeftEdge);
+
+      if (shouldAllowNativeScroll) {
+        setIsInteracting(false);
+        return;
+      }
+
       e.preventDefault();
       setIsInteracting(true);
-      
-      const currentX = x.get();
-      const newX = currentX - e.deltaY;
+
+      const newX = currentX - e.deltaX;
       const clampedX = Math.min(constraints.right, Math.max(constraints.left, newX));
-      
+
       // Use a fast tween for immediate following of the wheel
       animate(x, clampedX, {
         type: 'tween',
         ease: 'easeOut',
         duration: 0.1
       });
-      
+
       // Debounced snap
-      const timeoutId = (window as any)._wheelTimeout;
-      if (timeoutId) clearTimeout(timeoutId);
-      (window as any)._wheelTimeout = setTimeout(() => {
+      if (wheelSnapTimeoutRef.current) clearTimeout(wheelSnapTimeoutRef.current);
+      wheelSnapTimeoutRef.current = window.setTimeout(() => {
         const index = Math.round(Math.abs(x.get()) / itemWidth);
         const safeIndex = Math.max(0, Math.min(servers.length - 1, index));
         const targetServer = servers[safeIndex].server_name;
-        
+
         if (targetServer !== selectedServer) {
           onSelect(targetServer);
         }
         setIsInteracting(false);
+        wheelSnapTimeoutRef.current = null;
       }, 200);
     };
 
     container.addEventListener('wheel', handleWheelRaw, { passive: false });
-    return () => container.removeEventListener('wheel', handleWheelRaw);
+    return () => {
+      container.removeEventListener('wheel', handleWheelRaw);
+      if (wheelSnapTimeoutRef.current) {
+        clearTimeout(wheelSnapTimeoutRef.current);
+        wheelSnapTimeoutRef.current = null;
+      }
+    };
   }, [constraints, servers, x, onSelect, selectedServer]);
 
   const activeServerData = useMemo(() => 
