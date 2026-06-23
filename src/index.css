@@ -23,12 +23,18 @@
 
 @layer base {
   html {
+    min-height: 100%;
+    overflow-x: clip;
+    overflow-y: auto;
     cursor: none;
     scroll-behavior: smooth;
   }
   
   body {
     @apply bg-cyber-bg text-zinc-300 font-sans selection:bg-neon-cyan/30 selection:text-neon-cyan;
+    min-height: 100vh;
+    overflow-x: clip;
+    overflow-y: auto;
     background-color: #0a0a1f; /* Slightly brighter, more blue base */
     background-image: 
       /* Moving Light Sweep */
