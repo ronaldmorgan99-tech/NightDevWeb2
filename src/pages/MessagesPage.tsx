@@ -48,6 +48,7 @@ export default function MessagesPage() {
   const wasNearBottomRef = useRef(true);
   const messagesRequestControllerRef = useRef<AbortController | null>(null);
   const requestSeqRef = useRef(0);
+  const selectedUserIdRef = useRef<number | null>(null);
 
   const selectedUserIdParam = searchParams.get('user');
 
@@ -59,6 +60,10 @@ export default function MessagesPage() {
 
 
   const isConversationOpen = Boolean(selectedUser);
+
+  useEffect(() => {
+    selectedUserIdRef.current = selectedUser?.id ?? null;
+  }, [selectedUser?.id]);
   const showSidebarOnMobile = !isConversationOpen;
   const showChatOnMobile = isConversationOpen;
 
@@ -396,7 +401,7 @@ export default function MessagesPage() {
       }
 
       const data = await res.json();
-      const isStaleRequest = controller.signal.aborted || requestToken !== requestSeqRef.current || selectedUser?.id !== userId;
+      const isStaleRequest = controller.signal.aborted || requestToken !== requestSeqRef.current || selectedUserIdRef.current !== userId;
       if (isStaleRequest) {
         return;
       }
@@ -405,14 +410,14 @@ export default function MessagesPage() {
       setMessages(dedupeMessagesById(data));
       setConversations(prev => prev.map(c => c.id === userId ? { ...c, unread_count: 0 } : c));
     } catch (err) {
-      if (controller.signal.aborted || requestToken !== requestSeqRef.current || selectedUser?.id !== userId) {
+      if (controller.signal.aborted || requestToken !== requestSeqRef.current || selectedUserIdRef.current !== userId) {
         return;
       }
 
       console.error('Failed to fetch messages:', err);
       setMessagesError('Failed to load messages');
     } finally {
-      if (!controller.signal.aborted && requestToken === requestSeqRef.current && selectedUser?.id === userId) {
+      if (!controller.signal.aborted && requestToken === requestSeqRef.current && selectedUserIdRef.current === userId) {
         setIsMessagesLoading(false);
       }
     }
