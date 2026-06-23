@@ -48,6 +48,7 @@ export default function MessagesPage() {
   const wasNearBottomRef = useRef(true);
   const messagesRequestControllerRef = useRef<AbortController | null>(null);
   const requestSeqRef = useRef(0);
+  const selectedUserIdRef = useRef<number | null>(null);
 
   const selectedUserIdParam = searchParams.get('user');
 
@@ -59,6 +60,10 @@ export default function MessagesPage() {
 
 
   const isConversationOpen = Boolean(selectedUser);
+
+  useEffect(() => {
+    selectedUserIdRef.current = selectedUser?.id ?? null;
+  }, [selectedUser?.id]);
   const showSidebarOnMobile = !isConversationOpen;
   const showChatOnMobile = isConversationOpen;
 
@@ -74,11 +79,14 @@ export default function MessagesPage() {
   };
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
-    // Mark that this scroll is initiated by code so the scroll handler
-    // doesn't treat it as a user scroll and overwrite `wasNearBottomRef`.
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    // Keep scrolling inside the message pane only. Using scrollIntoView here can
+    // bubble the scroll request to the document and leave the page scrollbar
+    // pinned below the top of the route.
     programmaticScrollRef.current = true;
-    messagesEndRef.current?.scrollIntoView({ behavior });
-    // Clear the flag shortly after to allow normal user scroll handling.
+    container.scrollTo({ top: container.scrollHeight, behavior });
     window.setTimeout(() => { programmaticScrollRef.current = false; }, 250);
   };
 
@@ -211,7 +219,7 @@ export default function MessagesPage() {
 
       const conv = conversations.find(c => c.id === Number(userIdParam));
       if (conv) {
-        setSelectedUser(conv);
+        setSelectedUser(prev => (prev?.id === conv.id ? prev : conv));
         setUserBootstrapError(null);
         return;
       }
@@ -221,7 +229,7 @@ export default function MessagesPage() {
       const bootstrapSelectedUser = async () => {
         try {
           const res = await fetch(`/api/users/${userIdParam}`, { signal: controller.signal });
-          if (controller.signal.aborted || searchParams.get('user') !== userIdParam) return;
+          if (controller.signal.aborted || selectedUserIdParam !== userIdParam) return;
 
           if (!res.ok) {
             clearInvalidUserSelection('Unable to open that conversation. Please choose a user from search.');
@@ -257,7 +265,7 @@ export default function MessagesPage() {
 
           clearInvalidUserSelection('That user could not be found. Please choose a valid recipient.');
         } catch (err) {
-          if (controller.signal.aborted || searchParams.get('user') !== userIdParam) return;
+          if (controller.signal.aborted || selectedUserIdParam !== userIdParam) return;
           console.error('Failed to fetch user for message:', err);
           clearInvalidUserSelection('Unable to open conversation due to a network issue. Please try again.');
         }
@@ -274,7 +282,7 @@ export default function MessagesPage() {
       setMessagesError(null);
       setUserBootstrapError(null);
     }
-  }, [selectedUserIdParam, searchParams, conversations, user, setSearchParams]);
+  }, [selectedUserIdParam, conversations, user, setSearchParams]);
 
   useEffect(() => {
     if (!selectedUser || !user) return;
@@ -284,7 +292,7 @@ export default function MessagesPage() {
     return () => {
       messagesRequestControllerRef.current?.abort();
     };
-  }, [selectedUser, user]);
+  }, [selectedUser?.id, user?.id]);
 
   useEffect(() => {
     if (!socket || !user) return;
@@ -303,7 +311,7 @@ export default function MessagesPage() {
       // Use handler-specific cleanup so we don't remove listeners from other components/screens.
       socket.off('new_message', onNewMessage);
     };
-  }, [socket, selectedUser, user]);
+  }, [socket, selectedUser?.id, user?.id]);
 
   if (authLoading) return <div className="h-full flex items-center justify-center text-neon-cyan animate-pulse">Initializing Neural Link...</div>;
   if (!user) return <Navigate to="/login" />;
@@ -393,7 +401,7 @@ export default function MessagesPage() {
       }
 
       const data = await res.json();
-      const isStaleRequest = controller.signal.aborted || requestToken !== requestSeqRef.current || selectedUser?.id !== userId;
+      const isStaleRequest = controller.signal.aborted || requestToken !== requestSeqRef.current || selectedUserIdRef.current !== userId;
       if (isStaleRequest) {
         return;
       }
@@ -402,14 +410,14 @@ export default function MessagesPage() {
       setMessages(dedupeMessagesById(data));
       setConversations(prev => prev.map(c => c.id === userId ? { ...c, unread_count: 0 } : c));
     } catch (err) {
-      if (controller.signal.aborted || requestToken !== requestSeqRef.current || selectedUser?.id !== userId) {
+      if (controller.signal.aborted || requestToken !== requestSeqRef.current || selectedUserIdRef.current !== userId) {
         return;
       }
 
       console.error('Failed to fetch messages:', err);
       setMessagesError('Failed to load messages');
     } finally {
-      if (!controller.signal.aborted && requestToken === requestSeqRef.current && selectedUser?.id === userId) {
+      if (!controller.signal.aborted && requestToken === requestSeqRef.current && selectedUserIdRef.current === userId) {
         setIsMessagesLoading(false);
       }
     }
@@ -431,7 +439,7 @@ export default function MessagesPage() {
   };
 
   return (
-    <div className="flex h-[calc(100dvh-120px)] min-h-0 md:min-h-[420px] bg-cyber-black/40 border border-white/5 rounded-xl overflow-hidden backdrop-blur-sm">
+    <div className="flex min-h-[calc(100dvh-180px)] max-h-[calc(100dvh-180px)] md:min-h-[420px] bg-cyber-black/40 border border-white/5 rounded-xl overflow-hidden backdrop-blur-sm">
       {/* Sidebar */}
       <div className={`w-full md:w-80 md:border-r border-white/5 flex flex-col min-h-0 bg-cyber-dark ${showSidebarOnMobile ? 'flex' : 'hidden'} md:flex`}>
         <div className="p-4 border-b border-white/5">
@@ -598,8 +606,8 @@ export default function MessagesPage() {
             </div>
 
             {/* Messages */}
-            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-4">
-              {isMessagesLoading && (
+            <div ref={messagesContainerRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain [overflow-anchor:auto] p-6 space-y-4">
+              {isMessagesLoading && messages.length === 0 && (
                 <div className="text-center text-zinc-500 text-xs animate-pulse">Loading messages...</div>
               )}
               {messagesError && !isMessagesLoading && (
