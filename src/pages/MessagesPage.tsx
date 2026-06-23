@@ -74,11 +74,14 @@ export default function MessagesPage() {
   };
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
-    // Mark that this scroll is initiated by code so the scroll handler
-    // doesn't treat it as a user scroll and overwrite `wasNearBottomRef`.
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    // Keep scrolling inside the message pane only. Using scrollIntoView here can
+    // bubble the scroll request to the document and leave the page scrollbar
+    // pinned below the top of the route.
     programmaticScrollRef.current = true;
-    messagesEndRef.current?.scrollIntoView({ behavior });
-    // Clear the flag shortly after to allow normal user scroll handling.
+    container.scrollTo({ top: container.scrollHeight, behavior });
     window.setTimeout(() => { programmaticScrollRef.current = false; }, 250);
   };
 
@@ -431,7 +434,7 @@ export default function MessagesPage() {
   };
 
   return (
-    <div className="flex h-[calc(100dvh-120px)] min-h-0 md:min-h-[420px] bg-cyber-black/40 border border-white/5 rounded-xl overflow-hidden backdrop-blur-sm">
+    <div className="flex min-h-[calc(100dvh-180px)] max-h-[calc(100dvh-180px)] md:min-h-[420px] bg-cyber-black/40 border border-white/5 rounded-xl overflow-hidden backdrop-blur-sm">
       {/* Sidebar */}
       <div className={`w-full md:w-80 md:border-r border-white/5 flex flex-col min-h-0 bg-cyber-dark ${showSidebarOnMobile ? 'flex' : 'hidden'} md:flex`}>
         <div className="p-4 border-b border-white/5">
@@ -598,7 +601,7 @@ export default function MessagesPage() {
             </div>
 
             {/* Messages */}
-            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-4">
+            <div ref={messagesContainerRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-6 space-y-4">
               {isMessagesLoading && (
                 <div className="text-center text-zinc-500 text-xs animate-pulse">Loading messages...</div>
               )}
