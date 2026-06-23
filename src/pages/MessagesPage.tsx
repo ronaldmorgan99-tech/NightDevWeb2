@@ -219,7 +219,7 @@ export default function MessagesPage() {
 
       const conv = conversations.find(c => c.id === Number(userIdParam));
       if (conv) {
-        setSelectedUser(conv);
+        setSelectedUser(prev => (prev?.id === conv.id ? prev : conv));
         setUserBootstrapError(null);
         return;
       }
@@ -229,7 +229,7 @@ export default function MessagesPage() {
       const bootstrapSelectedUser = async () => {
         try {
           const res = await fetch(`/api/users/${userIdParam}`, { signal: controller.signal });
-          if (controller.signal.aborted || searchParams.get('user') !== userIdParam) return;
+          if (controller.signal.aborted || selectedUserIdParam !== userIdParam) return;
 
           if (!res.ok) {
             clearInvalidUserSelection('Unable to open that conversation. Please choose a user from search.');
@@ -265,7 +265,7 @@ export default function MessagesPage() {
 
           clearInvalidUserSelection('That user could not be found. Please choose a valid recipient.');
         } catch (err) {
-          if (controller.signal.aborted || searchParams.get('user') !== userIdParam) return;
+          if (controller.signal.aborted || selectedUserIdParam !== userIdParam) return;
           console.error('Failed to fetch user for message:', err);
           clearInvalidUserSelection('Unable to open conversation due to a network issue. Please try again.');
         }
@@ -282,7 +282,7 @@ export default function MessagesPage() {
       setMessagesError(null);
       setUserBootstrapError(null);
     }
-  }, [selectedUserIdParam, searchParams, conversations, user, setSearchParams]);
+  }, [selectedUserIdParam, conversations, user, setSearchParams]);
 
   useEffect(() => {
     if (!selectedUser || !user) return;
@@ -292,7 +292,7 @@ export default function MessagesPage() {
     return () => {
       messagesRequestControllerRef.current?.abort();
     };
-  }, [selectedUser, user]);
+  }, [selectedUser?.id, user?.id]);
 
   useEffect(() => {
     if (!socket || !user) return;
@@ -311,7 +311,7 @@ export default function MessagesPage() {
       // Use handler-specific cleanup so we don't remove listeners from other components/screens.
       socket.off('new_message', onNewMessage);
     };
-  }, [socket, selectedUser, user]);
+  }, [socket, selectedUser?.id, user?.id]);
 
   if (authLoading) return <div className="h-full flex items-center justify-center text-neon-cyan animate-pulse">Initializing Neural Link...</div>;
   if (!user) return <Navigate to="/login" />;
