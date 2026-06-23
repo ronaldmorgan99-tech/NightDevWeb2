@@ -45,6 +45,7 @@ const StorePage = lazy(() => import('./pages/StorePage'));
 const MembersPage = lazy(() => import('./pages/MembersPage'));
 const SupportPage = lazy(() => import('./pages/SupportPage'));
 const HelpPage = lazy(() => import('./pages/HelpPage'));
+const InfoPage = lazy(() => import('./pages/InfoPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const CreateThreadPage = lazy(() => import('./pages/CreateThreadPage'));
 const MessagesPage = lazy(() => import('./pages/MessagesPage'));
@@ -153,7 +154,11 @@ export default function App() {
                 <Route path="profile/:id" element={<Suspense fallback={<LoadingFallback />}><ProfilePage /></Suspense>} />
                 <Route path="store" element={<Suspense fallback={<LoadingFallback />}><StorePage /></Suspense>} />
                 <Route path="support" element={<Suspense fallback={<LoadingFallback />}><SupportPage /></Suspense>} />
+                <Route path="contact" element={<Suspense fallback={<LoadingFallback />}><SupportPage /></Suspense>} />
                 <Route path="help" element={<Suspense fallback={<LoadingFallback />}><HelpPage /></Suspense>} />
+                <Route path="rules" element={<Suspense fallback={<LoadingFallback />}><InfoPage /></Suspense>} />
+                <Route path="privacy" element={<Suspense fallback={<LoadingFallback />}><InfoPage /></Suspense>} />
+                <Route path="terms" element={<Suspense fallback={<LoadingFallback />}><InfoPage /></Suspense>} />
                 <Route path="settings" element={<Suspense fallback={<LoadingFallback />}><SettingsPage /></Suspense>} />
                 <Route path="messages" element={<Suspense fallback={<LoadingFallback />}><MessagesPage /></Suspense>} />
                 <Route path="discord" element={<Suspense fallback={<LoadingFallback />}><DiscordPage /></Suspense>} />

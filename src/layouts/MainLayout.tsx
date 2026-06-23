@@ -185,7 +185,8 @@ const MainLayout: React.FC = () => {
     cardRef.current.style.transition = 'none';
   };
 
-  const discordLink = "https://discord.gg/NZbmQNxX";
+  const discordLink = "https://discord.gg/3axtkUBN";
+  const youtubeSearchLink = "https://www.youtube.com/results?search_query=NightRespawn";
   const isStudioDiscoverable = isStudioDiscoverableFlag(import.meta.env.VITE_ENABLE_STUDIO);
 
   const navItems = [
@@ -759,18 +760,26 @@ const MainLayout: React.FC = () => {
                 </a>
                 {[
                   { name: 'Discord', icon: DiscordIcon, link: discordLink },
-                  { name: 'YouTube', icon: YoutubeIcon, link: null },
-                  { name: 'Steam', icon: SteamIcon, link: null }
+                  { name: 'YouTube', icon: YoutubeIcon, link: youtubeSearchLink }
                 ].map(social => (
-                  <button 
-                    key={social.name} 
-                    onClick={() => social.link ? window.open(social.link, '_blank') : null}
+                  <a
+                    key={social.name}
+                    href={social.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="w-10 h-10 bg-white/5 rounded-lg flex items-center justify-center text-zinc-500 hover:text-neon-cyan hover:bg-neon-cyan/10 transition-all border border-white/5"
                   >
                     <span className="sr-only">{social.name}</span>
                     <social.icon />
-                  </button>
+                  </a>
                 ))}
+                <Link
+                  to="/servers"
+                  className="w-10 h-10 bg-white/5 rounded-lg flex items-center justify-center text-zinc-500 hover:text-neon-cyan hover:bg-neon-cyan/10 transition-all border border-white/5"
+                >
+                  <span className="sr-only">Steam server browser</span>
+                  <SteamIcon />
+                </Link>
               </div>
             </div>
             <div>
@@ -787,7 +796,7 @@ const MainLayout: React.FC = () => {
               <ul className="space-y-4">
                 <li><Link to="/help" className="text-zinc-500 hover:text-white transition-colors">Help Center</Link></li>
                 <li><Link to="/rules" className="text-zinc-500 hover:text-white transition-colors">Rules</Link></li>
-                <li><Link to="/contact" className="text-zinc-500 hover:text-white transition-colors">Contact Us</Link></li>
+                <li><Link to="/support" className="text-zinc-500 hover:text-white transition-colors">Contact Us</Link></li>
               </ul>
             </div>
           </div>
