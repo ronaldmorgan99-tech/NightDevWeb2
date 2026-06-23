@@ -607,7 +607,7 @@ export default function MessagesPage() {
 
             {/* Messages */}
             <div ref={messagesContainerRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-6 space-y-4">
-              {isMessagesLoading && messages.length === 0 && (
+              {isMessagesLoading && (
                 <div className="text-center text-zinc-500 text-xs animate-pulse">Loading messages...</div>
               )}
               {messagesError && !isMessagesLoading && (
