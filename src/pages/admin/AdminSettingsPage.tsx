@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Settings, 
   Globe, 
@@ -8,13 +8,49 @@ import {
   Palette, 
   Save,
   RefreshCw,
-  AlertTriangle
+  AlertTriangle,
+  AlertCircle,
+  CheckCircle
 } from 'lucide-react';
 import { motion } from 'motion/react';
+
+interface Settings {
+  site_name: string;
+  site_slogan: string;
+  site_description: string;
+  maintenance_mode: boolean;
+  allow_registrations: boolean;
+  require_email_verification: boolean;
+  max_login_attempts: number;
+  session_timeout_minutes: number;
+  threads_per_page: number;
+  posts_per_page: number;
+  allow_signatures: boolean;
+  primary_accent_color: string;
+  custom_css: string;
+}
 
 const AdminSettingsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState('general');
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [settings, setSettings] = useState<Settings>({
+    site_name: '',
+    site_slogan: '',
+    site_description: '',
+    maintenance_mode: false,
+    allow_registrations: true,
+    require_email_verification: true,
+    max_login_attempts: 5,
+    session_timeout_minutes: 1440,
+    threads_per_page: 20,
+    posts_per_page: 15,
+    allow_signatures: true,
+    primary_accent_color: '#00f3ff',
+    custom_css: '',
+  });
 
   const tabs = [
     { id: 'general', label: 'General', icon: Globe },
@@ -24,10 +60,84 @@ const AdminSettingsPage: React.FC = () => {
     { id: 'branding', label: 'Branding', icon: Palette },
   ];
 
-  const handleSave = () => {
-    setIsSaving(true);
-    setTimeout(() => setIsSaving(false), 1500);
+  // Fetch settings on mount
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const response = await fetch('/api/admin/settings');
+        if (!response.ok) throw new Error('Failed to fetch settings');
+        
+        const data = await response.json();
+        const settingsMap: Record<string, any> = {};
+        
+        data.forEach((item: any) => {
+          let value = item.value;
+          // Parse boolean and number values
+          if (value === 'true') value = true;
+          else if (value === 'false') value = false;
+          else if (!isNaN(value) && value !== '') value = parseInt(value, 10);
+          settingsMap[item.key] = value;
+        });
+        
+        setSettings(prev => ({ ...prev, ...settingsMap }));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load settings');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchSettings();
+  }, []);
+
+  const handleSave = async () => {
+    try {
+      setIsSaving(true);
+      setError(null);
+      setSuccess(false);
+
+      // Convert settings to API format
+      const settingsToSave = Object.entries(settings).map(([key, value]) => ({
+        key,
+        value: typeof value === 'boolean' ? String(value) : value,
+      }));
+
+      const response = await fetch('/api/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: settingsToSave }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to save settings');
+      }
+
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save settings');
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  const handleSettingChange = (key: keyof Settings, value: any) => {
+    setSettings(prev => ({ ...prev, [key]: value }));
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="space-y-4 text-center">
+          <RefreshCw className="w-8 h-8 animate-spin mx-auto text-neon-cyan" />
+          <p className="text-zinc-500 uppercase tracking-widest text-sm">Loading settings...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-12">
@@ -45,6 +155,28 @@ const AdminSettingsPage: React.FC = () => {
           <span className="text-xs">{isSaving ? 'Synchronizing...' : 'Save Changes'}</span>
         </button>
       </div>
+
+      {error && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-3 p-4 bg-neon-pink/10 border border-neon-pink/30 rounded-xl"
+        >
+          <AlertCircle className="w-5 h-5 text-neon-pink flex-shrink-0" />
+          <p className="text-sm text-neon-pink">{error}</p>
+        </motion.div>
+      )}
+
+      {success && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-3 p-4 bg-neon-cyan/10 border border-neon-cyan/30 rounded-xl"
+        >
+          <CheckCircle className="w-5 h-5 text-neon-cyan flex-shrink-0" />
+          <p className="text-sm text-neon-cyan">Settings saved successfully!</p>
+        </motion.div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-12">
         {/* Settings Navigation */}
@@ -79,7 +211,8 @@ const AdminSettingsPage: React.FC = () => {
                     <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Site Name</label>
                     <input 
                       type="text" 
-                      defaultValue="NightRespawn"
+                      value={settings.site_name}
+                      onChange={(e) => handleSettingChange('site_name', e.target.value)}
                       className="w-full bg-cyber-black border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-neon-cyan/50 outline-none transition-all"
                     />
                   </div>
@@ -87,7 +220,8 @@ const AdminSettingsPage: React.FC = () => {
                     <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Site Slogan</label>
                     <input 
                       type="text" 
-                      defaultValue="Digital Underground"
+                      value={settings.site_slogan}
+                      onChange={(e) => handleSettingChange('site_slogan', e.target.value)}
                       className="w-full bg-cyber-black border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-neon-cyan/50 outline-none transition-all"
                     />
                   </div>
@@ -96,7 +230,8 @@ const AdminSettingsPage: React.FC = () => {
                   <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Site Description</label>
                   <textarea 
                     rows={4}
-                    defaultValue="The ultimate destination for the digital resistance. News, forums, and exclusive gear for the modern operative."
+                    value={settings.site_description}
+                    onChange={(e) => handleSettingChange('site_description', e.target.value)}
                     className="w-full bg-cyber-black border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-neon-cyan/50 outline-none transition-all resize-none"
                   />
                 </div>
@@ -108,8 +243,11 @@ const AdminSettingsPage: React.FC = () => {
                       <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Disable public access to the terminal</p>
                     </div>
                   </div>
-                  <button className="w-12 h-6 bg-zinc-800 rounded-full relative transition-all hover:bg-zinc-700">
-                    <div className="absolute left-1 top-1 w-4 h-4 bg-zinc-500 rounded-full transition-all" />
+                  <button 
+                    onClick={() => handleSettingChange('maintenance_mode', !settings.maintenance_mode)}
+                    className={`w-12 h-6 rounded-full relative transition-all ${settings.maintenance_mode ? 'bg-neon-pink/30' : 'bg-zinc-800'}`}
+                  >
+                    <div className={`absolute w-4 h-4 rounded-full transition-all ${settings.maintenance_mode ? 'bg-neon-pink right-1' : 'bg-zinc-500 left-1'} top-1`} />
                   </button>
                 </div>
               </div>
@@ -128,8 +266,11 @@ const AdminSettingsPage: React.FC = () => {
                     <h4 className="text-sm font-black text-white uppercase italic tracking-tight">New Registrations</h4>
                     <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Allow new operatives to join the network</p>
                   </div>
-                  <button className="w-12 h-6 bg-neon-cyan/20 rounded-full relative transition-all">
-                    <div className="absolute right-1 top-1 w-4 h-4 bg-neon-cyan rounded-full shadow-[0_0_10px_rgba(0,243,255,0.5)]" />
+                  <button 
+                    onClick={() => handleSettingChange('allow_registrations', !settings.allow_registrations)}
+                    className={`w-12 h-6 rounded-full relative transition-all ${settings.allow_registrations ? 'bg-neon-cyan/20' : 'bg-zinc-800'}`}
+                  >
+                    <div className={`absolute w-4 h-4 rounded-full transition-all ${settings.allow_registrations ? 'bg-neon-cyan right-1 shadow-[0_0_10px_rgba(0,243,255,0.5)]' : 'bg-zinc-500 left-1'} top-1`} />
                   </button>
                 </div>
                 <div className="flex items-center justify-between">
@@ -137,8 +278,11 @@ const AdminSettingsPage: React.FC = () => {
                     <h4 className="text-sm font-black text-white uppercase italic tracking-tight">Email Verification</h4>
                     <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Require uplink confirmation for new accounts</p>
                   </div>
-                  <button className="w-12 h-6 bg-neon-cyan/20 rounded-full relative transition-all">
-                    <div className="absolute right-1 top-1 w-4 h-4 bg-neon-cyan rounded-full shadow-[0_0_10px_rgba(0,243,255,0.5)]" />
+                  <button 
+                    onClick={() => handleSettingChange('require_email_verification', !settings.require_email_verification)}
+                    className={`w-12 h-6 rounded-full relative transition-all ${settings.require_email_verification ? 'bg-neon-cyan/20' : 'bg-zinc-800'}`}
+                  >
+                    <div className={`absolute w-4 h-4 rounded-full transition-all ${settings.require_email_verification ? 'bg-neon-cyan right-1 shadow-[0_0_10px_rgba(0,243,255,0.5)]' : 'bg-zinc-500 left-1'} top-1`} />
                   </button>
                 </div>
                 <div className="space-y-4 pt-4 border-t border-white/5">
@@ -146,7 +290,8 @@ const AdminSettingsPage: React.FC = () => {
                     <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Max Login Attempts</label>
                     <input 
                       type="number" 
-                      defaultValue={5}
+                      value={settings.max_login_attempts}
+                      onChange={(e) => handleSettingChange('max_login_attempts', parseInt(e.target.value, 10) || 0)}
                       className="w-full bg-cyber-black border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-neon-cyan/50 outline-none transition-all"
                     />
                   </div>
@@ -154,7 +299,8 @@ const AdminSettingsPage: React.FC = () => {
                     <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Session Timeout (Minutes)</label>
                     <input 
                       type="number" 
-                      defaultValue={1440}
+                      value={settings.session_timeout_minutes}
+                      onChange={(e) => handleSettingChange('session_timeout_minutes', parseInt(e.target.value, 10) || 0)}
                       className="w-full bg-cyber-black border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-neon-cyan/50 outline-none transition-all"
                     />
                   </div>
@@ -175,7 +321,8 @@ const AdminSettingsPage: React.FC = () => {
                     <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Threads Per Page</label>
                     <input 
                       type="number" 
-                      defaultValue={20}
+                      value={settings.threads_per_page}
+                      onChange={(e) => handleSettingChange('threads_per_page', parseInt(e.target.value, 10) || 0)}
                       className="w-full bg-cyber-black border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-neon-cyan/50 outline-none transition-all"
                     />
                   </div>
@@ -183,7 +330,8 @@ const AdminSettingsPage: React.FC = () => {
                     <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Posts Per Page</label>
                     <input 
                       type="number" 
-                      defaultValue={15}
+                      value={settings.posts_per_page}
+                      onChange={(e) => handleSettingChange('posts_per_page', parseInt(e.target.value, 10) || 0)}
                       className="w-full bg-cyber-black border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-neon-cyan/50 outline-none transition-all"
                     />
                   </div>
@@ -193,8 +341,11 @@ const AdminSettingsPage: React.FC = () => {
                     <h4 className="text-sm font-black text-white uppercase italic tracking-tight">Allow Signatures</h4>
                     <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Enable custom operative signatures in posts</p>
                   </div>
-                  <button className="w-12 h-6 bg-neon-cyan/20 rounded-full relative transition-all">
-                    <div className="absolute right-1 top-1 w-4 h-4 bg-neon-cyan rounded-full shadow-[0_0_10px_rgba(0,243,255,0.5)]" />
+                  <button 
+                    onClick={() => handleSettingChange('allow_signatures', !settings.allow_signatures)}
+                    className={`w-12 h-6 rounded-full relative transition-all ${settings.allow_signatures ? 'bg-neon-cyan/20' : 'bg-zinc-800'}`}
+                  >
+                    <div className={`absolute w-4 h-4 rounded-full transition-all ${settings.allow_signatures ? 'bg-neon-cyan right-1 shadow-[0_0_10px_rgba(0,243,255,0.5)]' : 'bg-zinc-500 left-1'} top-1`} />
                   </button>
                 </div>
               </div>
@@ -237,7 +388,8 @@ const AdminSettingsPage: React.FC = () => {
                     {['#00f3ff', '#ff00ff', '#39ff14', '#bc13fe', '#ff0055'].map(color => (
                       <button 
                         key={color}
-                        className={`w-12 h-12 rounded-xl border-2 transition-all ${color === '#00f3ff' ? 'border-white scale-110 shadow-[0_0_15px_rgba(255,255,255,0.3)]' : 'border-transparent'}`}
+                        onClick={() => handleSettingChange('primary_accent_color', color)}
+                        className={`w-12 h-12 rounded-xl border-2 transition-all ${settings.primary_accent_color === color ? 'border-white scale-110 shadow-[0_0_15px_rgba(255,255,255,0.3)]' : 'border-transparent hover:scale-105'}`}
                         style={{ backgroundColor: color }}
                       />
                     ))}
@@ -247,6 +399,8 @@ const AdminSettingsPage: React.FC = () => {
                   <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Custom CSS Uplink</label>
                   <textarea 
                     rows={6}
+                    value={settings.custom_css}
+                    onChange={(e) => handleSettingChange('custom_css', e.target.value)}
                     placeholder="/* Inject custom protocols here */"
                     className="w-full bg-cyber-black border border-white/10 rounded-xl px-4 py-3 text-sm font-mono text-neon-cyan focus:border-neon-cyan/50 outline-none transition-all resize-none"
                   />
