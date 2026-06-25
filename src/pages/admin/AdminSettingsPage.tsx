@@ -82,6 +82,11 @@ const AdminSettingsPage: React.FC = () => {
         });
         
         setSettings(prev => ({ ...prev, ...settingsMap }));
+        
+        // Apply theme immediately after loading
+        if (settingsMap.primary_accent_color) {
+          document.documentElement.style.setProperty('--color-neon-cyan', settingsMap.primary_accent_color);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load settings');
       } finally {
@@ -91,6 +96,11 @@ const AdminSettingsPage: React.FC = () => {
 
     fetchSettings();
   }, []);
+
+  // Watch for primary_accent_color changes and apply them immediately
+  useEffect(() => {
+    document.documentElement.style.setProperty('--color-neon-cyan', settings.primary_accent_color);
+  }, [settings.primary_accent_color]);
 
   const handleSave = async () => {
     try {
@@ -113,6 +123,22 @@ const AdminSettingsPage: React.FC = () => {
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || 'Failed to save settings');
+      }
+
+      // Apply theme changes
+      document.documentElement.style.setProperty('--color-neon-cyan', settings.primary_accent_color);
+      
+      // Apply custom CSS if provided
+      let customStyleElement = document.getElementById('custom-theme-css') as HTMLStyleElement;
+      if (settings.custom_css) {
+        if (!customStyleElement) {
+          customStyleElement = document.createElement('style');
+          customStyleElement.id = 'custom-theme-css';
+          document.head.appendChild(customStyleElement);
+        }
+        customStyleElement.textContent = settings.custom_css;
+      } else if (customStyleElement) {
+        customStyleElement.remove();
       }
 
       setSuccess(true);
@@ -383,7 +409,9 @@ const AdminSettingsPage: React.FC = () => {
             >
               <div className="cyber-card border-white/5 p-8 space-y-8">
                 <div className="space-y-4">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Primary Accent Color</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 block">Primary Accent Color</label>
+                  <p className="text-[10px] text-zinc-400 uppercase tracking-widest">Choose a color or enter a custom hex value</p>
+                  
                   <div className="flex flex-wrap gap-4">
                     {['#00f3ff', '#ff00ff', '#39ff14', '#bc13fe', '#ff0055'].map(color => (
                       <button 
@@ -393,9 +421,47 @@ const AdminSettingsPage: React.FC = () => {
                         style={{ backgroundColor: color }}
                       />
                     ))}
+                    <div className="relative">
+                      <input 
+                        type="color"
+                        value={settings.primary_accent_color}
+                        onChange={(e) => handleSettingChange('primary_accent_color', e.target.value)}
+                        className="w-12 h-12 rounded-xl cursor-pointer opacity-0 absolute inset-0"
+                        title="Click to pick custom color"
+                      />
+                      <button className="w-12 h-12 rounded-xl border-2 border-dashed border-zinc-600 hover:border-zinc-400 flex items-center justify-center text-zinc-400 hover:text-zinc-300 transition-all">
+                        <span className="text-xl">+</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Live color preview */}
+                  <div className="mt-6 p-6 rounded-xl border-2 border-white/10" style={{ borderColor: settings.primary_accent_color + '30' }}>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-4">Live Preview</p>
+                    <div className="space-y-3">
+                      <div className="flex gap-4 items-center">
+                        <div 
+                          className="w-20 h-10 rounded-lg"
+                          style={{ 
+                            backgroundColor: settings.primary_accent_color,
+                            boxShadow: `0 0 20px ${settings.primary_accent_color}50`
+                          }}
+                        />
+                        <span className="font-mono text-sm text-zinc-300">{settings.primary_accent_color.toUpperCase()}</span>
+                      </div>
+                      <div className="flex gap-2 flex-wrap">
+                        <button className="px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all hover:scale-105" style={{ backgroundColor: settings.primary_accent_color, color: '#000' }}>
+                          Button Preview
+                        </button>
+                        <span className="px-4 py-2 text-xs font-bold uppercase" style={{ color: settings.primary_accent_color }}>
+                          Text Preview
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div className="space-y-2">
+
+                <div className="space-y-2 border-t border-white/5 pt-8">
                   <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Custom CSS Uplink</label>
                   <textarea 
                     rows={6}

@@ -13,6 +13,36 @@ import AdminLayout from './layouts/AdminLayout';
 import { ApiError } from './lib/api';
 import { getStudioRouteMode } from './lib/studioRouting';
 
+// Load and apply theme colors from settings
+const loadThemeSettings = async () => {
+  try {
+    const response = await fetch('/api/admin/settings');
+    if (!response.ok) return;
+    
+    const data = await response.json();
+    const settingsMap: Record<string, any> = {};
+    
+    data.forEach((item: any) => {
+      settingsMap[item.key] = item.value;
+    });
+    
+    // Apply primary accent color if it exists
+    if (settingsMap.primary_accent_color) {
+      document.documentElement.style.setProperty('--color-neon-cyan', settingsMap.primary_accent_color);
+    }
+    
+    // Apply custom CSS if it exists
+    if (settingsMap.custom_css) {
+      const style = document.createElement('style');
+      style.textContent = settingsMap.custom_css;
+      style.id = 'custom-theme-css';
+      document.head.appendChild(style);
+    }
+  } catch (err) {
+    console.error('Failed to load theme settings:', err);
+  }
+};
+
 // Loading fallback component for lazy-loaded routes
 const LoadingFallback = () => (
   <div className="min-h-screen flex items-center justify-center bg-cyber-black">
@@ -136,6 +166,10 @@ const ScrollToTop = () => {
 };
 
 export default function App() {
+  useLayoutEffect(() => {
+    loadThemeSettings();
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
