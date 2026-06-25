@@ -1,9 +1,9 @@
 # NightDevWeb2 Backlog
 
-Updated on 2026-05-15
-Last reviewed: 2026-05-15
+Updated on 2026-06-25
+Last reviewed: 2026-06-25
 
-Review note: Verified AI docs freshness check on 2026-05-15.
+Review note: Verified AI docs freshness check on 2026-06-25.
 
 ## Document Governance
 
@@ -138,6 +138,7 @@ Review note: Verified AI docs freshness check on 2026-05-15.
 - Database connection pooling
 - Redis for session/cache management
 - CDN for static assets
+- **Refactor plan**: A multi-track architecture refactor plan operationalizing these scalability items (unify duplicate API, externalize in-memory state, real-time host, history routing) lives in [`docs/ai/refactor-plan/`](refactor-plan/README.md).
 
 ## Open Risks
 
