@@ -81,6 +81,7 @@ Review note: Verified AI docs freshness check on 2026-05-15.
 
 ## Decisions Log
 
+**2026-06-25 (Latest)**: Cleaned up `.github/workflows/ci.yml` by removing a duplicated `c8 report` invocation in the integration coverage step and renumbering the flaky-test policy comment block (which had two `3)` items).
 **2026-04-25 (Latest)**: Canonicalized Studio route behavior for April/May 2026: `/studio` remains feature-flagged with `VITE_ENABLE_STUDIO`; enabled mode renders Veo Studio and disabled mode rend[...]
 **2026-04-10 (Latest)**: Documented two release-process decisions to keep docs aligned with runtime behavior: (1) CI enforces an explicit integration coverage threshold from existing V8 output in [...]
 **2026-04-09 (Latest)**: Reconciled AI docs with CI reality. `docs/ai/BACKLOG.md` CI/CD status now matches `.github/workflows/ci.yml` (dependency scan, CodeQL SAST, coverage artifacts, retry + fai[...]
