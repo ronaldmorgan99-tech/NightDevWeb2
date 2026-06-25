@@ -1,8 +1,8 @@
 # NightDevWeb2 Memory
 
-Last reviewed: 2026-05-15
+Last reviewed: 2026-06-25
 
-Review note: Verified AI docs freshness check on 2026-05-15.
+Review note: Verified AI docs freshness check on 2026-06-25.
 
 ## Document Governance
 
@@ -81,6 +81,7 @@ Review note: Verified AI docs freshness check on 2026-05-15.
 
 ## Decisions Log
 
+**2026-06-25 (Latest)**: Added a multi-agent architecture refactor planning scaffold under `docs/ai/refactor-plan/` (README, CONVENTIONS, and four track files: 01 unify duplicate API, 02 externalize in-memory state, 03 real-time messaging host, 04 history routing for SEO). Planning/docs only — no application code changed. Linked it from `docs/ai/BACKLOG.md` Scalability Improvements and refreshed the "Last reviewed" dates on `BACKLOG.md`/`MEMORY.md` to satisfy `scripts/ci/validate-ai-docs-dates.mjs` (max age 14 days).
 **2026-06-25 (Latest)**: Cleaned up `.github/workflows/ci.yml` by removing a duplicated `c8 report` invocation in the integration coverage step and renumbering the flaky-test policy comment block (which had two `3)` items).
 **2026-04-25 (Latest)**: Canonicalized Studio route behavior for April/May 2026: `/studio` remains feature-flagged with `VITE_ENABLE_STUDIO`; enabled mode renders Veo Studio and disabled mode rend[...]
 **2026-04-10 (Latest)**: Documented two release-process decisions to keep docs aligned with runtime behavior: (1) CI enforces an explicit integration coverage threshold from existing V8 output in [...]
