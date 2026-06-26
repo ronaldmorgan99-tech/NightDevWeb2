@@ -21,6 +21,9 @@ View your app in AI Studio: https://ai.studio/apps/760e6625-d344-4b21-a27e-ffbef
 ### Framework: React 19 + TypeScript + Vite
 The frontend is built with **React 19** for modern component-based UI development, **TypeScript** for static typing and safer refactors, and **Vite** for fast local development and optimized production builds.
 
+### Workflow automation docs
+Workflow automation is documented under `docs/workflows/` for the active GitHub Actions workflows. See `docs/workflows/WORKFLOW_INDEX.md` for the current workflow catalog.
+
 ### Backend: Express.js + Node.js (via `server.ts`)
 The server runs on **Node.js** and uses **Express.js** to handle API routes, middleware, and server-side logic. The main backend entry point is `server.ts`, which centralizes server configuration and startup behavior.
 
