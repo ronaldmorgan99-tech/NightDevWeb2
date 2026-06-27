@@ -1,8 +1,9 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
-import { MessageSquare, ChevronRight, Users, Hash, Gamepad2, Server, Globe, Zap } from 'lucide-react';
+import { MessageSquare, ChevronRight, Users, Hash, Gamepad2, Server, Globe, Zap, Newspaper, Pin } from 'lucide-react';
 import { motion } from 'motion/react';
+import { fetchNews, newsExcerpt, formatNewsDate, type NewsItem } from '../lib/news';
 
 interface Forum {
   id: number;
@@ -45,6 +46,13 @@ const ForumsPage: React.FC = () => {
 
       return res.json();
     },
+    staleTime: 60_000,
+    retry: 1
+  });
+
+  const { data: news, isLoading: isNewsLoading, isError: isNewsError } = useQuery<NewsItem[]>({
+    queryKey: ['homepage-news'],
+    queryFn: () => fetchNews(4),
     staleTime: 60_000,
     retry: 1
   });
@@ -136,6 +144,60 @@ const ForumsPage: React.FC = () => {
           </div>
         </div>
       </section>
+
+      {/* Latest News */}
+      {!isNewsError && (isNewsLoading || (news && news.length > 0)) && (
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-6"
+        >
+          <div className="flex items-end justify-between px-4">
+            <div>
+              <h2 className="text-2xl font-black text-white flex items-center gap-3 italic tracking-tighter">
+                <Newspaper className="w-6 h-6 text-neon-magenta animate-pulse" />
+                LATEST NEWS
+              </h2>
+              <div className="h-[2px] w-12 bg-neon-magenta mt-2" />
+            </div>
+            <Link to="/news" className="text-xs uppercase tracking-[0.2em] font-black text-neon-cyan hover:text-white transition-colors flex items-center gap-1">
+              All News <ChevronRight className="w-4 h-4" />
+            </Link>
+          </div>
+
+          {isNewsLoading ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {[1, 2].map(i => (
+                <div key={i} className="h-32 bg-white/5 rounded-2xl animate-pulse" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {news?.map((item) => (
+                <Link
+                  key={item.id}
+                  to={`/threads/${item.id}`}
+                  className="group relative flex flex-col gap-3 p-6 bg-cyber-dark/40 backdrop-blur-sm border border-white/5 rounded-2xl hover:border-neon-magenta/30 transition-all duration-500 overflow-hidden"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-neon-magenta/0 via-neon-magenta/[0.03] to-neon-magenta/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+                  <div className="relative z-10 flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-black text-zinc-500">
+                    {item.is_pinned ? <Pin className="w-3 h-3 text-neon-magenta" /> : <Newspaper className="w-3 h-3 text-neon-cyan" />}
+                    <span>{formatNewsDate(item.created_at)}</span>
+                    <span className="text-zinc-700">//</span>
+                    <span className="text-zinc-400">{item.author_name}</span>
+                  </div>
+                  <h3 className="relative z-10 text-lg font-black text-zinc-200 group-hover:text-white transition-colors italic tracking-tight line-clamp-1">
+                    {item.title}
+                  </h3>
+                  <p className="relative z-10 text-zinc-500 text-sm font-medium line-clamp-2">
+                    {newsExcerpt(item.excerpt)}
+                  </p>
+                </Link>
+              ))}
+            </div>
+          )}
+        </motion.section>
+      )}
 
       {/* Categories */}
       <div className="space-y-12">

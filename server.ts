@@ -1488,6 +1488,38 @@ async function start() {
     }
   });
 
+  // News feed — latest threads from the admin-managed "Announcements" forum
+  app.get('/api/news', async (req: any, res) => {
+    try {
+      const rawLimit = Number(req.query.limit);
+      const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.trunc(rawLimit), 1), 50) : 10;
+      const forum = await db.queryOne<any>('SELECT id FROM forums WHERE name = ?', ['Announcements']);
+      if (!forum) {
+        return res.json([]);
+      }
+      const news = await db.query<any>(`
+        SELECT
+          t.id,
+          t.title,
+          t.is_pinned,
+          t.views,
+          t.created_at,
+          u.username as author_name,
+          u.avatar_url as author_avatar,
+          (SELECT COUNT(*) - 1 FROM posts p WHERE p.thread_id = t.id) as reply_count,
+          (SELECT p2.content FROM posts p2 WHERE p2.thread_id = t.id ORDER BY p2.id ASC LIMIT 1) as excerpt
+        FROM threads t
+        JOIN users u ON u.id = t.author_id
+        WHERE t.forum_id = ? AND COALESCE(t.is_hidden, 0) = 0
+        ORDER BY t.is_pinned DESC, t.created_at DESC
+        LIMIT ${limit}
+      `, [forum.id]);
+      res.json(news);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post('/api/threads', authenticate, validateBody(threadCreateSchema), async (req: any, res) => {
     const { forum_id, title, content } = req.body;
     const sanitizedTitle = sanitizeUserText(title);

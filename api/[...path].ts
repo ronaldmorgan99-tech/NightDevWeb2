@@ -1115,6 +1115,38 @@ const forumDetailHandler = async (req: Request, res: Response) => {
 };
 app.get(['/api/forums/:id', '/forums/:id'], forumDetailHandler);
 
+const newsHandler = async (req: Request, res: Response) => {
+  try {
+    const rawLimit = Number(req.query.limit);
+    const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.trunc(rawLimit), 1), 50) : 10;
+    const forum = await db.queryOne<any>('SELECT id FROM forums WHERE name = ?', ['Announcements']);
+    if (!forum) {
+      return res.json([]);
+    }
+    const news = await db.query<any>(`
+      SELECT
+        t.id,
+        t.title,
+        t.is_pinned,
+        t.views,
+        t.created_at,
+        u.username as author_name,
+        u.avatar_url as author_avatar,
+        (SELECT COUNT(*) - 1 FROM posts p WHERE p.thread_id = t.id) as reply_count,
+        (SELECT p2.content FROM posts p2 WHERE p2.thread_id = t.id ORDER BY p2.id ASC LIMIT 1) as excerpt
+      FROM threads t
+      JOIN users u ON u.id = t.author_id
+      WHERE t.forum_id = ? AND COALESCE(t.is_hidden, 0) = 0
+      ORDER BY t.is_pinned DESC, t.created_at DESC
+      LIMIT ${limit}
+    `, [forum.id]);
+    return res.json(news);
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to load news' });
+  }
+};
+app.get(['/api/news', '/news'], newsHandler);
+
 const threadListHandler = async (req: Request, res: Response) => {
   const { categoryId } = req.query;
   const normalizedCategoryId = typeof categoryId === 'string' && categoryId.trim() !== '' ? categoryId.trim() : null;
