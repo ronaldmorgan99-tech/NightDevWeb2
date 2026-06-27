@@ -81,6 +81,7 @@ const CreateThreadPage = lazy(() => import('./pages/CreateThreadPage'));
 const MessagesPage = lazy(() => import('./pages/MessagesPage'));
 const DiscordPage = lazy(() => import('./pages/DiscordPage'));
 const ServersPage = lazy(() => import('./pages/ServersPage'));
+const NewsPage = lazy(() => import('./pages/NewsPage'));
 const StudioUnavailablePage = lazy(() => import('./pages/ComingSoonPage'));
 const VeoStudioPage = lazy(() => import('./pages/VeoStudioPage'));
 
@@ -197,6 +198,7 @@ export default function App() {
                 <Route path="messages" element={<Suspense fallback={<LoadingFallback />}><MessagesPage /></Suspense>} />
                 <Route path="discord" element={<Suspense fallback={<LoadingFallback />}><DiscordPage /></Suspense>} />
                 <Route path="servers" element={<Suspense fallback={<LoadingFallback />}><ServersPage /></Suspense>} />
+                <Route path="news" element={<Suspense fallback={<LoadingFallback />}><NewsPage /></Suspense>} />
                 <Route path="login" element={<Suspense fallback={<LoadingFallback />}><LoginPage /></Suspense>} />
                 <Route path="register" element={<Suspense fallback={<LoadingFallback />}><RegisterPage /></Suspense>} />
                 <Route

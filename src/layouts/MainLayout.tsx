@@ -24,7 +24,8 @@ import {
   Zap,
   Globe,
   Monitor,
-  Ticket
+  Ticket,
+  Newspaper
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -191,6 +192,7 @@ const MainLayout: React.FC = () => {
 
   const navItems = [
     { label: 'Forums', path: '/', icon: MessageSquare },
+    { label: 'News', path: '/news', icon: Newspaper },
     { label: 'Servers', path: '/servers', icon: Server },
     { label: 'Members', path: '/members', icon: Users },
     { label: 'Store', path: '/store', icon: ShoppingBag },

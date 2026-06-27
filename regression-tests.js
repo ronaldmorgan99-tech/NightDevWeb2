@@ -295,6 +295,16 @@ async function runTests() {
     if (r.res.status !== 400) throw new Error(`Expected 400 for invalid post payload; got ${r.res.status}`);
     console.log('✅ Invalid post payload rejected (400)');
 
+    console.log('⏳ Verifying news feed endpoint returns an array...');
+    r = await request('/api/news');
+    if (!r.res.ok || !Array.isArray(r.body)) throw new Error(`Expected /api/news to return an array; got ${r.res.status} ${JSON.stringify(r.body)}`);
+    console.log('✅ News feed endpoint returns array');
+
+    console.log('⏳ Verifying news feed respects limit param...');
+    r = await request('/api/news?limit=1');
+    if (!r.res.ok || !Array.isArray(r.body) || r.body.length > 1) throw new Error(`Expected /api/news?limit=1 to return at most 1 item; got ${r.res.status} ${JSON.stringify(r.body)}`);
+    console.log('✅ News feed honors limit param');
+
     console.log('⏳ Preparing order for webhook regression tests...');
     r = await request('/api/store/products');
     if (!r.res.ok || !Array.isArray(r.body) || r.body.length === 0) {
