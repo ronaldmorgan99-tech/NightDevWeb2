@@ -43,15 +43,19 @@ const loadThemeSettings = async () => {
   }
 };
 
-// Loading fallback component for lazy-loaded routes
+// Shimmering skeleton loading fallback
 const LoadingFallback = () => (
-  <div className="min-h-screen flex items-center justify-center bg-cyber-black">
-    <div className="text-center">
-      <div className="animate-pulse mb-4">
-        <div className="w-16 h-16 bg-neon-cyan/20 rounded-lg mx-auto"></div>
-      </div>
-      <p className="text-neon-cyan text-sm uppercase tracking-widest">Loading...</p>
+  <div className="min-h-screen p-6 space-y-6">
+    <div className="cyber-card p-6 overflow-hidden relative">
+      <div className="h-8 w-1/3 bg-white/5 rounded-lg shimmer-block" />
+      <div className="mt-4 h-4 w-2/3 bg-white/5 rounded shimmer-block" style={{ animationDelay: '0.15s' }} />
+      <div className="mt-3 h-4 w-1/2 bg-white/5 rounded shimmer-block" style={{ animationDelay: '0.3s' }} />
     </div>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="cyber-card p-6 h-40 shimmer-block" style={{ animationDelay: '0.1s' }} />
+      <div className="cyber-card p-6 h-40 shimmer-block" style={{ animationDelay: '0.2s' }} />
+    </div>
+    <div className="cyber-card p-6 h-32 shimmer-block" style={{ animationDelay: '0.35s' }} />
   </div>
 );
 
