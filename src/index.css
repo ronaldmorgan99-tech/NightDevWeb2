@@ -28,6 +28,8 @@
     overflow-y: auto;
     cursor: none;
     scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: #00f3ff #020205;
   }
   
   body {
@@ -37,8 +39,8 @@
     overflow-y: auto;
     background-color: #0a0a1f; /* Slightly brighter, more blue base */
     background-image: 
-      /* Moving Light Sweep */
-      linear-gradient(45deg, transparent 45%, rgba(0, 243, 255, 0.1) 50%, transparent 55%),
+      /* Moving Light Sweep — cyan→magenta holographic shift */
+      linear-gradient(45deg, transparent 45%, rgba(0, 243, 255, 0.1) 48%, rgba(255, 0, 255, 0.08) 52%, transparent 55%),
       /* Data Streams */
       repeating-linear-gradient(0deg, transparent, transparent 100px, rgba(0, 243, 255, 0.05) 100px, rgba(0, 243, 255, 0.05) 101px),
       /* Primary Grid */
@@ -47,11 +49,11 @@
       /* Secondary Finer Grid */
       linear-gradient(rgba(0, 243, 255, 0.08) 1px, transparent 1px),
       linear-gradient(90deg, rgba(0, 243, 255, 0.08) 1px, transparent 1px),
-      /* Intense Dynamic Glows */
-      radial-gradient(circle at 50% 0%, rgba(188, 19, 254, 0.3) 0%, transparent 60%),
-      radial-gradient(circle at 100% 100%, rgba(0, 243, 255, 0.25) 0%, transparent 60%),
+      /* Intense Dynamic Glows — all four brand colors spread across canvas */
+      radial-gradient(circle at 50% 0%, rgba(188, 19, 254, 0.25) 0%, transparent 60%),
+      radial-gradient(circle at 100% 100%, rgba(188, 19, 254, 0.2) 0%, transparent 60%),
       radial-gradient(circle at 0% 50%, rgba(255, 0, 255, 0.2) 0%, transparent 50%),
-      radial-gradient(circle at 80% 20%, rgba(0, 243, 255, 0.2) 0%, transparent 40%);
+      radial-gradient(circle at 80% 20%, rgba(57, 255, 20, 0.15) 0%, transparent 40%);
     background-size: 200% 200%, 100% 200px, 100px 100px, 100px 100px, 20px 20px, 20px 20px, 100% 100%, 100% 100%, 100% 100%, 100% 100%;
     background-attachment: fixed;
     cursor: none;
@@ -94,16 +96,21 @@
     background: 
       /* Central Light Source */
       radial-gradient(circle at center, rgba(0, 243, 255, 0.1) 0%, transparent 70%),
-      /* Holographic Shimmer */
-      linear-gradient(135deg, rgba(255, 0, 255, 0.05) 0%, transparent 25%, rgba(0, 243, 255, 0.05) 50%, transparent 75%, rgba(255, 0, 255, 0.05) 100%);
+      /* Holographic Shimmer — cyan, magenta, green */
+      linear-gradient(135deg, rgba(255, 0, 255, 0.08) 0%, transparent 20%, rgba(0, 243, 255, 0.08) 40%, transparent 55%, rgba(57, 255, 20, 0.06) 70%, transparent 85%, rgba(255, 0, 255, 0.08) 100%);
     pointer-events: none;
     z-index: -1;
-    animation: atmospheric-drift 10s ease-in-out infinite alternate;
+    animation: atmospheric-drift 10s ease-in-out infinite alternate, hue-drift 30s linear infinite;
   }
 
   @keyframes atmospheric-drift {
     0% { transform: translate(-5%, -5%) scale(1); }
     100% { transform: translate(5%, 5%) scale(1.1); }
+  }
+
+  @keyframes hue-drift {
+    0% { filter: hue-rotate(0deg); }
+    100% { filter: hue-rotate(360deg); }
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -114,7 +121,19 @@
 @layer components {
   .cyber-card {
     @apply bg-cyber-dark/40 backdrop-blur-xl border border-white/5 rounded-2xl relative overflow-hidden;
-    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+    box-shadow:
+      0 4px 24px rgba(0, 0, 0, 0.6),
+      0 0 12px rgba(0, 243, 255, 0.04),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .cyber-card:hover {
+    transform: translateY(-3px);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.7),
+      0 0 20px rgba(0, 243, 255, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
   .cyber-card::after {
@@ -244,6 +263,31 @@
   }
 }
 
+/* Shimmer skeleton animation for loading states */
+.shimmer-block {
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmer-block::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 243, 255, 0.04) 40%,
+    rgba(188, 19, 254, 0.06) 60%,
+    transparent 100%
+  );
+  animation: shimmer-sweep 1.8s ease-in-out infinite;
+}
+
+@keyframes shimmer-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
 .scanline {
   width: 100%;
   height: 100px;
@@ -344,36 +388,23 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(-45deg, 
-    #00f3ff, 
-    #ff00ff, 
-    #39ff14, 
-    #ffffff, 
-    #00f3ff
-  );
-  background-size: 400% 400%;
-  animation: scrollbar-gradient 2s linear infinite;
+  background: linear-gradient(-45deg, #00f3ff, #bc13fe, #00f3ff);
+  background-size: 300% 300%;
+  animation: scrollbar-gradient 7s linear infinite;
   border-radius: 5px;
-  box-shadow: 
-    0 0 10px rgba(0, 243, 255, 0.8),
-    inset 0 0 5px rgba(255, 255, 255, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 8px rgba(0, 243, 255, 0.4);
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(-45deg, 
-    #ffffff, 
-    #00f3ff, 
-    #ff00ff, 
-    #39ff14, 
-    #ffffff
-  );
+  background: linear-gradient(-45deg, #00f3ff, #ff00ff, #bc13fe, #00f3ff);
   background-size: 400% 400%;
-  animation: scrollbar-gradient 1s linear infinite;
-  box-shadow: 
-    0 0 20px rgba(255, 0, 255, 1),
-    0 0 40px rgba(0, 243, 255, 0.6),
-    inset 0 0 10px rgba(255, 255, 255, 0.8);
+  animation: scrollbar-gradient 3s linear infinite;
+  border-radius: 5px;
+  box-shadow: 0 0 14px rgba(0, 243, 255, 0.7), 0 0 6px rgba(188, 19, 254, 0.5);
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 
 /* Hide default cursor on all interactive elements to prevent the 'hand icon' from appearing */
