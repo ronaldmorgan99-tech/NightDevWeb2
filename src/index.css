@@ -3,6 +3,9 @@
 
 :root {
   --noise-overlay: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+  /* Theme intensity 0.0 - 1.0 allows runtime tuning of effects */
+  --theme-intensity: 1;
+  --transition-fast: 150ms;
 }
 
 @theme {
@@ -58,7 +61,7 @@
     background-attachment: fixed;
     cursor: none;
     position: relative;
-    animation: background-pulse 15s linear infinite, screen-flicker 10s infinite;
+    animation: background-pulse calc(15s * var(--theme-intensity)) linear infinite, screen-flicker calc(10s * var(--theme-intensity)) infinite;
   }
 
   @keyframes screen-flicker {
@@ -100,7 +103,7 @@
       linear-gradient(135deg, rgba(255, 0, 255, 0.08) 0%, transparent 20%, rgba(0, 243, 255, 0.08) 40%, transparent 55%, rgba(57, 255, 20, 0.06) 70%, transparent 85%, rgba(255, 0, 255, 0.08) 100%);
     pointer-events: none;
     z-index: -1;
-    animation: atmospheric-drift 10s ease-in-out infinite alternate, hue-drift 30s linear infinite;
+    animation: atmospheric-drift calc(10s * var(--theme-intensity)) ease-in-out infinite alternate, hue-drift calc(30s * var(--theme-intensity)) linear infinite;
   }
 
   @keyframes atmospheric-drift {
@@ -116,6 +119,30 @@
   h1, h2, h3, h4, h5, h6 {
     @apply font-bold tracking-tight text-white uppercase;
   }
+}
+
+/* Accessibility & device fallbacks */
+@media (prefers-reduced-motion: reduce) {
+  :root { --theme-intensity: 0; }
+  * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0s !important; }
+  body { background-attachment: scroll !important; }
+  .custom-cursor { display: none !important; }
+}
+
+/* Hide custom cursor on touch / coarse-pointer devices and simplify heavy backgrounds on small viewports */
+@media (hover: none) and (pointer: coarse), (max-width: 768px) {
+  .custom-cursor { display: none !important; }
+  body {
+    background-image: radial-gradient(circle at 50% 0%, rgba(188, 19, 254, 0.06) 0%, transparent 60%), radial-gradient(circle at 100% 100%, rgba(188, 19, 254, 0.04) 0%, transparent 60%), radial-gradient(circle at 0% 50%, rgba(255, 0, 255, 0.03) 0%, transparent 50%);
+    background-size: cover;
+    animation: none !important;
+  }
+  .scanline { display: none; }
+}
+
+/* Prefer system cursor on interactive elements when custom cursor is disabled */
+@media (hover: none) and (pointer: coarse) {
+  a, button, input, select, textarea, label, [role="button"], .cursor-pointer { cursor: auto !important; }
 }
 
 @layer components {

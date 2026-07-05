@@ -401,9 +401,11 @@ const MainLayout: React.FC = () => {
                   <div className="relative">
                     <div className="w-10 h-10 bg-cyber-dark border border-neon-cyan/50 rounded-lg flex items-center justify-center shadow-[0_0_10px_rgba(0,243,255,0.2)] group-hover:shadow-[0_0_20px_rgba(0,243,255,0.4)] transition-all duration-500 overflow-hidden">
                       <div className="absolute inset-0 bg-gradient-to-br from-neon-cyan/20 to-neon-purple/20 opacity-50" />
-                      <img 
-                        src="https://i.imgur.com/xuiV5kI.gif" 
-                        alt="Logo" 
+                      <img
+                        src="https://i.imgur.com/xuiV5kI.gif"
+                        alt="Logo"
+                        loading="lazy"
+                        decoding="async"
                         className="w-full h-full object-cover relative z-10"
                         referrerPolicy="no-referrer"
                       />
@@ -748,9 +750,11 @@ const MainLayout: React.FC = () => {
             <div className="col-span-1 md:col-span-2">
               <Link to="/" className="flex items-center gap-3 mb-8">
                 <div className="w-10 h-10 bg-cyber-dark border border-neon-cyan/30 rounded-lg flex items-center justify-center overflow-hidden">
-                  <img 
-                    src="https://i.imgur.com/xuiV5kI.gif" 
-                    alt="Logo" 
+                  <img
+                    src="https://i.imgur.com/xuiV5kI.gif"
+                    alt="Logo"
+                    loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
                   />

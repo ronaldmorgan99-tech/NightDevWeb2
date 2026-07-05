@@ -106,19 +106,34 @@ const queryClient = new QueryClient({
 const studioRouteMode = getStudioRouteMode(import.meta.env.VITE_ENABLE_STUDIO);
 
 const CustomCursor = () => {
+  const [enabled, setEnabled] = useState(false);
+
+  // Determine availability (runs once)
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const prefersReduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const isTouch = 'ontouchstart' in window || (navigator && (navigator as any).maxTouchPoints > 0);
+
+    setEnabled(!prefersReduce && !isTouch);
+  }, []);
+
+  // Attach pointer listeners when enabled; keep hook order stable by declaring unconditionally
+  useEffect(() => {
+    if (!enabled) return;
+
     const cursor = document.querySelector('.custom-cursor') as HTMLElement;
     if (!cursor) return;
 
-    let rafId: number;
+    let rafId = 0;
     const handlePointerMove = (e: PointerEvent) => {
       rafId = requestAnimationFrame(() => {
         cursor.style.left = `${e.clientX}px`;
         cursor.style.top = `${e.clientY}px`;
-        
+
         const target = e.target as HTMLElement;
         const isClickable = !!target?.closest('a, button, [role="button"], input[type="button"], input[type="submit"], input[type="checkbox"], input[type="radio"], select, label, .cursor-pointer');
-        
+
         if (isClickable) {
           cursor.classList.add('scale-150');
         } else {
@@ -133,23 +148,25 @@ const CustomCursor = () => {
     window.addEventListener('pointermove', handlePointerMove, { passive: true, capture: true });
     window.addEventListener('pointerdown', handlePointerDown);
     window.addEventListener('pointerup', handlePointerUp);
-    
+
     return () => {
       window.removeEventListener('pointermove', handlePointerMove, { capture: true });
       window.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('pointerup', handlePointerUp);
-      cancelAnimationFrame(rafId);
+      if (rafId) cancelAnimationFrame(rafId);
     };
-  }, []);
+  }, [enabled]);
+
+  if (!enabled) return null;
 
   return (
-    <div 
+    <div
       className="custom-cursor cursor-glow"
-      style={{ 
+      style={{
         transform: 'translate(-2px, -2px)',
         left: '-100px',
         top: '-100px'
-      }} 
+      }}
     />
   );
 };
