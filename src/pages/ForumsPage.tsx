@@ -87,7 +87,7 @@ const ForumsPage: React.FC = () => {
   return (
     <div className="space-y-12">
       {/* Hero Section */}
-      <section className="glitch-card relative min-h-[500px] rounded-[2.5rem] overflow-hidden border border-neon-cyan/20 group shadow-[0_0_50px_rgba(0,243,255,0.1)]">
+      <section className="relative min-h-[500px] rounded-[2.5rem] overflow-hidden border border-neon-cyan/20 group shadow-[0_0_50px_rgba(0,243,255,0.1)]">
         {/* Background Image */}
         <div className="absolute inset-0">
           <img 
