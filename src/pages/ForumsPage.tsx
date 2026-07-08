@@ -87,7 +87,7 @@ const ForumsPage: React.FC = () => {
   return (
     <div className="space-y-12">
       {/* Hero Section */}
-      <section className="relative min-h-[500px] rounded-[2.5rem] overflow-hidden border border-neon-cyan/20 group shadow-[0_0_50px_rgba(0,243,255,0.1)]">
+      <section className="glitch-card relative min-h-[500px] rounded-[2.5rem] overflow-hidden border border-neon-cyan/20 group shadow-[0_0_50px_rgba(0,243,255,0.1)]">
         {/* Background Image */}
         <div className="absolute inset-0">
           <img 
@@ -177,7 +177,7 @@ const ForumsPage: React.FC = () => {
                 <Link
                   key={item.id}
                   to={`/threads/${item.id}`}
-                  className="group relative flex flex-col gap-3 p-6 bg-cyber-dark/40 backdrop-blur-sm border border-white/5 rounded-2xl hover:border-neon-magenta/30 transition-all duration-500 overflow-hidden"
+                  className="glitch-card group relative flex flex-col gap-3 p-6 bg-cyber-dark/40 backdrop-blur-sm border border-white/5 rounded-2xl hover:border-neon-magenta/30 transition-all duration-500 overflow-hidden"
                 >
                   <div className="absolute inset-0 bg-gradient-to-r from-neon-magenta/0 via-neon-magenta/[0.03] to-neon-magenta/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
                   <div className="relative z-10 flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-black text-zinc-500">
@@ -205,7 +205,7 @@ const ForumsPage: React.FC = () => {
         <motion.section
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="relative p-8 rounded-3xl bg-gradient-to-r from-neon-cyan/10 via-cyber-black/40 to-neon-magenta/10 border border-white/5 overflow-hidden group"
+          className="glitch-card relative p-8 rounded-3xl bg-gradient-to-r from-neon-cyan/10 via-cyber-black/40 to-neon-magenta/10 border border-white/5 overflow-hidden group"
         >
           <div className="absolute inset-0 bg-grid-white/[0.02] bg-[length:20px_20px]" />
           <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
@@ -263,7 +263,7 @@ const ForumsPage: React.FC = () => {
                 <Link
                   key={forum.id}
                   to={`/forums/${forum.id}`}
-                  className="group relative flex items-center gap-6 p-8 bg-cyber-dark/40 backdrop-blur-sm border border-white/5 rounded-2xl hover:border-neon-cyan/30 transition-all duration-500 overflow-hidden"
+                  className="glitch-card group relative flex items-center gap-6 p-8 bg-cyber-dark/40 backdrop-blur-sm border border-white/5 rounded-2xl hover:border-neon-cyan/30 transition-all duration-500 overflow-hidden"
                 >
                   <div className="absolute inset-0 bg-gradient-to-r from-neon-cyan/0 via-neon-cyan/[0.02] to-neon-cyan/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
                   
@@ -304,7 +304,7 @@ const ForumsPage: React.FC = () => {
       {/* Stats Section */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-6 py-20 border-t border-white/5 relative">
         <div className="absolute inset-0 bg-gradient-to-b from-neon-cyan/[0.02] to-transparent pointer-events-none" />
-        <div className="p-10 bg-cyber-dark/40 backdrop-blur-md border border-white/5 rounded-3xl text-center group hover:border-neon-cyan/30 transition-all duration-500 relative overflow-hidden">
+        <div className="glitch-card p-10 bg-cyber-dark/40 backdrop-blur-md border border-white/5 rounded-3xl text-center group hover:border-neon-cyan/30 transition-all duration-500 relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-neon-cyan/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="relative z-10">
             <div className="w-16 h-16 bg-neon-cyan/10 rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
@@ -314,7 +314,7 @@ const ForumsPage: React.FC = () => {
             <p className="text-zinc-500 text-[10px] uppercase tracking-[0.3em] font-black mt-2">Active Operatives</p>
           </div>
         </div>
-        <div className="p-10 bg-cyber-dark/40 backdrop-blur-md border border-white/5 rounded-3xl text-center group hover:border-neon-pink/30 transition-all duration-500 relative overflow-hidden">
+        <div className="glitch-card p-10 bg-cyber-dark/40 backdrop-blur-md border border-white/5 rounded-3xl text-center group hover:border-neon-pink/30 transition-all duration-500 relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-neon-pink/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="relative z-10">
             <div className="w-16 h-16 bg-neon-pink/10 rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
@@ -324,7 +324,7 @@ const ForumsPage: React.FC = () => {
             <p className="text-zinc-500 text-[10px] uppercase tracking-[0.3em] font-black mt-2">Data Transmissions</p>
           </div>
         </div>
-        <div className="p-10 bg-cyber-dark/40 backdrop-blur-md border border-white/5 rounded-3xl text-center group hover:border-neon-green/30 transition-all duration-500 relative overflow-hidden">
+        <div className="glitch-card p-10 bg-cyber-dark/40 backdrop-blur-md border border-white/5 rounded-3xl text-center group hover:border-neon-green/30 transition-all duration-500 relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-neon-green/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="relative z-10">
             <div className="w-16 h-16 bg-neon-green/10 rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
