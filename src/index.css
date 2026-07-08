@@ -40,7 +40,7 @@
     min-height: 100vh;
     overflow-x: clip;
     overflow-y: auto;
-    background-color: #050510; /* Deep, near-black base with a faint blue tint */
+    background-color: #080815; /* Slightly lighter base to keep the scene brighter */
     background-image:
       /* Primary Grid — barely-there structural lines */
       linear-gradient(rgba(0, 243, 255, 0.035) 1px, transparent 1px),
@@ -48,10 +48,10 @@
       /* Secondary Finer Grid */
       linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
       linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-      /* Ambient depth glows — calm, anchored to corners */
-      radial-gradient(circle at 50% -10%, rgba(188, 19, 254, 0.14) 0%, transparent 55%),
-      radial-gradient(circle at 100% 100%, rgba(0, 243, 255, 0.08) 0%, transparent 55%),
-      radial-gradient(circle at 0% 80%, rgba(255, 0, 255, 0.06) 0%, transparent 50%);
+      /* Ambient depth glows — calmer and slightly brighter */
+      radial-gradient(circle at 50% -10%, rgba(188, 19, 254, 0.18) 0%, transparent 55%),
+      radial-gradient(circle at 100% 100%, rgba(0, 243, 255, 0.11) 0%, transparent 55%),
+      radial-gradient(circle at 0% 80%, rgba(255, 0, 255, 0.08) 0%, transparent 50%);
     background-size: 64px 64px, 64px 64px, 16px 16px, 16px 16px, 100% 100%, 100% 100%, 100% 100%;
     background-attachment: fixed;
     cursor: none;
@@ -72,7 +72,7 @@
     width: 100%;
     height: 100%;
     background: var(--noise-overlay);
-    opacity: 0.05;
+    opacity: 0.06;
     pointer-events: none;
     z-index: -1;
     filter: contrast(105%) brightness(105%);
@@ -84,9 +84,9 @@
     inset: 0;
     background:
       /* Subtle central vignette to add depth and focus content */
-      radial-gradient(circle at center, transparent 55%, rgba(0, 0, 0, 0.55) 100%),
+      radial-gradient(circle at center, transparent 55%, rgba(0, 0, 0, 0.42) 100%),
       /* Faint holographic sheen — static, no hue cycling */
-      linear-gradient(135deg, rgba(188, 19, 254, 0.04) 0%, transparent 35%, rgba(0, 243, 255, 0.04) 100%);
+      linear-gradient(135deg, rgba(188, 19, 254, 0.06) 0%, transparent 35%, rgba(0, 243, 255, 0.06) 100%);
     pointer-events: none;
     z-index: -1;
     animation: atmospheric-drift calc(24s * var(--theme-intensity)) ease-in-out infinite alternate;
@@ -114,8 +114,8 @@
 @media (hover: none) and (pointer: coarse), (max-width: 768px) {
   .custom-cursor { display: none !important; }
   body {
-    background-color: #050510;
-    background-image: radial-gradient(circle at 50% -10%, rgba(188, 19, 254, 0.1) 0%, transparent 55%), radial-gradient(circle at 100% 100%, rgba(0, 243, 255, 0.06) 0%, transparent 55%);
+    background-color: #080815;
+    background-image: radial-gradient(circle at 50% -10%, rgba(188, 19, 254, 0.14) 0%, transparent 55%), radial-gradient(circle at 100% 100%, rgba(0, 243, 255, 0.09) 0%, transparent 55%);
     background-size: cover;
     animation: none !important;
   }
