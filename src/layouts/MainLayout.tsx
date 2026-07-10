@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { isStudioDiscoverableFlag } from '../lib/studioRouting';
 import { useMessaging } from '../context/MessagingContext';
 import NotificationDropdown from '../components/NotificationDropdown';
+import ForumsHorizonBanner from '../components/ForumsHorizonBanner';
 import { useQuery } from '@tanstack/react-query';
 import { 
   LayoutDashboard, 
@@ -189,6 +190,7 @@ const MainLayout: React.FC = () => {
   const discordLink = "https://discord.gg/3axtkUBN";
   const youtubeSearchLink = "https://www.youtube.com/results?search_query=NightRespawn";
   const isStudioDiscoverable = isStudioDiscoverableFlag(import.meta.env.VITE_ENABLE_STUDIO);
+  const isForumsLandingPage = location.pathname === '/';
 
   const navItems = [
     { label: 'Forums', path: '/', icon: MessageSquare },
@@ -742,8 +744,10 @@ const MainLayout: React.FC = () => {
         </div>
       </div>
 
+      {isForumsLandingPage && <ForumsHorizonBanner />}
+
       {/* Footer */}
-      <footer className="border-t border-neon-cyan/10 bg-cyber-bg py-20 mt-32 relative overflow-hidden z-10">
+      <footer className={`border-t border-neon-cyan/10 bg-cyber-bg py-20 relative overflow-hidden z-10 ${isForumsLandingPage ? 'mt-0' : 'mt-32'}`}>
         <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-neon-cyan/20 to-transparent" />
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-16">
