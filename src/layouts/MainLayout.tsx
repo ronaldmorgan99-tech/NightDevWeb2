@@ -720,7 +720,15 @@ const MainLayout: React.FC = () => {
       {/* Remove separate banner; use forums horizon image as footer background instead */}
 
       {/* Footer */}
-      <footer className={`border-t border-neon-cyan/10 bg-cyber-bg py-20 relative overflow-hidden z-10 ${isForumsLandingPage ? 'mt-0' : 'mt-32'}`}>
+      <footer
+        className={`border-t border-neon-cyan/10 py-20 relative overflow-hidden z-10 ${isForumsLandingPage ? 'mt-0' : 'mt-32'}`}
+        style={{
+          backgroundImage: `linear-gradient(180deg, rgba(2,6,23,0.95) 0%, rgba(2,6,23,0.6) 50%, rgba(2,6,23,0.95) 100%), url(${forumsHorizon})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center bottom',
+          backgroundRepeat: 'no-repeat',
+        }}
+      >
         <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-neon-cyan/20 to-transparent" />
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-16">
