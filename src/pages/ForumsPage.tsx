@@ -98,6 +98,10 @@ const ForumsPage: React.FC = () => {
           />
           <div className="absolute inset-0 bg-gradient-to-r from-cyber-bg/80 via-cyber-bg/20 to-transparent" />
           <div className="absolute inset-0 bg-gradient-to-t from-cyber-bg/60 via-transparent to-transparent" />
+          <div
+            aria-hidden="true"
+            className="absolute bottom-0 left-0 right-0 h-40 pointer-events-none mix-blend-overlay bg-gradient-to-t from-cyber-bg/80 via-cyber-bg/20 to-transparent"
+          />
         </div>
         
         <div className="relative z-10 h-full flex flex-col justify-center p-12 md:p-20 max-w-4xl">
