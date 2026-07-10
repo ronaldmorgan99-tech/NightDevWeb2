@@ -4,8 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import { isStudioDiscoverableFlag } from '../lib/studioRouting';
 import { useMessaging } from '../context/MessagingContext';
 import NotificationDropdown from '../components/NotificationDropdown';
-import ForumsHorizonBanner from '../components/ForumsHorizonBanner';
 import NavBarGlowCanvas from '../components/NavBarGlowCanvas';
+import forumsHorizon from '../assets/forums-horizon.png';
 import { useQuery } from '@tanstack/react-query';
 import { 
   LayoutDashboard, 
@@ -717,7 +717,7 @@ const MainLayout: React.FC = () => {
         </div>
       </div>
 
-      {isForumsLandingPage && <ForumsHorizonBanner />}
+      {/* Remove separate banner; use forums horizon image as footer background instead */}
 
       {/* Footer */}
       <footer className={`border-t border-neon-cyan/10 bg-cyber-bg py-20 relative overflow-hidden z-10 ${isForumsLandingPage ? 'mt-0' : 'mt-32'}`}>
