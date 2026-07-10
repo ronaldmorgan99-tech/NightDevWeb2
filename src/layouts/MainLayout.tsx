@@ -5,6 +5,7 @@ import { isStudioDiscoverableFlag } from '../lib/studioRouting';
 import { useMessaging } from '../context/MessagingContext';
 import NotificationDropdown from '../components/NotificationDropdown';
 import ForumsHorizonBanner from '../components/ForumsHorizonBanner';
+import NavBarGlowCanvas from '../components/NavBarGlowCanvas';
 import { useQuery } from '@tanstack/react-query';
 import { 
   LayoutDashboard, 
@@ -139,7 +140,6 @@ const MainLayout: React.FC = () => {
       return [];
     }
   });
-  const cardRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -161,31 +161,6 @@ const MainLayout: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!cardRef.current) return;
-    const card = cardRef.current;
-    const rect = card.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const centerX = rect.width / 2;
-    const centerY = rect.height / 2;
-    const rotateX = (centerY - y) / 5;
-    const rotateY = (x - centerX) / 5;
-
-    card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.02, 1.02, 1.02)`;
-  };
-
-  const handleMouseLeave = () => {
-    if (!cardRef.current) return;
-    cardRef.current.style.transform = `perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)`;
-    cardRef.current.style.transition = 'all 0.5s ease';
-  };
-
-  const handleMouseEnter = () => {
-    if (!cardRef.current) return;
-    cardRef.current.style.transition = 'none';
-  };
 
   const discordLink = "https://discord.gg/3axtkUBN";
   const youtubeSearchLink = "https://www.youtube.com/results?search_query=NightRespawn";
@@ -382,17 +357,11 @@ const MainLayout: React.FC = () => {
       <div className="scanline" />
       
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-cyber-bg/70 backdrop-blur-2xl border-b border-white/5 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.8)]">
+      <header className="sticky top-0 z-50 relative bg-cyber-bg/70 backdrop-blur-2xl border-b border-white/5 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.8)]">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
-            <div className="perspective-[1000px]">
-              <div 
-                ref={cardRef}
-                onMouseMove={handleMouseMove}
-                onMouseEnter={handleMouseEnter}
-                onMouseLeave={handleMouseLeave}
-                className="bg-cyber-dark/40 p-3 pr-8 pl-6 rounded-sm relative group transition-all duration-300 cursor-pointer hover:shadow-[0_0_20px_rgba(0,243,255,0.1)] border-t border-l border-neon-cyan/30 border-b border-r border-neon-magenta/30"
-              >
+            <div>
+              <div className="bg-cyber-dark/40 p-3 pr-8 pl-6 rounded-sm relative group transition-all duration-300 cursor-pointer hover:shadow-[0_0_20px_rgba(0,243,255,0.1)] border-t border-l border-neon-cyan/30 border-b border-r border-neon-magenta/30">
                 {/* Decorative Corners */}
                 <div className="absolute -top-[1px] -left-[1px] w-3 h-3 border-t-2 border-l-2 border-neon-cyan z-20" />
                 <div className="absolute -top-[1px] -right-[1px] w-3 h-3 border-t-2 border-r-2 border-neon-cyan z-20" />
@@ -639,8 +608,12 @@ const MainLayout: React.FC = () => {
         </AnimatePresence>
       </header>
 
+      <div className="pointer-events-none w-full z-0">
+        <NavBarGlowCanvas />
+      </div>
+
       {/* Main Layout Grid */}
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 pt-16 pb-12">
+      <div className="relative z-20 max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 -mt-24 pt-10 pb-12">
         <div className="grid grid-cols-12 gap-8">
           {/* Left Sidebar - Server Browser */}
           <aside className="hidden xl:block col-span-3 space-y-6 relative z-10">

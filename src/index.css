@@ -40,28 +40,20 @@
     min-height: 100vh;
     overflow-x: clip;
     overflow-y: auto;
-    background-color: #080815; /* Slightly lighter base to keep the scene brighter */
+    background-color: #080815;
     background-image:
-      /* Primary Grid — barely-there structural lines */
-      linear-gradient(rgba(0, 243, 255, 0.035) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0, 243, 255, 0.035) 1px, transparent 1px),
-      /* Secondary Finer Grid */
-      linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-      /* Ambient depth glows — calmer and slightly brighter */
-      radial-gradient(circle at 50% -10%, rgba(188, 19, 254, 0.18) 0%, transparent 55%),
-      radial-gradient(circle at 100% 100%, rgba(0, 243, 255, 0.11) 0%, transparent 55%),
-      radial-gradient(circle at 0% 80%, rgba(255, 0, 255, 0.08) 0%, transparent 50%);
-    background-size: 64px 64px, 64px 64px, 16px 16px, 16px 16px, 100% 100%, 100% 100%, 100% 100%;
-    background-attachment: fixed;
+      linear-gradient(rgba(0, 243, 255, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 243, 255, 0.08) 1px, transparent 1px),
+      linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+      radial-gradient(circle at 50% -10%, rgba(188, 19, 254, 0.16) 0%, transparent 55%),
+      radial-gradient(circle at 100% 100%, rgba(0, 243, 255, 0.09) 0%, transparent 55%),
+      radial-gradient(circle at 0% 80%, rgba(255, 0, 255, 0.06) 0%, transparent 50%);
+    background-size: 120px 120px, 120px 120px, 24px 24px, 24px 24px, 100% 100%, 100% 100%, 100% 100%;
+    background-position: 0 0, 0 0, 0 0, 0 0, center top, center bottom, left center;
+    background-attachment: scroll;
     cursor: none;
     position: relative;
-    animation: background-pulse calc(28s * var(--theme-intensity)) ease-in-out infinite alternate;
-  }
-
-  @keyframes background-pulse {
-    0% { background-position: 0px 0px, 0px 0px, 0px 0px, 0px 0px, center top, center bottom, left center; }
-    100% { background-position: 0px 0px, 0px 0px, 0px 0px, 0px 0px, 52% top, center bottom, left center; }
   }
 
   body::before {
@@ -76,25 +68,6 @@
     pointer-events: none;
     z-index: -1;
     filter: contrast(105%) brightness(105%);
-  }
-
-  body::after {
-    content: "";
-    position: fixed;
-    inset: 0;
-    background:
-      /* Subtle central vignette to add depth and focus content */
-      radial-gradient(circle at center, transparent 55%, rgba(0, 0, 0, 0.42) 100%),
-      /* Faint holographic sheen — static, no hue cycling */
-      linear-gradient(135deg, rgba(188, 19, 254, 0.06) 0%, transparent 35%, rgba(0, 243, 255, 0.06) 100%);
-    pointer-events: none;
-    z-index: -1;
-    animation: atmospheric-drift calc(24s * var(--theme-intensity)) ease-in-out infinite alternate;
-  }
-
-  @keyframes atmospheric-drift {
-    0% { transform: translate(-2%, -2%) scale(1); opacity: 0.85; }
-    100% { transform: translate(2%, 2%) scale(1.04); opacity: 1; }
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -468,17 +441,18 @@
 /* Custom Cursor */
 .custom-cursor {
   position: fixed;
-  width: 24px;
-  height: 24px;
-  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none"><path d="M6 6L26 13.5L16.5 16.5L6 6Z" fill="white"/><path d="M6 6L16.5 16.5L13.5 26L6 6Z" fill="white"/><path d="M6 6L26 13.5L16.5 16.5L13.5 26L6 6Z" stroke="%2300ffff" stroke-width="1.5" stroke-linejoin="round"/></svg>');
+  width: 20px;
+  height: 20px;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M4 4L16 11.5L9.5 12.5L4 4Z" fill="white"/><path d="M4 4L9.5 12.5L8 19L4 4Z" fill="white"/><path d="M4 4L16 11.5L9.5 12.5L8 19L4 4Z" stroke="%2300ffff" stroke-width="1.2" stroke-linejoin="round"/></svg>');
   background-size: contain;
   background-repeat: no-repeat;
   pointer-events: none;
   z-index: 9999;
+  will-change: transform;
 }
 
 .cursor-glow {
-  filter: drop-shadow(0 0 2px #00ffff) drop-shadow(0 0 5px #00ffff);
+  filter: drop-shadow(0 0 1px #00ffff) drop-shadow(0 0 3px #00ffff);
 }
 
 /* Custom Scrollbar */
