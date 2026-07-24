@@ -723,7 +723,7 @@ const MainLayout: React.FC = () => {
       <footer
         className={`border-t border-neon-cyan/10 py-20 relative overflow-hidden z-10 ${isForumsLandingPage ? 'mt-0' : 'mt-32'}`}
         style={{
-          backgroundImage: `linear-gradient(180deg, rgba(2,6,23,0.95) 0%, rgba(2,6,23,0.6) 50%, rgba(2,6,23,0.95) 100%), url(${forumsHorizon})`,
+          backgroundImage: `linear-gradient(180deg, rgba(2,6,23,0) 0%, rgba(2,6,23,0.12) 34%, rgba(2,6,23,0.58) 68%, rgba(2,6,23,0.95) 100%), linear-gradient(180deg, rgba(2,6,23,0.95) 0%, rgba(2,6,23,0.6) 50%, rgba(2,6,23,0.95) 100%), url(${forumsHorizon})`,
           backgroundSize: 'cover',
           backgroundPosition: 'center bottom',
           backgroundRepeat: 'no-repeat',
