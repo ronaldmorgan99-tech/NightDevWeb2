@@ -141,6 +141,7 @@ const MainLayout: React.FC = () => {
     }
   });
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [brandTransform, setBrandTransform] = useState('perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)');
 
   useEffect(() => {
     if (isSearchOpen && searchInputRef.current) {
@@ -166,6 +167,20 @@ const MainLayout: React.FC = () => {
   const youtubeSearchLink = "https://www.youtube.com/results?search_query=NightRespawn";
   const isStudioDiscoverable = isStudioDiscoverableFlag(import.meta.env.VITE_ENABLE_STUDIO);
   const isForumsLandingPage = location.pathname === '/';
+
+  const handleBrandMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const rotateY = ((event.clientX - centerX) / (rect.width / 2)) * 10;
+    const rotateX = -((event.clientY - centerY) / (rect.height / 2)) * 10;
+
+    setBrandTransform(`perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.02, 1.02, 1.02)`);
+  };
+
+  const handleBrandMouseLeave = () => {
+    setBrandTransform('perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)');
+  };
 
   const navItems = [
     { label: 'Forums', path: '/', icon: MessageSquare },
@@ -361,7 +376,12 @@ const MainLayout: React.FC = () => {
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
             <div>
-              <div className="bg-cyber-dark/40 p-3 pr-8 pl-6 rounded-sm relative group transition-all duration-300 cursor-pointer hover:shadow-[0_0_20px_rgba(0,243,255,0.1)] border-t border-l border-neon-cyan/30 border-b border-r border-neon-magenta/30">
+              <div
+                className="bg-cyber-dark/40 p-3 pr-8 pl-6 rounded-sm relative group transition-all duration-300 cursor-pointer hover:shadow-[0_0_20px_rgba(0,243,255,0.1)] border-t border-l border-neon-cyan/30 border-b border-r border-neon-magenta/30"
+                onMouseMove={handleBrandMouseMove}
+                onMouseLeave={handleBrandMouseLeave}
+                style={{ transition: 'transform 0.15s ease-out, box-shadow 0.3s ease', transform: brandTransform }}
+              >
                 {/* Decorative Corners */}
                 <div className="absolute -top-[1px] -left-[1px] w-3 h-3 border-t-2 border-l-2 border-neon-cyan z-20" />
                 <div className="absolute -top-[1px] -right-[1px] w-3 h-3 border-t-2 border-r-2 border-neon-cyan z-20" />
