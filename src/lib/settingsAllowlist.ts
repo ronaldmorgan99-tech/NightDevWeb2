@@ -1,4 +1,4 @@
-export const PUBLIC_SETTINGS_ALLOWLIST = ['site_name', 'theme_colors', 'feature_flags'] as const;
+export const PUBLIC_SETTINGS_ALLOWLIST = ['site_name', 'theme_colors', 'feature_flags', 'primary_accent_color'] as const;
 
 export const isPublicSetting = (key: string): key is typeof PUBLIC_SETTINGS_ALLOWLIST[number] =>
   (PUBLIC_SETTINGS_ALLOWLIST as readonly string[]).includes(key);
