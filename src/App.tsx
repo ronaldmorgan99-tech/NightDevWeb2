@@ -1,4 +1,26 @@
 /**
+ * Repository Files:
+ * - src/App.tsx
+ * - src/main.tsx
+ * - src/index.css
+ * - src/context/AuthContext.tsx
+ * - src/context/MessagingContext.tsx
+ * - src/layouts/MainLayout.tsx
+ * - src/layouts/AdminLayout.tsx
+ * - src/lib/api.ts
+ * - src/lib/studioRouting.ts
+ * - src/pages/ForumsPage.tsx
+ * - src/pages/ForumViewPage.tsx
+ * - src/pages/ThreadViewPage.tsx
+ * - src/pages/ProfilePage.tsx
+ * - src/pages/LoginPage.tsx
+ * - src/pages/RegisterPage.tsx
+ * - src/pages/VeoStudioPage.tsx
+ * - src/pages/admin/AdminDashboard.tsx
+ * - package.json
+ * - vite.config.ts
+ * - tsconfig.json
+ *
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
