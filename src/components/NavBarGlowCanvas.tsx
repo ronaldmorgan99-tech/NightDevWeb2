@@ -101,17 +101,21 @@ const NavBarGlowCanvas: React.FC = () => {
           }
 
           state.columns[i] += state.speeds[i];
-          if (y > height + layer.fontSize * 2) {
+          if (y > height + layer.fontSize * 8) {
             state.columns[i] = Math.random() * -18;
           }
         }
       });
 
-      const fade = ctx.createLinearGradient(0, height * 0.55, 0, height);
+      const fade = ctx.createLinearGradient(0, height * 0.65, 0, height);
+
       fade.addColorStop(0, 'rgba(5, 10, 18, 0)');
-      fade.addColorStop(1, 'rgba(5, 10, 18, 0.8)');
+      fade.addColorStop(0.55, 'rgba(5, 10, 18, 0.08)');
+      fade.addColorStop(0.82, 'rgba(5, 10, 18, 0.28)');
+      fade.addColorStop(1, 'rgba(5, 10, 18, 0.48)');
+
       ctx.fillStyle = fade;
-      ctx.fillRect(0, height * 0.55, width, height * 0.45);
+      ctx.fillRect(0, height * 0.65, width, height * 0.35);
 
       frame += 1;
       animationRef.current = requestAnimationFrame(draw);
@@ -136,7 +140,7 @@ const NavBarGlowCanvas: React.FC = () => {
   return (
     <canvas
       ref={canvasRef}
-      className="pointer-events-none block w-full h-28 opacity-90"
+      className="pointer-events-none block w-full h-36 opacity-80"
       style={{ display: 'block' }}
       aria-hidden="true"
     />
