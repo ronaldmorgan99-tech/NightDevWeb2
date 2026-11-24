@@ -19,6 +19,10 @@ type ServerNode = {
 function unturnedJoinUrl(address: string, status: string): string | null {
   if (status !== 'online' || typeof address !== 'string') return null;
   const endpoint = address.trim();
+  // A relay server code is a Steam game-server ID. Keep its full precision.
+  if (/^\d{17}$/.test(endpoint)) {
+    return `steam://run/304930//+connect%20${endpoint}/`;
+  }
   const parts = /^(\[[0-9a-f:.]+\]|[a-z0-9.-]+):(\d{1,5})$/i.exec(endpoint);
   if (!parts || Number(parts[2]) < 1 || Number(parts[2]) > 65535) return null;
   try {
