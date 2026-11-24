@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 type ServerNode = {
-  id: number;
+  id: number | string;
   name: string;
   ip: string;
   players_current: number;
@@ -14,6 +14,8 @@ type ServerNode = {
   status: 'online' | 'offline';
   region: string;
   game: string;
+  version?: string;
+  internal_address?: string;
 };
 
 function unturnedJoinUrl(address: string, status: string): string | null {
@@ -41,7 +43,9 @@ const ServerCard: React.FC<{
   status: 'online' | 'offline';
   color: string;
   game: string;
-}> = ({ name, ip, players, map, status, color, game }) => {
+  version?: string;
+  internalAddress?: string;
+}> = ({ name, ip, players, map, status, color, game, version, internalAddress }) => {
   const [copied, setCopied] = useState(false);
   const isUnturned = /\bunturned\b/i.test(game);
   const joinUrl = isUnturned ? unturnedJoinUrl(ip, status) : null;
@@ -67,7 +71,7 @@ const ServerCard: React.FC<{
             <div className={`w-3 h-3 rounded-full animate-pulse ${status === 'online' ? 'bg-neon-green shadow-[0_0_10px_#39ff14]' : 'bg-red-500'}`} />
             <div>
               <h3 className="text-lg font-black text-white italic tracking-tighter uppercase leading-none">{name}</h3>
-              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mt-1">{game}</p>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mt-1">{version ? `${game} ${version}` : game}</p>
             </div>
           </div>
           <div className="text-right">
@@ -75,6 +79,12 @@ const ServerCard: React.FC<{
             <span className="text-[8px] text-zinc-600 uppercase tracking-widest">{map}</span>
           </div>
         </div>
+
+        {isUnturned && internalAddress && (
+          <p className="mb-4 text-[10px] text-zinc-500 uppercase tracking-widest">
+            Internal address: <code className="font-mono normal-case text-zinc-400">{internalAddress}</code>
+          </p>
+        )}
 
         {isUnturned ? (
           joinUrl ? (
@@ -191,6 +201,8 @@ export default function ServersPage() {
               status={server.status}
               color="neon-cyan"
               game={server.game}
+              version={server.version}
+              internalAddress={server.internal_address}
             />
           ))}
         </div>

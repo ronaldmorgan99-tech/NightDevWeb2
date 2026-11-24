@@ -21,6 +21,7 @@ import {
 } from '../src/lib/payments.js';
 import { isPublicSetting } from '../src/lib/settingsAllowlist.js';
 import { sanitizeUserText } from '../src/lib/sanitize.js';
+import { getConfiguredServers } from '../src/lib/configuredServers.js';
 
 const app = express();
 app.use(express.json({
@@ -1705,12 +1706,15 @@ const serversHandler = async (_req: Request, res: Response) => {
       FROM server_nodes
       ORDER BY created_at DESC
     `);
-    return res.json(servers.map((server: any) => ({
-      ...server,
-      players_current: Number(server.players_current) || 0,
-      players: Number(server.players_current) || 0,
-      status: server.status === 'online' ? 'online' : 'offline'
-    })));
+    return res.json([
+      ...getConfiguredServers(),
+      ...servers.map((server: any) => ({
+        ...server,
+        players_current: Number(server.players_current) || 0,
+        players: Number(server.players_current) || 0,
+        status: server.status === 'online' ? 'online' : 'offline'
+      }))
+    ]);
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to load servers' });
   }
