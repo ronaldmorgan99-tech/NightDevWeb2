@@ -496,3 +496,17 @@
 a, button, input, select, textarea, label, [role="button"], .cursor-pointer {
   cursor: none !important;
 }
+
+/* Code matrix strip under the nav bar (NavBarGlowCanvas, rendered in MainLayout).
+   Softened with a light blur and masked so the characters dissolve toward the
+   strip's own bottom edge instead of ending in a hard line. */
+.code-matrix-strip {
+  opacity: 0.7;
+  filter: blur(1.25px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 30%, rgba(0, 0, 0, 0.55) 60%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 30%, rgba(0, 0, 0, 0.55) 60%, transparent 100%);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
