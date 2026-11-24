@@ -628,7 +628,8 @@ const MainLayout: React.FC = () => {
         </AnimatePresence>
       </header>
 
-      <div className="pointer-events-none w-full z-0">
+      {/* Global code-matrix strip: rendered once here so it shows under the nav on every page. */}
+      <div className="pointer-events-none relative z-0 w-full select-none" aria-hidden="true">
         <NavBarGlowCanvas />
       </div>
 
