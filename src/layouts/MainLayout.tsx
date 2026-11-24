@@ -372,7 +372,7 @@ const MainLayout: React.FC = () => {
       <div className="scanline" />
       
       {/* Header */}
-      <header className="sticky top-0 z-50 relative bg-cyber-bg/70 backdrop-blur-2xl border-b border-white/5 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.8)]">
+      <header className="sticky top-0 z-[110] relative isolate bg-cyber-bg/70 backdrop-blur-2xl border-b border-white/5 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.8)]">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
             <div>
@@ -581,11 +581,27 @@ const MainLayout: React.FC = () => {
                   </AnimatePresence>
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <Link to="/login" className="btn-holographic px-4 py-2 text-[10px]">
+                <div className="relative z-[120] pointer-events-auto flex items-center gap-2">
+                  <Link
+                    to="/login"
+                    className="btn-holographic px-4 py-2 text-[10px]"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setIsMobileMenuOpen(false);
+                      navigate('/login');
+                    }}
+                  >
                     Sign In
                   </Link>
-                  <Link to="/register" className="btn-neon-cyan px-4 py-2 text-[10px]">
+                  <Link
+                    to="/register"
+                    className="btn-neon-cyan px-4 py-2 text-[10px]"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setIsMobileMenuOpen(false);
+                      navigate('/register');
+                    }}
+                  >
                     <span className="glitch-text" data-text="Join Now">Join Now</span>
                   </Link>
                 </div>

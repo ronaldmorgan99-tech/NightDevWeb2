@@ -22,6 +22,7 @@ import {
 import { isPublicSetting } from '../src/lib/settingsAllowlist.js';
 import { sanitizeUserText } from '../src/lib/sanitize.js';
 import { getConfiguredServers } from '../src/lib/configuredServers.js';
+import { createSteamAuthHandlers } from '../src/lib/steamAuth.js';
 
 const app = express();
 app.use(express.json({
@@ -523,7 +524,7 @@ const authSessionRateLimit = createRateLimit(
   'Too many authentication requests. Please slow down.'
 );
 app.use(['/api/auth/login', '/auth/login', '/api/auth/register', '/auth/register'], strictCredentialRateLimit);
-app.use(['/api/auth/me', '/auth/me', '/api/auth/logout', '/auth/logout'], authSessionRateLimit);
+app.use(['/api/auth/me', '/auth/me', '/api/auth/logout', '/auth/logout', '/api/auth/steam', '/auth/steam', '/api/auth/steam/callback', '/auth/steam/callback'], authSessionRateLimit);
 
 const registerHandler = async (req: Request, res: Response) => {
   if (!JWT_SECRET || JWT_SECRET.length < 32) {
@@ -575,6 +576,15 @@ const logoutHandler = (_req: Request, res: Response) => {
   return res.json({ message: 'Logged out' });
 };
 app.post(['/api/auth/logout', '/auth/logout'], logoutHandler);
+
+const steamAuth = createSteamAuthHandlers({
+  db,
+  jwtSecret: JWT_SECRET,
+  cookieName: AUTH_COOKIE_NAME,
+  cookieOptions: AUTH_COOKIE_OPTIONS
+});
+app.get(['/api/auth/steam', '/auth/steam'], steamAuth.start);
+app.get(['/api/auth/steam/callback', '/auth/steam/callback'], steamAuth.callback);
 
 const csrfTokenHandler = (req: Request, res: Response) => {
   const csrfToken = (req as Request & { csrfToken?: () => string }).csrfToken?.() || null;
