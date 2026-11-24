@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 type ServerNode = {
-  id: number;
+  id: number | string;
   name: string;
   ip: string;
   players_current: number;
@@ -14,7 +14,26 @@ type ServerNode = {
   status: 'online' | 'offline';
   region: string;
   game: string;
+  version?: string;
+  internal_address?: string;
 };
+
+function unturnedJoinUrl(address: string, status: string): string | null {
+  if (status !== 'online' || typeof address !== 'string') return null;
+  const endpoint = address.trim();
+  // A relay server code is a Steam game-server ID. Keep its full precision.
+  if (/^\d{17}$/.test(endpoint)) {
+    return `steam://run/304930//+connect%20${endpoint}/`;
+  }
+  const parts = /^(\[[0-9a-f:.]+\]|[a-z0-9.-]+):(\d{1,5})$/i.exec(endpoint);
+  if (!parts || Number(parts[2]) < 1 || Number(parts[2]) > 65535) return null;
+  try {
+    const { hostname } = new URL(`http://${endpoint}`);
+    return `steam://connect/${hostname}:${Number(parts[2])}`;
+  } catch {
+    return null;
+  }
+}
 
 const ServerCard: React.FC<{
   name: string;
@@ -24,8 +43,12 @@ const ServerCard: React.FC<{
   status: 'online' | 'offline';
   color: string;
   game: string;
-}> = ({ name, ip, players, map, status, color, game }) => {
+  version?: string;
+  internalAddress?: string;
+}> = ({ name, ip, players, map, status, color, game, version, internalAddress }) => {
   const [copied, setCopied] = useState(false);
+  const isUnturned = /\bunturned\b/i.test(game);
+  const joinUrl = isUnturned ? unturnedJoinUrl(ip, status) : null;
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(ip);
@@ -48,7 +71,7 @@ const ServerCard: React.FC<{
             <div className={`w-3 h-3 rounded-full animate-pulse ${status === 'online' ? 'bg-neon-green shadow-[0_0_10px_#39ff14]' : 'bg-red-500'}`} />
             <div>
               <h3 className="text-lg font-black text-white italic tracking-tighter uppercase leading-none">{name}</h3>
-              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mt-1">{game}</p>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mt-1">{version ? `${game} ${version}` : game}</p>
             </div>
           </div>
           <div className="text-right">
@@ -57,34 +80,55 @@ const ServerCard: React.FC<{
           </div>
         </div>
 
-        <div className="flex items-center gap-2 p-3 bg-cyber-black/60 border border-white/5 rounded-xl mb-6 group/ip">
-          <code className="flex-1 text-xs font-mono text-zinc-400 group-hover/ip:text-white transition-colors truncate">
-            {ip}
-          </code>
-          <button
-            onClick={copyToClipboard}
-            className="p-2 text-zinc-500 hover:text-neon-cyan transition-colors relative"
-          >
-            {copied ? <Check className="w-4 h-4 text-neon-green" /> : <Copy className="w-4 h-4" />}
-            {copied && (
-              <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-neon-green text-black text-[8px] font-black rounded uppercase">Copied</span>
-            )}
-          </button>
-        </div>
+        {isUnturned && internalAddress && (
+          <p className="mb-4 text-[10px] text-zinc-500 uppercase tracking-widest">
+            Internal address: <code className="font-mono normal-case text-zinc-400">{internalAddress}</code>
+          </p>
+        )}
 
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            className="btn-neon-cyan py-2.5 text-[10px] flex items-center justify-center gap-2"
-            onClick={() => window.open(`steam://connect/${ip}`, '_blank')}
-          >
-            <Zap className="w-3 h-3" />
-            DIRECT CONNECT
-          </button>
-          <button className="btn-holographic py-2.5 text-[10px] flex items-center justify-center gap-2">
-            <Users className="w-3 h-3" />
-            VIEW STATS
-          </button>
-        </div>
+        {isUnturned ? (
+          joinUrl ? (
+            <a href={joinUrl} className="btn-neon-cyan py-2.5 text-[10px] flex items-center justify-center gap-2">
+              <Zap className="w-3 h-3" />
+              Join with Steam
+            </a>
+          ) : (
+            <p role="status" className="py-2.5 text-center text-xs text-zinc-400">
+              {status === 'offline' ? 'Server offline' : 'Waiting for server connection details'}
+            </p>
+          )
+        ) : (
+          <>
+            <div className="flex items-center gap-2 p-3 bg-cyber-black/60 border border-white/5 rounded-xl mb-6 group/ip">
+              <code className="flex-1 text-xs font-mono text-zinc-400 group-hover/ip:text-white transition-colors truncate">
+                {ip}
+              </code>
+              <button
+                onClick={copyToClipboard}
+                className="p-2 text-zinc-500 hover:text-neon-cyan transition-colors relative"
+              >
+                {copied ? <Check className="w-4 h-4 text-neon-green" /> : <Copy className="w-4 h-4" />}
+                {copied && (
+                  <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-neon-green text-black text-[8px] font-black rounded uppercase">Copied</span>
+                )}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                className="btn-neon-cyan py-2.5 text-[10px] flex items-center justify-center gap-2"
+                onClick={() => window.open(`steam://connect/${ip}`, '_blank')}
+              >
+                <Zap className="w-3 h-3" />
+                DIRECT CONNECT
+              </button>
+              <button className="btn-holographic py-2.5 text-[10px] flex items-center justify-center gap-2">
+                <Users className="w-3 h-3" />
+                VIEW STATS
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </motion.div>
   );
@@ -157,6 +201,8 @@ export default function ServersPage() {
               status={server.status}
               color="neon-cyan"
               game={server.game}
+              version={server.version}
+              internalAddress={server.internal_address}
             />
           ))}
         </div>
@@ -181,14 +227,14 @@ export default function ServersPage() {
                 <div className="w-8 h-8 rounded-lg bg-cyber-black border border-neon-cyan/30 flex items-center justify-center text-neon-cyan font-mono text-xs shrink-0">01</div>
                 <div>
                   <h4 className="text-xs font-black text-white uppercase tracking-widest mb-1">Direct Connect</h4>
-                  <p className="text-[10px] text-zinc-500 leading-relaxed">Copy the IP address from any server card and use the in-game console or "Direct Connect" menu to join instantly.</p>
+                  <p className="text-[10px] text-zinc-500 leading-relaxed">Choose the join button on an available server to open it in your game client.</p>
                 </div>
               </div>
               <div className="flex gap-4">
                 <div className="w-8 h-8 rounded-lg bg-cyber-black border border-neon-magenta/30 flex items-center justify-center text-neon-magenta font-mono text-xs shrink-0">02</div>
                 <div>
-                  <h4 className="text-xs font-black text-white uppercase tracking-widest mb-1">Steam Browser</h4>
-                  <p className="text-[10px] text-zinc-500 leading-relaxed">Add our IPs to your Steam Favorites (View {'>'} Servers {'>'} Favorites) to see live status directly in your Steam client.</p>
+                  <h4 className="text-xs font-black text-white uppercase tracking-widest mb-1">Live Status</h4>
+                  <p className="text-[10px] text-zinc-500 leading-relaxed">The server list refreshes automatically.</p>
                 </div>
               </div>
               <div className="flex gap-4">

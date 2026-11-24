@@ -27,6 +27,7 @@ import {
   verifyStripeWebhookSignature
 } from './src/lib/payments';
 import { sanitizeUserText } from './src/lib/sanitize';
+import { getConfiguredServers } from './src/lib/configuredServers';
 import dotenv from 'dotenv';
 
 // Load environment variables
@@ -1412,7 +1413,7 @@ async function start() {
         players: Number(server.players_current) || 0,
         status: server.status === 'online' ? 'online' : 'offline'
       }));
-      res.json(normalized);
+      res.json([...getConfiguredServers(), ...normalized]);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
