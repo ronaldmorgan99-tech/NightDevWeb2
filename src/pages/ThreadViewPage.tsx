@@ -1,22 +1,16 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link, useParams, useNavigate } from 'react-router';
+import { Link, useParams, useNavigate, useLocation } from 'react-router';
 import { 
-  MessageSquare, 
   Clock, 
-  User, 
   ChevronRight, 
   Reply, 
-  MoreVertical, 
-  Flag, 
-  Share2,
   ShieldCheck,
   Award,
   Pin,
   Lock,
   Unlock,
   CheckCircle,
-  Edit2,
   Save,
   X,
   EyeOff,
@@ -30,8 +24,10 @@ import { apiJson } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import ReportModal from '../components/ReportModal';
 import ConfirmationModal from '../components/ConfirmationModal';
+import PostOverflowMenu from '../components/PostOverflowMenu';
 import { AuthorLink, UserAvatar, profilePath } from '../components/UserAvatar';
 import { formatDbDate, formatDbDateTime, isRecentlyActive, parseDbDate } from '../lib/dates';
+import { buildQuotedReply, parsePostIdFromUrl, postAnchorId } from '../lib/postMenu';
 
 interface Post {
   id: number;
@@ -71,12 +67,15 @@ interface ThreadData {
 const ThreadViewPage: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [replyContent, setReplyContent] = useState('');
   const [editingPostId, setEditingPostId] = useState<number | null>(null);
   const [editContent, setEditContent] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [openMenuPostId, setOpenMenuPostId] = useState<number | null>(null);
+  const replyBoxRef = useRef<HTMLTextAreaElement>(null);
   
   const [confirmDelete, setConfirmDelete] = useState<{
     isOpen: boolean;
@@ -165,6 +164,25 @@ const ThreadViewPage: React.FC = () => {
       setErrorMessage(error.message);
     }
   });
+
+  useEffect(() => {
+    if (!data?.posts?.length) return;
+    const href = typeof window !== 'undefined' ? window.location.href : `${location.pathname}${location.search}${location.hash}`;
+    const postId = parsePostIdFromUrl(href) ?? parsePostIdFromUrl(`${location.pathname}${location.search}${location.hash}`);
+    if (!postId) return;
+    const el = document.getElementById(postAnchorId(postId));
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [data, location.pathname, location.search, location.hash]);
+
+  const handleQuote = (post: Post) => {
+    setReplyContent((prev) => buildQuotedReply(post.author_name, post.content, prev));
+    setOpenMenuPostId(null);
+    window.requestAnimationFrame(() => {
+      replyBoxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      replyBoxRef.current?.focus();
+    });
+  };
 
   if (isLoading) return <div className="animate-pulse space-y-4"><div className="h-12 w-64 bg-white/5 rounded-lg" /><div className="h-96 bg-white/5 rounded-2xl" /></div>;
   if (!data?.thread) {
@@ -279,10 +297,11 @@ const ThreadViewPage: React.FC = () => {
         {data.posts.map((post, idx) => (
           <motion.div
             key={post.id}
+            id={postAnchorId(post.id)}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.1 }}
-            className="flex flex-col md:flex-row gap-px bg-white/5 border border-white/5 rounded-3xl overflow-hidden group"
+            className="flex flex-col md:flex-row gap-px bg-white/5 border border-white/5 rounded-3xl overflow-hidden group scroll-mt-24"
           >
             {/* Author Sidebar */}
             <div className="w-full md:w-64 bg-cyber-dark p-8 flex flex-col items-center text-center border-b md:border-b-0 md:border-r border-white/5 relative">
@@ -355,53 +374,24 @@ const ThreadViewPage: React.FC = () => {
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-4">
-                  {isStaff && (
-                    <div className="flex items-center gap-4">
-                      <button 
-                        onClick={() => editMutation.mutate({ postId: post.id, is_hidden: post.is_hidden ? 0 : 1 })}
-                        className="hover:text-orange-400 transition-colors flex items-center gap-1"
-                        title={post.is_hidden ? 'Unhide Post' : 'Hide Post'}
-                      >
-                        {post.is_hidden ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                        {post.is_hidden ? 'Unhide' : 'Hide'}
-                      </button>
-                      <button 
-                        onClick={() => {
-                          setConfirmDelete({ isOpen: true, type: 'post', id: post.id });
-                        }}
-                        className="hover:text-red-500 transition-colors flex items-center gap-1"
-                        title="Delete Post"
-                      >
-                        <Trash2 className="w-3 h-3" /> Delete
-                      </button>
-                    </div>
-                  )}
-                  {!post.is_hidden_placeholder && (
-                    <>
-                      {(user?.id === post.author_id || isStaff) && (
-                        <button 
-                          onClick={() => {
-                            setEditingPostId(post.id);
-                            setEditContent(post.content);
-                          }}
-                          className="hover:text-white transition-colors flex items-center gap-1"
-                        >
-                          <Edit2 className="w-3 h-3" /> Edit
-                        </button>
-                      )}
-                      <button 
-                        onClick={() => setReportModal({ isOpen: true, targetType: 'post', targetId: post.id })}
-                        className="hover:text-red-400 transition-colors flex items-center gap-1"
-                      >
-                        <Flag className="w-3 h-3" /> Report
-                      </button>
-                    </>
-                  )}
-                  <button className="hover:text-white transition-colors">
-                    <MoreVertical className="w-4 h-4" />
-                  </button>
-                </div>
+                <PostOverflowMenu
+                  postId={post.id}
+                  threadLocked={data.thread.is_locked === 1}
+                  isHidden={post.is_hidden === 1}
+                  isHiddenPlaceholder={Boolean(post.is_hidden_placeholder)}
+                  postAuthorId={post.author_id}
+                  viewer={user ? { id: user.id, role: user.role } : null}
+                  isOpen={openMenuPostId === post.id}
+                  onOpenChange={(open) => setOpenMenuPostId(open ? post.id : null)}
+                  onEdit={() => {
+                    setEditingPostId(post.id);
+                    setEditContent(post.content);
+                  }}
+                  onHide={() => editMutation.mutate({ postId: post.id, is_hidden: post.is_hidden ? 0 : 1 })}
+                  onDelete={() => setConfirmDelete({ isOpen: true, type: 'post', id: post.id })}
+                  onReport={() => setReportModal({ isOpen: true, targetType: 'post', targetId: post.id })}
+                  onQuote={() => handleQuote(post)}
+                />
               </div>
               
               <div className="p-6 flex-1 text-zinc-300 leading-relaxed whitespace-pre-wrap">
@@ -463,6 +453,8 @@ const ThreadViewPage: React.FC = () => {
               Initialize Transmission
             </div>
             <textarea
+              ref={replyBoxRef}
+              id="thread-reply"
               value={replyContent}
               onChange={(e) => setReplyContent(e.target.value)}
               placeholder="Enter data for broadcast..."
