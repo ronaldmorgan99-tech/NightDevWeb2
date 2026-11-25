@@ -21,8 +21,13 @@ import {
   resolveSteamApiKey,
   upsertSteamUser,
   isSteamPlaceholderUsername,
+  createSteamAuthHandlers,
+  buildSteamCallbackLandingHtml,
   STEAM_OPENID_NS,
-  STEAM_IDENTIFIER_SELECT
+  STEAM_IDENTIFIER_SELECT,
+  STEAM_AUTH_SUCCESS_REDIRECT,
+  STEAM_AUTH_ERROR_REDIRECT,
+  STEAM_STATE_COOKIE
 } from '../src/lib/steamAuth.ts';
 import { getUserAvatarInitial, getUserDisplayName } from '../src/lib/userDisplay.ts';
 
@@ -440,4 +445,163 @@ test('upsertSteamUser keeps the steam_ placeholder username if the persona slug 
   });
   assert.equal(updated.username, `steam_${steamId}`);
   assert.equal(updated.display_name, '---.GeforceNow Cloud Gamin');
+});
+
+test('buildSteamCallbackLandingHtml uses location.replace for the allowed landing paths only', () => {
+  const success = buildSteamCallbackLandingHtml(STEAM_AUTH_SUCCESS_REDIRECT);
+  assert.match(success, /location\.replace\("\/#\/"\)/);
+  assert.match(success, /href="\/#\/"/);
+  assert.match(success, /http-equiv="refresh"/i);
+  assert.equal(success.includes('location.replace("/#/login'), false);
+
+  const failure = buildSteamCallbackLandingHtml(STEAM_AUTH_ERROR_REDIRECT);
+  assert.match(failure, /location\.replace\("\/#\/login\?error=steam_auth_failed"\)/);
+  assert.match(failure, /href="\/#\/login\?error=steam_auth_failed"/);
+  assert.throws(() => buildSteamCallbackLandingHtml('https://evil.example/'));
+  assert.throws(() => buildSteamCallbackLandingHtml('/#/login?error=other'));
+});
+
+function createMockRes() {
+  const headers = new Map<string, string>();
+  const cookies: Record<string, { value: string, options?: any }> = {};
+  const res: any = {
+    statusCode: 200,
+    body: '',
+    headers,
+    cookies,
+    setHeader(name: string, value: string) {
+      headers.set(name.toLowerCase(), String(value));
+      return res;
+    },
+    getHeader(name: string) {
+      return headers.get(name.toLowerCase());
+    },
+    status(code: number) {
+      res.statusCode = code;
+      return res;
+    },
+    cookie(name: string, value: string, options?: any) {
+      cookies[name] = { value, options };
+      return res;
+    },
+    clearCookie(name: string) {
+      delete cookies[name];
+      return res;
+    },
+    redirect(statusOrUrl: number | string, url?: string) {
+      if (typeof statusOrUrl === 'number') {
+        res.statusCode = statusOrUrl;
+        headers.set('location', String(url));
+      } else {
+        res.statusCode = 302;
+        headers.set('location', String(statusOrUrl));
+      }
+      return res;
+    },
+    send(body: string) {
+      res.body = body;
+      if (!headers.has('content-type')) headers.set('content-type', 'text/html; charset=utf-8');
+      return res;
+    },
+    json(body: unknown) {
+      res.body = JSON.stringify(body);
+      headers.set('content-type', 'application/json');
+      return res;
+    }
+  };
+  return res;
+}
+
+function steamCallbackSearch(overrides: Record<string, string> = {}) {
+  const params = validParams(overrides);
+  const search = new URLSearchParams(params);
+  search.set('state', state);
+  return `?${search.toString()}`;
+}
+
+test('Steam callback success returns 200 HTML with location.replace and sets the token cookie', async () => {
+  const previousSite = process.env.SITE_ORIGIN;
+  process.env.SITE_ORIGIN = origin;
+  const previousKey = process.env.STEAM_API_KEY;
+  process.env.STEAM_API_KEY = 'test-key';
+  try {
+    const steamAvatar = 'https://avatars.fastly.steamstatic.com/callback-test_full.jpg';
+    const db = createMemoryUsersDb();
+    const { callback } = createSteamAuthHandlers({
+      db,
+      jwtSecret: 'test-jwt-secret-which-is-32-chars!!',
+      cookieName: 'token',
+      cookieOptions: { httpOnly: true, path: '/', sameSite: 'lax' },
+      fetchImpl: (async (url: any) => {
+        const href = String(url);
+        if (href.includes('check_authentication') || href.includes('openid')) {
+          return new Response('ns:http://specs.openid.net/auth/2.0\nis_valid:true\n', { status: 200 });
+        }
+        return new Response(JSON.stringify({
+          response: {
+            players: [{ steamid: steamId, personaname: 'Pilot', avatarfull: steamAvatar }]
+          }
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }) as typeof fetch
+    });
+
+    const req: any = {
+      originalUrl: `/api/auth/steam/callback${steamCallbackSearch()}`,
+      url: `/api/auth/steam/callback${steamCallbackSearch()}`,
+      cookies: { [STEAM_STATE_COOKIE]: state },
+      headers: { host: 'night-dev-web2.vercel.app', 'x-forwarded-proto': 'https' },
+      protocol: 'https'
+    };
+    const res = createMockRes();
+    await callback(req, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.getHeader('location'), undefined);
+    assert.match(String(res.getHeader('content-type')), /text\/html/);
+    assert.match(String(res.getHeader('cache-control')), /no-store/);
+    assert.match(res.body, /location\.replace\("\/#\/"\)/);
+    assert.equal(res.body.includes('location.replace("/#/login'), false);
+    assert.ok(res.cookies.token?.value, 'expected the session token cookie to be set');
+  } finally {
+    if (previousSite === undefined) delete process.env.SITE_ORIGIN;
+    else process.env.SITE_ORIGIN = previousSite;
+    if (previousKey === undefined) delete process.env.STEAM_API_KEY;
+    else process.env.STEAM_API_KEY = previousKey;
+  }
+});
+
+test('Steam callback failure returns 200 HTML that replaces to the login error hash, not a 302', async () => {
+  const previousSite = process.env.SITE_ORIGIN;
+  process.env.SITE_ORIGIN = origin;
+  try {
+    const { callback } = createSteamAuthHandlers({
+      db: createMemoryUsersDb(),
+      jwtSecret: 'test-jwt-secret-which-is-32-chars!!',
+      cookieName: 'token',
+      cookieOptions: { httpOnly: true, path: '/', sameSite: 'lax' },
+      fetchImpl: (async () => {
+        throw new Error('should not contact Steam on a missing state cookie');
+      }) as typeof fetch
+    });
+
+    const req: any = {
+      originalUrl: `/api/auth/steam/callback${steamCallbackSearch()}`,
+      url: `/api/auth/steam/callback${steamCallbackSearch()}`,
+      cookies: {},
+      headers: { host: 'night-dev-web2.vercel.app', 'x-forwarded-proto': 'https' },
+      protocol: 'https'
+    };
+    const res = createMockRes();
+    await callback(req, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.getHeader('location'), undefined);
+    assert.match(String(res.getHeader('content-type')), /text\/html/);
+    assert.match(String(res.getHeader('cache-control')), /no-store/);
+    assert.match(res.body, /location\.replace\("\/#\/login\?error=steam_auth_failed"\)/);
+    assert.equal('token' in res.cookies, false);
+  } finally {
+    if (previousSite === undefined) delete process.env.SITE_ORIGIN;
+    else process.env.SITE_ORIGIN = previousSite;
+  }
 });

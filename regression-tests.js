@@ -344,12 +344,19 @@ async function verifySteamOpenIdLogin() {
       redirect: 'manual',
       headers: { Cookie: `steam_openid_state=${state}` }
     });
-    if (callbackRes.status !== 302) {
-      throw new Error(`Expected 302 from Steam callback, got ${callbackRes.status} ${await callbackRes.text()}`);
+    const callbackBody = await callbackRes.text();
+    if (callbackRes.status !== 200) {
+      throw new Error(`Expected 200 HTML from Steam callback, got ${callbackRes.status} ${callbackBody}`);
     }
-    const callbackLocation = callbackRes.headers.get('location') || '';
-    if (!callbackLocation.endsWith('/#/')) {
-      throw new Error(`Expected redirect back to /#/, got ${callbackLocation}`);
+    const callbackType = callbackRes.headers.get('content-type') || '';
+    if (!callbackType.includes('text/html')) {
+      throw new Error(`Expected text/html from Steam callback, got ${callbackType}`);
+    }
+    if (callbackRes.headers.get('location')) {
+      throw new Error(`Steam callback should not 302; got Location ${callbackRes.headers.get('location')}`);
+    }
+    if (!callbackBody.includes("location.replace('/#/')" ) && !callbackBody.includes('location.replace("/#/")')) {
+      throw new Error(`Expected location.replace('/#/') in Steam callback HTML, got ${callbackBody}`);
     }
     const token = firstSetCookie(callbackRes, 'token');
     if (!token) {
@@ -373,8 +380,15 @@ async function verifySteamOpenIdLogin() {
     invalid.searchParams.set('openid.mode', 'id_res');
     invalid.searchParams.set('openid.claimed_id', 'https://evil.example/openid/id/76561198000000000');
     const invalidRes = await fetch(invalid, { redirect: 'manual' });
-    if (invalidRes.status !== 302 || !(invalidRes.headers.get('location') || '').includes('/#/login?error=steam_auth_failed')) {
-      throw new Error(`Expected failed Steam callback to return to login, got ${invalidRes.status} ${invalidRes.headers.get('location')}`);
+    const invalidBody = await invalidRes.text();
+    if (invalidRes.status !== 200) {
+      throw new Error(`Expected 200 HTML from failed Steam callback, got ${invalidRes.status} ${invalidBody}`);
+    }
+    if (invalidRes.headers.get('location')) {
+      throw new Error(`Failed Steam callback should not 302; got Location ${invalidRes.headers.get('location')}`);
+    }
+    if (!invalidBody.includes("location.replace('/#/login?error=steam_auth_failed')") && !invalidBody.includes('location.replace("/#/login?error=steam_auth_failed")')) {
+      throw new Error(`Expected location.replace to the login error hash, got ${invalidBody}`);
     }
     console.log('✅ Invalid Steam OpenID callback is rejected');
   } finally {
