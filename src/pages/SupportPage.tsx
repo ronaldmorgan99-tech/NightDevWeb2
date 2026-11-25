@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow } from 'date-fns';
+import { Link } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 
 interface SupportTicket {
@@ -109,8 +110,24 @@ const SupportPage: React.FC = () => {
       <div className="w-20 h-20 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center mb-6">
         <Shield className="w-10 h-10 text-zinc-800" />
       </div>
-      <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter mb-2 text-glow-white">Access Denied</h2>
-      <p className="text-zinc-500 text-xs uppercase tracking-widest font-black">Authentication required to access support uplink</p>
+      <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter mb-2 text-glow-white">Sign in required</h2>
+      <p className="text-zinc-500 text-xs uppercase tracking-widest font-black max-w-md">
+        Support and contact tickets need an account. Sign in or create one to open a transmission.
+      </p>
+      <div className="flex flex-wrap items-center justify-center gap-4 mt-8">
+        <Link
+          to="/login"
+          className="px-6 py-3 bg-neon-cyan text-cyber-black rounded-xl font-black uppercase tracking-widest text-xs hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(0,243,255,0.3)]"
+        >
+          Sign In
+        </Link>
+        <Link
+          to="/register"
+          className="px-6 py-3 border border-white/15 text-white rounded-xl font-black uppercase tracking-widest text-xs hover:border-neon-cyan/50 hover:text-neon-cyan transition-all"
+        >
+          Create Account
+        </Link>
+      </div>
     </div>
   );
 

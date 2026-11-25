@@ -1,5 +1,7 @@
 import type { IDatabase } from './db';
-import { userDisplayNameSql } from './userDisplay';
+// Node ESM on Vercel does not resolve extensionless relative imports.
+import { userDisplayNameSql } from './userDisplay.js';
+
 
 const AUTHOR_NAME_SQL = userDisplayNameSql('u');
 

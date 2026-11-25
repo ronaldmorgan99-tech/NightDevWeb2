@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import type { IDatabase } from '../src/lib/db';
 import { attachForumLastPosts, getForumThreads, getThreadWithPosts, HIDDEN_POST_PLACEHOLDER, isViewerStaff } from '../src/lib/forumData';
@@ -85,4 +86,10 @@ test('parseDbDate treats zone-less DB timestamps as UTC', () => {
   assert.equal(parseDbDate(null), null);
   const now = Date.parse('2026-05-15T18:10:26Z');
   assert.equal(formatRelativeTime('2026-05-15 18:05:26', now), '5m ago');
+});
+
+test('forumData uses an explicit .js specifier so Vercel Node ESM can load userDisplay', () => {
+  const source = readFileSync(new URL('../src/lib/forumData.ts', import.meta.url), 'utf8');
+  assert.match(source, /from ['"]\.\/userDisplay\.js['"]/);
+  assert.equal(/from ['"]\.\/userDisplay['"]/.test(source), false);
 });
