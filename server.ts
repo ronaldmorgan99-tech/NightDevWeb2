@@ -28,6 +28,7 @@ import {
 } from './src/lib/payments';
 import { sanitizeUserText } from './src/lib/sanitize';
 import { getConfiguredServers } from './src/lib/configuredServers';
+import { createSteamAuthHandlers } from './src/lib/steamAuth';
 import dotenv from 'dotenv';
 
 // Load environment variables
@@ -689,7 +690,7 @@ async function start() {
   );
   app.use('/api/auth/login', strictCredentialRateLimit);
   app.use('/api/auth/register', strictCredentialRateLimit);
-  app.use(['/api/auth/me', '/api/auth/logout'], authSessionRateLimit);
+  app.use(['/api/auth/me', '/api/auth/logout', '/api/auth/steam', '/api/auth/steam/callback'], authSessionRateLimit);
 
   const csrfProtection = csurf({
     cookie: {
@@ -1017,6 +1018,15 @@ async function start() {
   });
 
   // Auth
+  const steamAuth = createSteamAuthHandlers({
+    db,
+    jwtSecret: JWT_SECRET,
+    cookieName: AUTH_COOKIE_NAME,
+    cookieOptions: AUTH_COOKIE_OPTIONS
+  });
+  app.get('/api/auth/steam', steamAuth.start);
+  app.get('/api/auth/steam/callback', steamAuth.callback);
+
   app.post('/api/auth/register', validateBody(authRegisterSchema), async (req, res) => {
     const { username, email, password } = req.body;
     observabilityMetrics.auth.registerAttempts += 1;

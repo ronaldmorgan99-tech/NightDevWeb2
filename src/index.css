@@ -201,7 +201,7 @@
 
   .btn-holographic::before {
     content: '';
-    @apply absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full transition-transform duration-1000;
+    @apply absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full transition-transform duration-1000 pointer-events-none;
   }
 
   .btn-holographic:hover::before {

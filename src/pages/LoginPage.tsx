@@ -1,9 +1,19 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { apiJson } from '../lib/api';
-import { useNavigate, Link } from 'react-router';
+import { useNavigate, useLocation, Link } from 'react-router';
 import { Gamepad2, Lock, User, ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
+
+const SteamIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+    <path d="M12 0a12 12 0 0 0-11.979 11.037l6.432 2.619a3.15 3.15 0 0 1 1.544-.491c.13 0 .257.01.381.028l2.847-4.142c-.03-.129-.048-.264-.048-.403 0-1.833 1.488-3.321 3.321-3.321S17.821 7.155 17.821 8.988s-1.488 3.321-3.321 3.321c-.14 0-.274-.017-.403-.048l-4.142 2.847c.018.124.028.251.028.381 0 1.833-1.488 3.321-3.321 3.321-.464 0-.887-.174-1.211-.459l-3.058.801c.08.243.18.472.299.688l1.817 4.461A12 12 0 1 0 12 0zm-1.066 14.896c-.992 0-1.797-.805-1.797-1.797s.805-1.797 1.797-1.797 1.797.805 1.797 1.797-.805 1.797-1.797 1.797zm4.074-5.464c-.992 0-1.797-.805-1.797-1.797s.805-1.797 1.797-1.797 1.797.805 1.797 1.797-.805 1.797-1.797 1.797z"/>
+  </svg>
+);
+
+const STEAM_AUTH_ERRORS: Record<string, string> = {
+  steam_auth_failed: 'Steam sign-in failed or was cancelled. Please try again.'
+};
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -11,6 +21,9 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const steamError = new URLSearchParams(location.search).get('error');
+  const steamErrorMessage = steamError ? STEAM_AUTH_ERRORS[steamError] || STEAM_AUTH_ERRORS.steam_auth_failed : '';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,9 +57,9 @@ export default function LoginPage() {
           <p className="mt-4 text-[10px] uppercase tracking-[0.3em] font-black text-zinc-600">Secure Uplink Required</p>
         </div>
 
-        {error && (
+        {(error || steamErrorMessage) && (
           <div className="bg-neon-pink/10 border border-neon-pink/20 text-neon-pink p-4 rounded-xl text-[10px] uppercase tracking-widest font-black italic">
-            Error // {error}
+            Error // {error || steamErrorMessage}
           </div>
         )}
 
@@ -84,6 +97,20 @@ export default function LoginPage() {
             <ArrowRight className="w-5 h-5" />
           </button>
         </form>
+
+        <div className="flex items-center gap-3">
+          <div className="h-px flex-1 bg-white/10" />
+          <span className="text-[10px] uppercase tracking-[0.3em] font-black text-zinc-600">Or</span>
+          <div className="h-px flex-1 bg-white/10" />
+        </div>
+
+        <a
+          href="/api/auth/steam"
+          className="btn-holographic w-full py-4 flex justify-center items-center gap-3 text-xs"
+        >
+          <SteamIcon />
+          Sign in with Steam
+        </a>
 
         <div className="text-center">
           <p className="text-zinc-600 text-[10px] uppercase tracking-widest font-black">

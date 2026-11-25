@@ -206,6 +206,32 @@ export async function initDb() {
     }
   }
 
+  // Steam OpenID identity (nullable; unique when present)
+  if (!(db instanceof MySQLWrapper)) {
+    const userColumns = await db.query<any>('PRAGMA table_info(users)');
+    if (!userColumns.some((item) => item.name === 'steam_id')) {
+      await db.execute('ALTER TABLE users ADD COLUMN steam_id TEXT');
+    }
+    await run('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_steam_id ON users(steam_id)');
+  } else {
+    const existingSteamId = await db.queryOne<any>(`
+      SELECT COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'steam_id'
+    `);
+    if (!existingSteamId) {
+      await db.execute('ALTER TABLE users ADD COLUMN steam_id VARCHAR(17) NULL');
+    }
+    const existingSteamIndex = await db.queryOne<any>(`
+      SELECT INDEX_NAME
+      FROM INFORMATION_SCHEMA.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND INDEX_NAME = 'idx_users_steam_id'
+    `);
+    if (!existingSteamIndex) {
+      await db.execute('CREATE UNIQUE INDEX idx_users_steam_id ON users(steam_id)');
+    }
+  }
+
   // Forum Categories
   await run(`
     CREATE TABLE IF NOT EXISTS forum_categories (

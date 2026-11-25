@@ -67,6 +67,38 @@ async function request(path, options = {}) {
   return { res, body };
 }
 
+
+async function stopServer(proc) {
+  if (!proc || proc.exitCode != null) return;
+  const pid = proc.pid;
+  const killTree = (signal) => {
+    try {
+      if (pid) process.kill(-pid, signal);
+    } catch {
+      try { proc.kill(signal); } catch {}
+    }
+  };
+  killTree('SIGTERM');
+  const exited = await new Promise((resolve) => {
+    const onExit = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      proc.off('exit', onExit);
+      resolve(false);
+    }, 1500);
+    proc.once('exit', onExit);
+  });
+  if (!exited && proc.exitCode == null) {
+    killTree('SIGKILL');
+    await new Promise((resolve) => {
+      if (proc.exitCode != null) return resolve();
+      proc.once('exit', resolve);
+    });
+  }
+}
+
 function spawnServer() {
   return spawnServerWithEnv({ NODE_ENV: 'development', DATABASE_URL: './tmp/test.db' });
 }
@@ -74,7 +106,8 @@ function spawnServer() {
 function spawnServerWithEnv(extraEnv) {
   const requestedPort = Number(extraEnv.PORT || (4500 + Math.floor(Math.random() * 1000)));
   return new Promise((resolve, reject) => {
-    const proc = spawn('npx', ['tsx', 'server.ts'], {
+    const tsxCli = path.resolve('node_modules/tsx/dist/cli.mjs');
+    const proc = spawn(process.execPath, [tsxCli, 'server.ts'], {
       env: {
         ...process.env,
         NODE_ENV: 'development',
@@ -87,7 +120,8 @@ function spawnServerWithEnv(extraEnv) {
         PAYPAL_WEBHOOK_ID: 'test-webhook-id',
         ...extraEnv
       },
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true
     });
 
     const onData = (data) => {
@@ -133,8 +167,7 @@ async function verifyCookieAndCorsProfiles() {
     }
     console.log('✅ Same-origin cookie profile verified (Lax + Secure)');
   } finally {
-    sameOriginServer.kill('SIGTERM');
-    await sleep(500);
+    await stopServer(sameOriginServer);
   }
 
   console.log('⏳ Verifying split-origin CORS + cookie profile...');
@@ -183,8 +216,173 @@ async function verifyCookieAndCorsProfiles() {
     }
     console.log('✅ Split-origin cookie + CORS profile verified (None + Secure + credentials)');
   } finally {
-    splitOriginServer.kill('SIGTERM');
-    await sleep(500);
+    await stopServer(splitOriginServer);
+  }
+}
+
+async function startMockSteamServer() {
+  const { createServer } = await import('http');
+  const steamId = '76561198000000000';
+  return new Promise((resolve) => {
+    const server = createServer((req, res) => {
+      const url = new URL(req.url, 'http://127.0.0.1');
+      if (req.method === 'POST' && url.pathname === '/openid/login') {
+        let raw = '';
+        req.on('data', (chunk) => { raw += chunk; });
+        req.on('end', () => {
+          const params = new URLSearchParams(raw);
+          const valid = params.get('openid.mode') === 'check_authentication';
+          res.writeHead(200, { 'Content-Type': 'text/plain' });
+          res.end(`ns:http://specs.openid.net/auth/2.0\nis_valid:${valid ? 'true' : 'false'}\n`);
+        });
+        return;
+      }
+      if (req.method === 'GET' && url.pathname.startsWith('/ISteamUser/GetPlayerSummaries/')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          response: {
+            players: [{
+              steamid: steamId,
+              personaname: 'Night Pilot',
+              avatarfull: 'https://example.com/steam-avatar.jpg'
+            }]
+          }
+        }));
+        return;
+      }
+      res.writeHead(404);
+      res.end('not found');
+    });
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      resolve({
+        server,
+        steamId,
+        origin: `http://127.0.0.1:${port}`,
+        openIdEndpoint: `http://127.0.0.1:${port}/openid/login`,
+        apiBase: `http://127.0.0.1:${port}`
+      });
+    });
+  });
+}
+
+function firstSetCookie(res, name) {
+  const raw = res.headers.getSetCookie?.() || [];
+  const fallback = res.headers.get('set-cookie');
+  const list = raw.length ? raw : (fallback ? [fallback] : []);
+  const match = list.find((item) => item.startsWith(`${name}=`));
+  return match ? match.split(';', 1)[0].split('=').slice(1).join('=') : '';
+}
+
+async function verifySteamOpenIdLogin() {
+  console.log('⏳ Verifying Steam OpenID login flow...');
+  const mock = await startMockSteamServer();
+  const steamDb = './tmp/test-steam-openid.db';
+  if (fs.existsSync(steamDb)) fs.unlinkSync(steamDb);
+  const requestedPort = 4500 + Math.floor(Math.random() * 1000);
+  const siteOrigin = `http://127.0.0.1:${requestedPort}`;
+  const app = await spawnServerWithEnv({
+    NODE_ENV: 'development',
+    PORT: String(requestedPort),
+    DATABASE_URL: steamDb,
+    SITE_ORIGIN: siteOrigin,
+    STEAM_OPENID_ENDPOINT: mock.openIdEndpoint,
+    STEAM_API_BASE: mock.apiBase,
+    STEAM_API_KEY: 'test-steam-key'
+  });
+
+  try {
+    const startRes = await fetch(`${app.baseUrl}/api/auth/steam`, { redirect: 'manual' });
+    if (startRes.status !== 302) {
+      throw new Error(`Expected 302 from /api/auth/steam, got ${startRes.status}`);
+    }
+    const location = new URL(startRes.headers.get('location') || '');
+    if (location.origin + location.pathname !== mock.openIdEndpoint) {
+      throw new Error(`Steam redirect went to unexpected endpoint: ${location}`);
+    }
+    if (location.searchParams.get('openid.mode') !== 'checkid_setup') {
+      throw new Error('Steam redirect missing openid.mode=checkid_setup');
+    }
+    if (location.searchParams.get('openid.ns') !== 'http://specs.openid.net/auth/2.0') {
+      throw new Error('Steam redirect missing OpenID namespace');
+    }
+    if (location.searchParams.get('openid.identity') !== 'http://specs.openid.net/auth/2.0/identifier_select') {
+      throw new Error('Steam redirect missing identifier_select identity');
+    }
+    if (location.searchParams.get('openid.claimed_id') !== 'http://specs.openid.net/auth/2.0/identifier_select') {
+      throw new Error('Steam redirect missing identifier_select claimed_id');
+    }
+    if (location.searchParams.get('openid.realm') !== app.baseUrl) {
+      throw new Error(`Unexpected realm: ${location.searchParams.get('openid.realm')}`);
+    }
+    const returnTo = location.searchParams.get('openid.return_to') || '';
+    const returnToUrl = new URL(returnTo);
+    if (returnToUrl.pathname !== '/api/auth/steam/callback') {
+      throw new Error(`Unexpected return_to: ${returnTo}`);
+    }
+    const state = firstSetCookie(startRes, 'steam_openid_state') || returnToUrl.searchParams.get('state');
+    if (!state || returnToUrl.searchParams.get('state') !== state) {
+      throw new Error('Steam login state cookie/return_to mismatch');
+    }
+    console.log('✅ Steam OpenID start redirects to Steam with the required parameters');
+
+    const claimedId = `https://steamcommunity.com/openid/id/${mock.steamId}`;
+    const callback = new URL('/api/auth/steam/callback', app.baseUrl);
+    callback.searchParams.set('openid.ns', 'http://specs.openid.net/auth/2.0');
+    callback.searchParams.set('openid.mode', 'id_res');
+    callback.searchParams.set('openid.op_endpoint', mock.openIdEndpoint);
+    callback.searchParams.set('openid.claimed_id', claimedId);
+    callback.searchParams.set('openid.identity', claimedId);
+    callback.searchParams.set('openid.return_to', returnTo);
+    callback.searchParams.set('openid.assoc_handle', 'test-handle');
+    callback.searchParams.set('openid.response_nonce', `2026-01-01T00:00:00Z${Date.now()}`);
+    callback.searchParams.set('openid.signed', 'signed,op_endpoint,claimed_id,identity,return_to,response_nonce,assoc_handle');
+    callback.searchParams.set('openid.sig', 'dGVzdC1zaWc=');
+    callback.searchParams.set('state', state);
+
+    const callbackRes = await fetch(callback, {
+      redirect: 'manual',
+      headers: { Cookie: `steam_openid_state=${state}` }
+    });
+    if (callbackRes.status !== 302) {
+      throw new Error(`Expected 302 from Steam callback, got ${callbackRes.status} ${await callbackRes.text()}`);
+    }
+    const callbackLocation = callbackRes.headers.get('location') || '';
+    if (!callbackLocation.endsWith('/#/')) {
+      throw new Error(`Expected redirect back to /#/, got ${callbackLocation}`);
+    }
+    const token = firstSetCookie(callbackRes, 'token');
+    if (!token) {
+      throw new Error(`Steam callback did not issue a session cookie: ${callbackRes.headers.get('set-cookie')}`);
+    }
+
+    const meRes = await fetch(`${app.baseUrl}/api/auth/me`, {
+      headers: { Cookie: `token=${token}` }
+    });
+    const meBody = await meRes.json();
+    if (!meRes.ok || meBody.user?.username !== 'Night_Pilot') {
+      throw new Error(`Expected logged-in Steam user Night_Pilot, got ${JSON.stringify(meBody)}`);
+    }
+    if (meBody.user.avatar_url !== 'https://example.com/steam-avatar.jpg') {
+      throw new Error(`Expected Steam avatar to be stored, got ${meBody.user.avatar_url}`);
+    }
+    console.log('✅ Steam OpenID callback verifies the assertion and creates a logged-in session');
+
+    const invalid = new URL('/api/auth/steam/callback', app.baseUrl);
+    invalid.searchParams.set('openid.ns', 'http://specs.openid.net/auth/2.0');
+    invalid.searchParams.set('openid.mode', 'id_res');
+    invalid.searchParams.set('openid.claimed_id', 'https://evil.example/openid/id/76561198000000000');
+    const invalidRes = await fetch(invalid, { redirect: 'manual' });
+    if (invalidRes.status !== 302 || !(invalidRes.headers.get('location') || '').includes('/#/login?error=steam_auth_failed')) {
+      throw new Error(`Expected failed Steam callback to return to login, got ${invalidRes.status} ${invalidRes.headers.get('location')}`);
+    }
+    console.log('✅ Invalid Steam OpenID callback is rejected');
+  } finally {
+    await stopServer(app.proc);
+    if (mock.server.listening) {
+      await new Promise((resolve) => mock.server.close(resolve));
+    }
+    await sleep(200);
   }
 }
 
@@ -503,12 +701,12 @@ async function runTests() {
     console.log('✅ PayPal webhook invalid/duplicate/out-of-order protections verified');
 
   } finally {
-    server.kill('SIGTERM');
+    await stopServer(server);
     console.log('🛑 Server shutdown');
-    await sleep(500);
   }
 
   await verifyCookieAndCorsProfiles();
+  await verifySteamOpenIdLogin();
   console.log('🎉 Regression tests passed');
 }
 
