@@ -295,14 +295,15 @@ const StorePage: React.FC = () => {
             key={product.id}
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: idx * 0.1 }}
+            // Cap the stagger: with ~100 products an idx * 0.1s delay left later cards half-faded for seconds.
+            transition={{ delay: Math.min(idx, 6) * 0.05 }}
             className="group cyber-card border-white/5 hover:border-neon-cyan/30 transition-all duration-500 flex flex-col overflow-hidden"
           >
             <div className="aspect-square bg-cyber-black flex items-center justify-center relative overflow-hidden border-b border-white/5">
               {product.image_url ? (
                 <img src={product.image_url} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 opacity-80 group-hover:opacity-100" />
               ) : (
-                <ShoppingBag className="w-20 h-20 text-zinc-900 group-hover:text-neon-cyan/10 transition-colors duration-500" />
+                <ShoppingBag aria-hidden="true" className="w-20 h-20 text-zinc-700 group-hover:text-neon-cyan/40 transition-colors duration-500" />
               )}
               <div className="absolute top-6 left-6 px-4 py-1.5 bg-cyber-black border border-neon-cyan/30 text-neon-cyan text-[10px] font-black uppercase tracking-[0.2em] rounded-lg shadow-[0_0_15px_rgba(0,243,255,0.1)]">
                 {product.category}
@@ -310,11 +311,11 @@ const StorePage: React.FC = () => {
             </div>
 
             <div className="p-8 flex-1 flex flex-col">
-              <div className="flex justify-between items-start mb-4">
-                <h3 className="text-2xl font-black text-white italic tracking-tighter uppercase group-hover:text-neon-cyan transition-colors">
+              <div className="flex justify-between items-start gap-4 mb-4">
+                <h3 className="min-w-0 break-words text-2xl font-black text-white italic tracking-tighter uppercase group-hover:text-neon-cyan transition-colors">
                   {product.name}
                 </h3>
-                <span className="text-2xl font-black text-neon-green font-mono">${product.price.toFixed(2)}</span>
+                <span className="shrink-0 text-2xl font-black text-neon-green font-mono">${product.price.toFixed(2)}</span>
               </div>
               <p className="text-zinc-500 text-sm mb-8 line-clamp-2 font-medium">
                 {product.description}

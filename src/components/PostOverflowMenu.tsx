@@ -1,5 +1,6 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
-import { Link } from 'react-router';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Link, useLocation } from 'react-router';
 import {
   MoreVertical,
   Edit2,
@@ -15,7 +16,9 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import {
   buildPostPermalink,
+  computeMenuPosition,
   getPostMenuItems,
+  type MenuPosition,
   type PostMenuContext,
   type PostMenuItemId
 } from '../lib/postMenu';
@@ -35,6 +38,8 @@ export type PostOverflowMenuProps = {
   onReport: () => void;
   onQuote: () => void;
 };
+
+const MENU_WIDTH = 208;
 
 const ITEM_LABELS: Record<PostMenuItemId, string> = {
   quote: 'Quote / Reply',
@@ -117,8 +122,52 @@ const PostOverflowMenu: React.FC<PostOverflowMenuProps> = ({
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | HTMLAnchorElement | null>>([]);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [position, setPosition] = useState<MenuPosition | null>(null);
+
+  // Close on any route change, including hash and ?post= changes from Copy link or back/forward.
+  const location = useLocation();
+  const locationKey = `${location.pathname}${location.search}${location.hash}`;
+  const lastLocationKey = useRef(locationKey);
+  useEffect(() => {
+    if (lastLocationKey.current === locationKey) return;
+    lastLocationKey.current = locationKey;
+    if (isOpen) onOpenChange(false);
+  }, [locationKey, isOpen, onOpenChange]);
+
+  // The menu renders in a portal with fixed positioning, so post cards with overflow-hidden
+  // cannot clip it. It opens above the button (over the post header, not the post text),
+  // right-aligned, falls back to below when there is no room above, and stays in the viewport.
+  const updatePosition = useCallback(() => {
+    const button = buttonRef.current;
+    if (!button) return;
+    const rect = button.getBoundingClientRect();
+    const menuHeight = menuRef.current?.offsetHeight ?? items.length * 36 + 8;
+    // Keep the menu clear of the sticky site header.
+    const header = document.querySelector('header');
+    const headerBottom = header ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
+    setPosition(
+      computeMenuPosition(rect, { width: window.innerWidth, height: window.innerHeight }, menuHeight, MENU_WIDTH, 8, 8, headerBottom + 8)
+    );
+  }, [items.length]);
+
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      setPosition(null);
+      return;
+    }
+    updatePosition();
+    const frame = window.requestAnimationFrame(updatePosition);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isOpen, updatePosition]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -131,7 +180,10 @@ const PostOverflowMenu: React.FC<PostOverflowMenuProps> = ({
     }, 0);
 
     const onPointerDown = (event: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const insideRoot = rootRef.current?.contains(target);
+      const insideMenu = menuRef.current?.contains(target);
+      if (!insideRoot && !insideMenu) {
         onOpenChange(false);
       }
     };
@@ -232,18 +284,28 @@ const PostOverflowMenu: React.FC<PostOverflowMenuProps> = ({
         <MoreVertical className="w-4 h-4" />
       </button>
 
+      {typeof document !== 'undefined' && createPortal(
       <AnimatePresence>
         {isOpen && (
           <motion.div
+            ref={menuRef}
             id={menuId}
             role="menu"
             aria-label="Post actions"
-            initial={{ opacity: 0, y: 8, scale: 0.98 }}
+            data-placement={position?.placement ?? 'below'}
+            initial={{ opacity: 0, y: position?.placement === 'above' ? -6 : 6, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            exit={{ opacity: 0, y: position?.placement === 'above' ? -6 : 6, scale: 0.98 }}
             transition={{ duration: 0.15 }}
             onKeyDown={onMenuKeyDown}
-            className="absolute right-0 mt-2 w-52 bg-cyber-black/95 border border-white/10 rounded-xl z-50 overflow-hidden py-1 backdrop-blur-xl"
+            style={{
+              position: 'fixed',
+              top: position?.top ?? -9999,
+              left: position?.left ?? -9999,
+              width: position?.width ?? MENU_WIDTH,
+              visibility: position ? 'visible' : 'hidden'
+            }}
+            className="z-[130] max-w-[calc(100vw-16px)] bg-cyber-black border border-neon-cyan/25 rounded-xl overflow-hidden py-1 shadow-[0_18px_40px_-8px_rgba(0,0,0,0.9),0_0_0_1px_rgba(0,243,255,0.08),0_0_24px_-6px_rgba(0,243,255,0.35)]"
           >
             {items.map((id, index) => {
               const label =
@@ -293,7 +355,9 @@ const PostOverflowMenu: React.FC<PostOverflowMenuProps> = ({
             })}
           </motion.div>
         )}
-      </AnimatePresence>
+      </AnimatePresence>,
+      document.body
+      )}
     </div>
   );
 };

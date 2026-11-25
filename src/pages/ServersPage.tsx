@@ -173,18 +173,21 @@ export default function ServersPage() {
         </div>
       </section>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Network stats: one card per distinct metric (the old "Players" and "Active Players"
+          cards both showed the same live player total, so they are merged into one). Four cards
+          fill 2x2 on small screens and one row of 4 from md up, with no orphan card. */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4" data-testid="server-stats">
         {[
-          { icon: Users, label: 'Active Players', value: `${activePlayers} PLAYERS`, color: 'text-neon-cyan' },
-          { icon: Users, label: 'Active Players', value: String(activePlayers), color: 'text-neon-cyan' },
-          { icon: Zap, label: 'Avg Latency', value: servers.length > 0 ? 'Live' : 'N/A', color: 'text-neon-magenta' },
-          { icon: Shield, label: 'Network Status', value: onlineNodes > 0 ? 'Online' : 'Offline', color: onlineNodes > 0 ? 'text-neon-green' : 'text-red-400' },
-          { icon: Activity, label: 'Total Nodes', value: String(servers.length), color: 'text-neon-purple' }
-        ].map((stat, i) => (
-          <div key={i} className="cyber-card p-6 border-white/5 bg-white/[0.02] text-center group hover:border-white/10 transition-all">
+          { icon: Users, label: 'Players Online', value: String(activePlayers), sub: 'Live total across all nodes', color: 'text-neon-cyan' },
+          { icon: Activity, label: 'Nodes Online', value: `${onlineNodes}/${servers.length}`, sub: 'Game servers reporting in', color: 'text-neon-purple' },
+          { icon: Shield, label: 'Network Status', value: onlineNodes > 0 ? 'Online' : 'Offline', sub: onlineNodes > 0 ? 'At least one node is up' : 'No nodes reachable', color: onlineNodes > 0 ? 'text-neon-green' : 'text-red-400' },
+          { icon: Zap, label: 'Telemetry', value: servers.length > 0 ? 'Live' : 'No data', sub: 'Refreshes every 10 seconds', color: 'text-neon-magenta' }
+        ].map((stat) => (
+          <div key={stat.label} className="cyber-card p-6 border-white/5 bg-white/[0.02] text-center group hover:border-white/10 transition-all">
             <stat.icon className={`w-5 h-5 mx-auto mb-3 ${stat.color} opacity-50 group-hover:opacity-100 transition-opacity`} />
             <div className="text-2xl font-black text-white italic tracking-tighter mb-1">{stat.value}</div>
-            <div className="text-[8px] text-zinc-600 uppercase tracking-[0.3em] font-black">{stat.label}</div>
+            <div className="text-[8px] text-zinc-500 uppercase tracking-[0.3em] font-black">{stat.label}</div>
+            <div className="mt-2 text-[10px] text-zinc-600 font-medium">{stat.sub}</div>
           </div>
         ))}
       </div>
