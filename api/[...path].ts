@@ -25,6 +25,19 @@ import { getConfiguredServers } from '../src/lib/configuredServers.js';
 import { createSteamAuthHandlers } from '../src/lib/steamAuth.js';
 import { attachForumLastPosts, getForumThreads, getThreadWithPosts, incrementThreadViews, isViewerStaff } from '../src/lib/forumData.js';
 import { userDisplayNameSql } from '../src/lib/userDisplay.js';
+// Shared with server.ts so both backends enforce the same forum permissions (.js required on Vercel).
+import {
+  canCreateThread,
+  canDeleteThread,
+  canReplyToThread,
+  canReport,
+  canUpdatePost,
+  canUpdateThread,
+  deniedResponse,
+  isContentChange,
+  isStaffRole,
+  type PermissionResult
+} from '../src/lib/forumPermissions.js';
 
 const app = express();
 app.use(express.json({
@@ -116,12 +129,6 @@ const AUTH_RATE_LIMIT_CREDENTIAL_WINDOW_MS = parseEnvNumber(process.env.AUTH_RAT
 const AUTH_RATE_LIMIT_CREDENTIAL_MAX = parseEnvNumber(process.env.AUTH_RATE_LIMIT_CREDENTIAL_MAX, 8);
 const AUTH_RATE_LIMIT_SESSION_WINDOW_MS = parseEnvNumber(process.env.AUTH_RATE_LIMIT_SESSION_WINDOW_MS, 5 * 60 * 1000);
 const AUTH_RATE_LIMIT_SESSION_MAX = parseEnvNumber(process.env.AUTH_RATE_LIMIT_SESSION_MAX, 30);
-const ROLE_WEIGHT: Record<string, number> = {
-  admin: 3,
-  moderator: 2,
-  member: 1
-};
-
 const authLoginSchema = z.object({
   username: z.string().trim().min(1).max(64),
   password: z.string().min(1).max(128)
@@ -158,16 +165,18 @@ const reportCreateSchema = z.object({
   target_id: z.coerce.number().int().positive(),
   reason: z.string().trim().min(1)
 });
+// Moderation flags accept true/false or 1/0 (older forum UI builds sent numbers).
+const moderationFlagSchema = z.union([z.boolean(), z.literal(0), z.literal(1)]).transform((value) => Boolean(value)).optional();
 const postUpdateSchema = z.object({
   content: z.string().trim().min(1).max(10_000).optional(),
-  is_hidden: z.boolean().optional(),
-  is_deleted: z.boolean().optional()
+  is_hidden: moderationFlagSchema,
+  is_deleted: moderationFlagSchema
 });
 const threadUpdateSchema = z.object({
-  is_pinned: z.boolean().optional(),
-  is_locked: z.boolean().optional(),
-  is_solved: z.boolean().optional(),
-  is_hidden: z.boolean().optional()
+  is_pinned: moderationFlagSchema,
+  is_locked: moderationFlagSchema,
+  is_solved: moderationFlagSchema,
+  is_hidden: moderationFlagSchema
 });
 const idParamSchema = z.object({
   id: z.coerce.number().int().positive()
@@ -463,13 +472,22 @@ const validateParams = <T>(schema: z.ZodSchema<T>) => (req: Request, res: Respon
   next();
 };
 
-const meetsMinRole = (userRole: string, minRole: string) => {
-  const userWeight = ROLE_WEIGHT[userRole] ?? 0;
-  const minWeight = ROLE_WEIGHT[minRole] ?? 0;
-  return userWeight >= minWeight;
+const sendPermissionDenied = (res: Response, result: PermissionResult) => {
+  const denied = deniedResponse(result);
+  return res.status(denied.status).json(denied.body);
 };
 
-const isStaffRole = (role: string) => role === 'admin' || role === 'moderator';
+// Same audit trail server.ts writes for staff thread/post actions.
+async function recordModerationAction(moderatorId: number, actionType: string, targetType: string, targetId: number, reason: string) {
+  try {
+    await db.execute(
+      'INSERT INTO moderation_actions (moderator_id, action_type, target_type, target_id, reason) VALUES (?, ?, ?, ?, ?)',
+      [moderatorId, actionType, targetType, targetId, reason]
+    );
+  } catch (err) {
+    console.error('Failed to record moderation action', err);
+  }
+}
 
 const createRateLimit = (windowMs: number, maxRequests: number, errorMessage: string) => {
   const requests = new Map<string, number[]>();
@@ -1202,9 +1220,8 @@ const threadCreateHandler = async (req: Request, res: Response) => {
     if (!forum) {
       return res.status(404).json({ error: 'Forum not found' });
     }
-    if (!meetsMinRole(user.role, forum.min_role_to_thread)) {
-      return res.status(403).json({ error: 'You do not have permission to create threads in this forum' });
-    }
+    const permission = canCreateThread(user, forum);
+    if (!permission.allowed) return sendPermissionDenied(res, permission);
 
     const result = await db.execute('INSERT INTO threads (forum_id, author_id, title) VALUES (?, ?, ?)', [forum_id, user.id, sanitizeUserText(title)]);
     const threadId = result.lastInsertRowid || result.insertId;
@@ -1223,7 +1240,7 @@ const postCreateHandler = async (req: Request, res: Response) => {
   const { thread_id, content } = req.body as z.infer<typeof postCreateSchema>;
   try {
     const thread = await db.queryOne<any>(`
-      SELECT t.id, f.min_role_to_thread
+      SELECT t.id, t.is_locked, f.min_role_to_thread
       FROM threads t
       JOIN forums f ON t.forum_id = f.id
       WHERE t.id = ?
@@ -1231,9 +1248,9 @@ const postCreateHandler = async (req: Request, res: Response) => {
     if (!thread) {
       return res.status(404).json({ error: 'Thread not found' });
     }
-    if (!meetsMinRole(user.role, thread.min_role_to_thread)) {
-      return res.status(403).json({ error: 'You do not have permission to post in this forum' });
-    }
+    // Forum min role, then locked threads (staff may still reply to a locked thread)
+    const permission = canReplyToThread(user, thread);
+    if (!permission.allowed) return sendPermissionDenied(res, permission);
 
     await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [thread_id, user.id, sanitizeUserText(content)]);
     await db.execute('UPDATE threads SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [thread_id]);
@@ -1248,35 +1265,49 @@ const postUpdateHandler = async (req: Request, res: Response) => {
   const user = await requireAuthUser(req, res);
   if (!user) return;
 
-  const { content, is_hidden, is_deleted } = req.body || {};
+  const { content, is_hidden, is_deleted } = (req.body || {}) as z.infer<typeof postUpdateSchema>;
   try {
     const post = await db.queryOne<any>('SELECT * FROM posts WHERE id = ?', [req.params.id]);
     if (!post) {
       return res.status(404).json({ error: 'Post not found' });
     }
 
+    // Edit: author or staff. Hide/unhide/restore: staff. Delete (soft): author or staff.
+    const permission = canUpdatePost(user, post, { content, is_hidden, is_deleted });
+    if (!permission.allowed) return sendPermissionDenied(res, permission);
     const isStaff = isStaffRole(user.role);
-    const isOwner = post.author_id === user.id;
-    if (!isOwner && !isStaff) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-    if ((is_hidden !== undefined || is_deleted !== undefined) && !isStaff) {
-      return res.status(403).json({ error: 'Only moderators can hide/delete posts' });
-    }
 
     const updates: string[] = [];
     const params: any[] = [];
+    const moderationEvents: Array<{ action: string; reason: string }> = [];
     if (content !== undefined) {
+      const sanitized = sanitizeUserText(content);
       updates.push('content = ?');
-      params.push(sanitizeUserText(content));
+      params.push(sanitized);
+      // edited_at tracks real content edits only, never moderation-only hide/unhide.
+      if (isContentChange(post.content, sanitized)) {
+        updates.push('edited_at = CURRENT_TIMESTAMP');
+      }
     }
     if (is_hidden !== undefined) {
       updates.push('is_hidden = ?');
       params.push(is_hidden ? 1 : 0);
+      if ((post.is_hidden ?? 0) !== (is_hidden ? 1 : 0)) {
+        moderationEvents.push({
+          action: is_hidden ? 'hide_post' : 'unhide_post',
+          reason: `Post ${is_hidden ? 'hidden' : 'unhidden'} via /api/posts/:id PATCH`
+        });
+      }
     }
     if (is_deleted !== undefined) {
       updates.push('is_deleted = ?');
       params.push(is_deleted ? 1 : 0);
+      if ((post.is_deleted ?? 0) !== (is_deleted ? 1 : 0)) {
+        moderationEvents.push({
+          action: is_deleted ? 'delete_post' : 'restore_post',
+          reason: `Post ${is_deleted ? 'deleted' : 'restored'} via /api/posts/:id PATCH`
+        });
+      }
     }
     if (updates.length === 0) {
       return res.status(400).json({ error: 'No updates provided' });
@@ -1284,7 +1315,15 @@ const postUpdateHandler = async (req: Request, res: Response) => {
     updates.push('updated_at = CURRENT_TIMESTAMP');
     params.push(req.params.id);
     await db.execute(`UPDATE posts SET ${updates.join(', ')} WHERE id = ?`, params);
-    return res.json({ success: true });
+
+    if (isStaff) {
+      for (const event of moderationEvents) {
+        await recordModerationAction(user.id, event.action, 'post', Number(req.params.id), event.reason);
+      }
+    }
+
+    const updated = await db.queryOne<any>('SELECT id, edited_at, is_hidden, is_deleted FROM posts WHERE id = ?', [req.params.id]);
+    return res.json({ success: true, post: updated });
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to update post' });
   }
@@ -1295,49 +1334,48 @@ const threadUpdateHandler = async (req: Request, res: Response) => {
   const user = await requireAuthUser(req, res);
   if (!user) return;
 
-  const { is_pinned, is_locked, is_solved, is_hidden } = req.body || {};
+  const { is_pinned, is_locked, is_solved, is_hidden } = (req.body || {}) as z.infer<typeof threadUpdateSchema>;
   try {
     const thread = await db.queryOne<any>('SELECT * FROM threads WHERE id = ?', [req.params.id]);
     if (!thread) {
       return res.status(404).json({ error: 'Thread not found' });
     }
 
+    // Pin/lock/hide: staff. Solve: thread author or staff.
+    const permission = canUpdateThread(user, thread, { is_pinned, is_locked, is_solved, is_hidden });
+    if (!permission.allowed) return sendPermissionDenied(res, permission);
     const isStaff = isStaffRole(user.role);
-    const isOwner = thread.author_id === user.id;
-    if (is_pinned !== undefined && !isStaff) {
-      return res.status(403).json({ error: 'Only moderators can pin/unpin threads' });
-    }
-    if (is_hidden !== undefined && !isStaff) {
-      return res.status(403).json({ error: 'Only moderators can hide/unhide threads' });
-    }
-    if ((is_locked !== undefined || is_solved !== undefined) && !isStaff && !isOwner) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
 
     const updates: string[] = [];
     const params: any[] = [];
-    if (is_pinned !== undefined) {
-      updates.push('is_pinned = ?');
-      params.push(is_pinned ? 1 : 0);
-    }
-    if (is_locked !== undefined) {
-      updates.push('is_locked = ?');
-      params.push(is_locked ? 1 : 0);
-    }
-    if (is_solved !== undefined) {
-      updates.push('is_solved = ?');
-      params.push(is_solved ? 1 : 0);
-    }
-    if (is_hidden !== undefined) {
-      updates.push('is_hidden = ?');
-      params.push(is_hidden ? 1 : 0);
-    }
+    const moderationEvents: Array<{ action: string; reason: string }> = [];
+    const track = (column: string, value: boolean | undefined, onAction: string, offAction: string, verbOn: string, verbOff: string) => {
+      if (value === undefined) return;
+      updates.push(`${column} = ?`);
+      params.push(value ? 1 : 0);
+      if ((thread[column] ?? 0) !== (value ? 1 : 0)) {
+        moderationEvents.push({
+          action: value ? onAction : offAction,
+          reason: `Thread ${value ? verbOn : verbOff} via /api/threads/:id PATCH`
+        });
+      }
+    };
+    track('is_pinned', is_pinned, 'pin_thread', 'unpin_thread', 'pinned', 'unpinned');
+    track('is_locked', is_locked, 'lock_thread', 'unlock_thread', 'locked', 'unlocked');
+    track('is_solved', is_solved, 'solve_thread', 'unsolve_thread', 'solved', 'unsolved');
+    track('is_hidden', is_hidden, 'hide_thread', 'unhide_thread', 'hidden', 'unhidden');
     if (updates.length === 0) {
       return res.status(400).json({ error: 'No updates provided' });
     }
     updates.push('updated_at = CURRENT_TIMESTAMP');
     params.push(req.params.id);
     await db.execute(`UPDATE threads SET ${updates.join(', ')} WHERE id = ?`, params);
+
+    if (isStaff) {
+      for (const event of moderationEvents) {
+        await recordModerationAction(user.id, event.action, 'thread', Number(req.params.id), event.reason);
+      }
+    }
     return res.json({ success: true });
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to update thread' });
@@ -1354,14 +1392,14 @@ const threadDeleteHandler = async (req: Request, res: Response) => {
     if (!thread) {
       return res.status(404).json({ error: 'Thread not found' });
     }
-    const isStaff = isStaffRole(user.role);
-    const isOwner = thread.author_id === user.id;
-    if (!isStaff && !isOwner) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
+    const permission = canDeleteThread(user, thread);
+    if (!permission.allowed) return sendPermissionDenied(res, permission);
 
     await db.execute('DELETE FROM posts WHERE thread_id = ?', [req.params.id]);
     await db.execute('DELETE FROM threads WHERE id = ?', [req.params.id]);
+    if (isStaffRole(user.role)) {
+      await recordModerationAction(user.id, 'delete_thread', 'thread', Number(req.params.id), 'Thread deleted via /api/threads/:id DELETE');
+    }
     return res.json({ success: true });
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to delete thread' });
@@ -1375,6 +1413,8 @@ const reportCreateHandler = async (req: Request, res: Response) => {
 
   const { target_type, target_id, reason } = req.body as z.infer<typeof reportCreateSchema>;
   try {
+    const permission = canReport(user);
+    if (!permission.allowed) return sendPermissionDenied(res, permission);
     await db.execute(
       'INSERT INTO reports (reporter_id, target_type, target_id, reason) VALUES (?, ?, ?, ?)',
       [user.id, target_type, target_id, reason]

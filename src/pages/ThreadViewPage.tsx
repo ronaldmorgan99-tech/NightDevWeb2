@@ -43,6 +43,7 @@ interface Post {
   is_hidden: number;
   is_hidden_placeholder?: boolean;
   created_at: string;
+  edited_at?: string | null;
 }
 
 interface ThreadData {
@@ -120,7 +121,7 @@ const ThreadViewPage: React.FC = () => {
   });
 
   const editMutation = useMutation({
-    mutationFn: async ({ postId, content, is_hidden, is_deleted }: { postId: number; content?: string; is_hidden?: number; is_deleted?: number }) => {
+    mutationFn: async ({ postId, content, is_hidden, is_deleted }: { postId: number; content?: string; is_hidden?: boolean; is_deleted?: boolean }) => {
       return apiJson(`/api/posts/${postId}`, {
         method: 'PATCH',
         json: { content, is_hidden, is_deleted }
@@ -137,7 +138,7 @@ const ThreadViewPage: React.FC = () => {
   });
 
   const threadModMutation = useMutation({
-    mutationFn: async (updates: Partial<ThreadData['thread']>) => {
+    mutationFn: async (updates: { is_pinned?: boolean; is_locked?: boolean; is_solved?: boolean; is_hidden?: boolean }) => {
       return apiJson(`/api/threads/${id}`, {
         method: 'PATCH',
         json: updates
@@ -259,21 +260,21 @@ const ThreadViewPage: React.FC = () => {
         {isStaff && (
           <div className="flex gap-2">
             <button 
-              onClick={() => threadModMutation.mutate({ is_pinned: data.thread.is_pinned ? 0 : 1 })}
+              onClick={() => threadModMutation.mutate({ is_pinned: !data.thread.is_pinned })}
               className={`p-3 rounded-xl border transition-all ${data.thread.is_pinned ? 'bg-neon-cyan/10 border-neon-cyan/30 text-neon-cyan' : 'bg-white/5 border-white/5 text-zinc-500 hover:text-white'}`}
               title={data.thread.is_pinned ? 'Unpin Thread' : 'Pin Thread'}
             >
               <Pin className="w-5 h-5" />
             </button>
             <button 
-              onClick={() => threadModMutation.mutate({ is_locked: data.thread.is_locked ? 0 : 1 })}
+              onClick={() => threadModMutation.mutate({ is_locked: !data.thread.is_locked })}
               className={`p-3 rounded-xl border transition-all ${data.thread.is_locked ? 'bg-neon-pink/10 border-neon-pink/30 text-neon-pink' : 'bg-white/5 border-white/5 text-zinc-500 hover:text-white'}`}
               title={data.thread.is_locked ? 'Unlock Thread' : 'Lock Thread'}
             >
               {data.thread.is_locked ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
             </button>
             <button 
-              onClick={() => threadModMutation.mutate({ is_hidden: data.thread.is_hidden ? 0 : 1 })}
+              onClick={() => threadModMutation.mutate({ is_hidden: !data.thread.is_hidden })}
               className={`p-3 rounded-xl border transition-all ${data.thread.is_hidden ? 'bg-neon-purple/10 border-neon-purple/30 text-neon-purple' : 'bg-white/5 border-white/5 text-zinc-500 hover:text-white'}`}
               title={data.thread.is_hidden ? 'Unhide Thread' : 'Hide Thread'}
             >
@@ -368,6 +369,15 @@ const ThreadViewPage: React.FC = () => {
                     <Clock className="w-3 h-3" />
                     <span className="font-mono">{formatDbDateTime(post.created_at)}</span>
                   </div>
+                  {post.edited_at && !post.is_hidden_placeholder && (
+                    <span
+                      className="text-zinc-500 normal-case tracking-normal font-semibold italic"
+                      title={`Edited ${formatDbDateTime(post.edited_at)}`}
+                      data-testid="post-edited-label"
+                    >
+                      Edited
+                    </span>
+                  )}
                   {post.is_hidden === 1 && (
                     <span className="flex items-center gap-1 text-neon-purple neon-glow-purple">
                       <EyeOff className="w-3 h-3" /> Hidden
@@ -387,7 +397,7 @@ const ThreadViewPage: React.FC = () => {
                     setEditingPostId(post.id);
                     setEditContent(post.content);
                   }}
-                  onHide={() => editMutation.mutate({ postId: post.id, is_hidden: post.is_hidden ? 0 : 1 })}
+                  onHide={() => editMutation.mutate({ postId: post.id, is_hidden: !post.is_hidden })}
                   onDelete={() => setConfirmDelete({ isOpen: true, type: 'post', id: post.id })}
                   onReport={() => setReportModal({ isOpen: true, targetType: 'post', targetId: post.id })}
                   onQuote={() => handleQuote(post)}
@@ -441,7 +451,7 @@ const ThreadViewPage: React.FC = () => {
 
       {/* Reply Section */}
       {user ? (
-        data.thread.is_locked ? (
+        data.thread.is_locked && !isStaff ? (
           <div className="p-12 bg-neon-pink/5 border border-neon-pink/10 rounded-3xl text-center text-neon-pink flex flex-col items-center gap-4">
             <Lock className="w-10 h-10 opacity-50 neon-glow-pink" />
             <p className="font-black uppercase tracking-widest italic">Terminal Locked // Uplink Disabled</p>
@@ -452,6 +462,11 @@ const ThreadViewPage: React.FC = () => {
               <Reply className="w-6 h-6 text-neon-cyan" />
               Initialize Transmission
             </div>
+            {data.thread.is_locked === 1 && (
+              <p className="flex items-center gap-2 text-xs text-neon-pink">
+                <Lock className="w-3 h-3" /> This thread is locked. You can still reply as staff.
+              </p>
+            )}
             <textarea
               ref={replyBoxRef}
               id="thread-reply"
@@ -491,7 +506,7 @@ const ThreadViewPage: React.FC = () => {
           if (confirmDelete.type === 'thread') {
             deleteThreadMutation.mutate();
           } else if (confirmDelete.type === 'post' && confirmDelete.id) {
-            editMutation.mutate({ postId: confirmDelete.id, is_deleted: 1 });
+            editMutation.mutate({ postId: confirmDelete.id, is_deleted: true });
           }
         }}
         title={`Delete ${confirmDelete.type === 'thread' ? 'Thread' : 'Post'}`}

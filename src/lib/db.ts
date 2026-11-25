@@ -345,6 +345,35 @@ export async function initDb() {
     )
   `);
 
+  // Migration-safe schema update for posts: edited_at records the last content edit
+  // (set by PATCH /api/posts/:id when content changes; never by hide/unhide). Additive and
+  // idempotent so concurrent serverless cold starts on Turso/LibSQL are safe.
+  if (!(db instanceof MySQLWrapper)) {
+    const postColumns = await db.query<any>('PRAGMA table_info(posts)');
+    if (!postColumns.some((item) => columnName(item) === 'edited_at')) {
+      try {
+        await db.execute('ALTER TABLE posts ADD COLUMN edited_at DATETIME NULL');
+      } catch (error: any) {
+        const message = String(error?.message || error);
+        if (!/duplicate column name/i.test(message)) throw error;
+      }
+    }
+  } else {
+    const editedAtColumn = await db.queryOne<any>(`
+      SELECT COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'posts' AND COLUMN_NAME = 'edited_at'
+    `);
+    if (!editedAtColumn) {
+      try {
+        await db.execute('ALTER TABLE posts ADD COLUMN edited_at TIMESTAMP NULL');
+      } catch (error: any) {
+        const message = String(error?.message || error);
+        if (!/duplicate column/i.test(message)) throw error;
+      }
+    }
+  }
+
   // Tags
   await run(`
     CREATE TABLE IF NOT EXISTS tags (

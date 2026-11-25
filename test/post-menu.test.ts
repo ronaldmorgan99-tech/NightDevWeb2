@@ -48,18 +48,32 @@ test('another member does not get Quote when the thread is locked', () => {
   assert.deepEqual(items, ['copy-link', 'report']);
 });
 
-test('author sees Edit and Quote, but not Report on their own post', () => {
+test('author sees Edit, Quote and Delete, but not Report or Hide on their own post', () => {
   const items = getPostMenuItems({ ...base, viewer: author });
-  assert.deepEqual(items, ['quote', 'copy-link', 'edit']);
+  assert.deepEqual(items, ['quote', 'copy-link', 'edit', 'delete']);
   assert.ok(!items.includes('report'));
-  assert.ok(!items.includes('delete'));
   assert.ok(!items.includes('hide'));
   assert.ok(!items.includes('sign-in'));
 });
 
-test('author still sees Edit when the thread is locked, but not Quote', () => {
+test('author still sees Edit and Delete when the thread is locked, but not Quote', () => {
   const items = getPostMenuItems({ ...base, viewer: author, isLocked: true });
-  assert.deepEqual(items, ['copy-link', 'edit']);
+  assert.deepEqual(items, ['copy-link', 'edit', 'delete']);
+});
+
+test('author does not get Delete on a post a moderator hid', () => {
+  const items = getPostMenuItems({ ...base, viewer: author, isHidden: true, isHiddenPlaceholder: true });
+  assert.deepEqual(items, ['copy-link']);
+});
+
+test('another member never gets Delete on someone else\'s post', () => {
+  const items = getPostMenuItems({ ...base, viewer: otherMember });
+  assert.ok(!items.includes('delete'));
+});
+
+test('staff keep Quote on a locked thread because the server lets staff reply there', () => {
+  const items = getPostMenuItems({ ...base, viewer: moderator, isLocked: true });
+  assert.deepEqual(items, ['quote', 'copy-link', 'edit', 'hide', 'report', 'delete']);
 });
 
 test('moderator sees Edit, Hide, Delete, Report, Quote and Copy link', () => {
@@ -161,4 +175,21 @@ test('thread view wires the overflow menu, post anchors, and keeps Pin/Lock in t
   assert.match(menu, /aria-haspopup="menu"/);
   assert.match(menu, /aria-label="More options"/);
   assert.match(menu, /Copied/);
+});
+
+test('thread view sends boolean moderation flags, confirms author deletes and shows an Edited label', () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const page = readFileSync(join(here, '../src/pages/ThreadViewPage.tsx'), 'utf8');
+  // The API schemas validate booleans; the page must not send 1/0 numbers.
+  assert.doesNotMatch(page, /\? 0 : 1/);
+  assert.match(page, /is_deleted: true/);
+  assert.match(page, /is_hidden: !post\.is_hidden/);
+  // Delete still goes through the shared confirm dialog.
+  assert.match(page, /onDelete=\{\(\) => setConfirmDelete\(\{ isOpen: true, type: 'post', id: post\.id \}\)\}/);
+  // Edited label with a timestamp tooltip.
+  assert.match(page, /edited_at\?: string \| null/);
+  assert.match(page, /post\.edited_at && !post\.is_hidden_placeholder/);
+  assert.match(page, /title=\{`Edited \$\{formatDbDateTime\(post\.edited_at\)\}`\}/);
+  // Non-staff see the locked banner; staff can still reply.
+  assert.match(page, /data\.thread\.is_locked && !isStaff/);
 });

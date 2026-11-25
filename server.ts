@@ -31,6 +31,20 @@ import { getConfiguredServers } from './src/lib/configuredServers';
 import { createSteamAuthHandlers } from './src/lib/steamAuth';
 import { attachForumLastPosts, getForumThreads, getThreadWithPosts, incrementThreadViews, isViewerStaff } from './src/lib/forumData';
 import { userDisplayNameSql } from './src/lib/userDisplay';
+import {
+  canCreateThread,
+  canDeleteThread,
+  canReplyToThread,
+  canReport,
+  canUpdatePost,
+  canUpdateThread,
+  deniedResponse,
+  isContentChange,
+  isStaffRole,
+  loadForumActor,
+  type ForumActor,
+  type PermissionResult
+} from './src/lib/forumPermissions';
 import dotenv from 'dotenv';
 
 // Load environment variables
@@ -122,17 +136,20 @@ const postCreateSchema = z.object({
   content: z.string().trim().min(1).max(10_000)
 });
 
+// Moderation flags accept true/false or 1/0 (older forum UI builds sent numbers).
+const moderationFlagSchema = z.union([z.boolean(), z.literal(0), z.literal(1)]).transform((value) => Boolean(value)).optional();
+
 const postUpdateSchema = z.object({
   content: z.string().trim().min(1).max(10_000).optional(),
-  is_hidden: z.boolean().optional(),
-  is_deleted: z.boolean().optional()
+  is_hidden: moderationFlagSchema,
+  is_deleted: moderationFlagSchema
 });
 
 const threadUpdateSchema = z.object({
-  is_pinned: z.boolean().optional(),
-  is_locked: z.boolean().optional(),
-  is_solved: z.boolean().optional(),
-  is_hidden: z.boolean().optional()
+  is_pinned: moderationFlagSchema,
+  is_locked: moderationFlagSchema,
+  is_solved: moderationFlagSchema,
+  is_hidden: moderationFlagSchema
 });
 
 const supportTicketCreateSchema = z.object({
@@ -942,20 +959,19 @@ async function start() {
     next();
   };
 
-  const isStaffRole = (role?: string) => role === 'admin' || role === 'moderator';
-
-  // Check if a user's role meets or exceeds the minimum required role
-  // Role hierarchy: admin > moderator > member > suspended
-  const meetsMinRole = (userRole: string, minRequiredRole: string): boolean => {
-    const roleHierarchy: { [key: string]: number } = {
-      'admin': 4,
-      'moderator': 3,
-      'member': 2,
-      'suspended': 1
-    };
-    const userRank = roleHierarchy[userRole] || 0;
-    const requiredRank = roleHierarchy[minRequiredRole] || 0;
-    return userRank >= requiredRank;
+  // Forum thread/post permissions live in src/lib/forumPermissions.ts, shared with the
+  // Vercel API. They use the user's current role from the database, not the JWT copy.
+  const requireForumActor = async (req: any, res: any): Promise<ForumActor | null> => {
+    const actor = await loadForumActor(db, req.user);
+    if (!actor) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return null;
+    }
+    return actor;
+  };
+  const sendPermissionDenied = (res: any, result: PermissionResult) => {
+    const denied = deniedResponse(result);
+    return res.status(denied.status).json(denied.body);
   };
 
   const createModerationAction = async (
@@ -1531,20 +1547,20 @@ async function start() {
     const sanitizedTitle = sanitizeUserText(title);
     const sanitizedContent = sanitizeUserText(content);
     try {
+      const actor = await requireForumActor(req, res);
+      if (!actor) return;
       // Fetch forum to check min_role_to_thread permission
       const forum = await db.queryOne<any>('SELECT id, min_role_to_thread FROM forums WHERE id = ?', [forum_id]);
       if (!forum) {
         return res.status(404).json({ error: 'Forum not found' });
       }
 
-      // Check if user's role meets the minimum role requirement for this forum
-      if (!meetsMinRole(req.user.role, forum.min_role_to_thread)) {
-        return res.status(403).json({ error: 'You do not have permission to create threads in this forum' });
-      }
+      const permission = canCreateThread(actor, forum);
+      if (!permission.allowed) return sendPermissionDenied(res, permission);
 
-      const result = await db.execute('INSERT INTO threads (forum_id, author_id, title) VALUES (?, ?, ?)', [forum_id, req.user.id, sanitizedTitle]);
+      const result = await db.execute('INSERT INTO threads (forum_id, author_id, title) VALUES (?, ?, ?)', [forum_id, actor.id, sanitizedTitle]);
       const threadId = result.lastInsertRowid || result.insertId;
-      await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [threadId, req.user.id, sanitizedContent]);
+      await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [threadId, actor.id, sanitizedContent]);
       res.json({ id: threadId });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1590,24 +1606,25 @@ async function start() {
     const { thread_id, content } = req.body;
     const sanitizedContent = sanitizeUserText(content);
     try {
-      // Fetch thread and its forum to check permissions
+      const actor = await requireForumActor(req, res);
+      if (!actor) return;
+      // Fetch thread, its lock state and its forum to check permissions
       const thread = await db.queryOne<any>(`
-        SELECT t.id, f.min_role_to_thread
+        SELECT t.id, t.is_locked, f.min_role_to_thread
         FROM threads t
         JOIN forums f ON t.forum_id = f.id
         WHERE t.id = ?
       `, [thread_id]);
-      
+
       if (!thread) {
         return res.status(404).json({ error: 'Thread not found' });
       }
 
-      // Check if user's role meets the minimum role requirement for this forum
-      if (!meetsMinRole(req.user.role, thread.min_role_to_thread)) {
-        return res.status(403).json({ error: 'You do not have permission to post in this forum' });
-      }
+      // Forum min role, then locked threads (staff may still reply to a locked thread)
+      const permission = canReplyToThread(actor, thread);
+      if (!permission.allowed) return sendPermissionDenied(res, permission);
 
-      await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [thread_id, req.user.id, sanitizedContent]);
+      await db.execute('INSERT INTO posts (thread_id, author_id, content) VALUES (?, ?, ?)', [thread_id, actor.id, sanitizedContent]);
       await db.execute('UPDATE threads SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [thread_id]);
       res.json({ success: true });
     } catch (err: any) {
@@ -1618,26 +1635,28 @@ async function start() {
   app.patch('/api/posts/:id', authenticate, validateParams(idParamSchema), validateBody(postUpdateSchema), async (req: any, res) => {
     const { content, is_hidden, is_deleted } = req.body;
     try {
+      const actor = await requireForumActor(req, res);
+      if (!actor) return;
       const post = await db.queryOne<any>('SELECT * FROM posts WHERE id = ?', [req.params.id]);
       if (!post) return res.status(404).json({ error: 'Post not found' });
 
-      const isStaff = isStaffRole(req.user.role);
-      const isOwner = post.author_id === req.user.id;
-      if (!isOwner && !isStaff) {
-        return res.status(403).json({ error: 'Forbidden' });
-      }
-
-      if ((is_hidden !== undefined || is_deleted !== undefined) && !isStaff) {
-        return res.status(403).json({ error: 'Only moderators can hide/delete posts' });
-      }
+      // Edit: author or staff. Hide/unhide/restore: staff. Delete (soft): author or staff.
+      const permission = canUpdatePost(actor, post, { content, is_hidden, is_deleted });
+      if (!permission.allowed) return sendPermissionDenied(res, permission);
+      const isStaff = isStaffRole(actor.role);
 
       const updates: string[] = [];
       const params: any[] = [];
       const moderationEvents: Array<{ action: string; reason: string }> = [];
 
       if (content !== undefined) {
+        const sanitized = sanitizeUserText(content);
         updates.push('content = ?');
-        params.push(sanitizeUserText(content));
+        params.push(sanitized);
+        // edited_at tracks real content edits only, never moderation-only hide/unhide.
+        if (isContentChange(post.content, sanitized)) {
+          updates.push('edited_at = CURRENT_TIMESTAMP');
+        }
       }
       if (is_hidden !== undefined) {
         updates.push('is_hidden = ?');
@@ -1670,11 +1689,12 @@ async function start() {
 
       if (isStaff && moderationEvents.length > 0) {
         for (const event of moderationEvents) {
-          await createModerationAction(req.user.id, event.action, 'post', Number(req.params.id), event.reason);
+          await createModerationAction(actor.id, event.action, 'post', Number(req.params.id), event.reason);
         }
       }
 
-      res.json({ success: true });
+      const updated = await db.queryOne<any>('SELECT id, edited_at, is_hidden, is_deleted FROM posts WHERE id = ?', [req.params.id]);
+      res.json({ success: true, post: updated });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -1682,23 +1702,16 @@ async function start() {
 
   app.patch('/api/threads/:id', authenticate, validateParams(idParamSchema), validateBody(threadUpdateSchema), async (req: any, res) => {
     const { is_pinned, is_locked, is_solved, is_hidden } = req.body;
-    if (!['admin', 'moderator'].includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
     try {
+      const actor = await requireForumActor(req, res);
+      if (!actor) return;
       const thread = await db.queryOne<any>('SELECT * FROM threads WHERE id = ?', [req.params.id]);
       if (!thread) return res.status(404).json({ error: 'Thread not found' });
 
-      const isStaff = isStaffRole(req.user.role);
-      const isOwner = thread.author_id === req.user.id;
-
-      if (is_pinned !== undefined && !isStaff) {
-        return res.status(403).json({ error: 'Only moderators can pin/unpin threads' });
-      }
-      if (is_hidden !== undefined && !isStaff) {
-        return res.status(403).json({ error: 'Only moderators can hide/unhide threads' });
-      }
-      if ((is_locked !== undefined || is_solved !== undefined) && !isStaff && !isOwner) {
-        return res.status(403).json({ error: 'Forbidden' });
-      }
+      // Pin/lock/hide: staff. Solve: thread author or staff.
+      const permission = canUpdateThread(actor, thread, { is_pinned, is_locked, is_solved, is_hidden });
+      if (!permission.allowed) return sendPermissionDenied(res, permission);
+      const isStaff = isStaffRole(actor.role);
 
       const updates: string[] = [];
       const params: any[] = [];
@@ -1717,7 +1730,7 @@ async function start() {
       if (is_locked !== undefined) {
         updates.push('is_locked = ?');
         params.push(is_locked ? 1 : 0);
-        if (isStaff && (thread.is_locked ?? 0) !== (is_locked ? 1 : 0)) {
+        if ((thread.is_locked ?? 0) !== (is_locked ? 1 : 0)) {
           moderationEvents.push({
             action: is_locked ? 'lock_thread' : 'unlock_thread',
             reason: `Thread ${is_locked ? 'locked' : 'unlocked'} via /api/threads/:id PATCH`
@@ -1727,7 +1740,7 @@ async function start() {
       if (is_solved !== undefined) {
         updates.push('is_solved = ?');
         params.push(is_solved ? 1 : 0);
-        if (isStaff && (thread.is_solved ?? 0) !== (is_solved ? 1 : 0)) {
+        if ((thread.is_solved ?? 0) !== (is_solved ? 1 : 0)) {
           moderationEvents.push({
             action: is_solved ? 'solve_thread' : 'unsolve_thread',
             reason: `Thread ${is_solved ? 'solved' : 'unsolved'} via /api/threads/:id PATCH`
@@ -1755,7 +1768,7 @@ async function start() {
 
       if (isStaff && moderationEvents.length > 0) {
         for (const event of moderationEvents) {
-          await createModerationAction(req.user.id, event.action, 'thread', Number(req.params.id), event.reason);
+          await createModerationAction(actor.id, event.action, 'thread', Number(req.params.id), event.reason);
         }
       }
 
@@ -1767,20 +1780,19 @@ async function start() {
 
   app.delete('/api/threads/:id', authenticate, validateParams(idParamSchema), async (req: any, res) => {
     try {
+      const actor = await requireForumActor(req, res);
+      if (!actor) return;
       const thread = await db.queryOne<any>('SELECT * FROM threads WHERE id = ?', [req.params.id]);
       if (!thread) return res.status(404).json({ error: 'Thread not found' });
-      const isStaff = isStaffRole(req.user.role);
-      const isOwner = thread.author_id === req.user.id;
-      if (!isStaff && !isOwner) {
-        return res.status(403).json({ error: 'Forbidden' });
-      }
+      const permission = canDeleteThread(actor, thread);
+      if (!permission.allowed) return sendPermissionDenied(res, permission);
 
       await db.execute('DELETE FROM posts WHERE thread_id = ?', [req.params.id]);
       await db.execute('DELETE FROM threads WHERE id = ?', [req.params.id]);
 
-      if (isStaff) {
+      if (isStaffRole(actor.role)) {
         await createModerationAction(
-          req.user.id,
+          actor.id,
           'delete_thread',
           'thread',
           Number(req.params.id),
@@ -1797,9 +1809,12 @@ async function start() {
   app.post('/api/reports', authenticate, validateBody(reportCreateSchema), async (req: any, res) => {
     const { target_type, target_id, reason } = req.body;
     try {
+      const actor = await loadForumActor(db, req.user);
+      const permission = canReport(actor);
+      if (!permission.allowed) return sendPermissionDenied(res, permission);
       await db.execute(
         'INSERT INTO reports (reporter_id, target_type, target_id, reason) VALUES (?, ?, ?, ?)',
-        [req.user.id, target_type, target_id, reason]
+        [actor!.id, target_type, target_id, reason]
       );
 
       res.status(201).json({ success: true });
