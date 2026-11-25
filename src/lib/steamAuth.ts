@@ -112,6 +112,53 @@ export function collectOpenIdParams(query: Record<string, unknown>): Record<stri
   return params;
 }
 
+// Express/qs and URLSearchParams treat "+" as space (form-urlencoded). Steam's
+// openid.sig is base64 and often contains literal "+" in the callback query
+// string. decodeURIComponent preserves "+", so parse the raw URL search.
+export function parseRawQueryString(search: string): Record<string, string> {
+  const input = search.startsWith('?') ? search.slice(1) : search;
+  const params: Record<string, string> = {};
+  if (!input) return params;
+  for (const part of input.split('&')) {
+    if (!part) continue;
+    const separator = part.indexOf('=');
+    const rawKey = separator === -1 ? part : part.slice(0, separator);
+    const rawValue = separator === -1 ? '' : part.slice(separator + 1);
+    try {
+      const key = decodeURIComponent(rawKey);
+      const value = decodeURIComponent(rawValue);
+      if (key) params[key] = value;
+    } catch {
+      if (rawKey) params[rawKey] = rawValue;
+    }
+  }
+  return params;
+}
+
+export function collectOpenIdParamsFromUrl(urlOrSearch: string | undefined): Record<string, string> {
+  if (!urlOrSearch) return {};
+  const search = urlOrSearch.includes('?') ? urlOrSearch.slice(urlOrSearch.indexOf('?')) : urlOrSearch;
+  return collectOpenIdParams(parseRawQueryString(search));
+}
+
+export function getRequestSearch(req: Pick<Request, 'originalUrl' | 'url'>): string {
+  const candidate = req.originalUrl || req.url || '';
+  const index = candidate.indexOf('?');
+  return index === -1 ? '' : candidate.slice(index);
+}
+
+function applyAuthNoStoreHeaders(res: Response) {
+  res.setHeader('Cache-Control', 'private, no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('CDN-Cache-Control', 'no-store');
+  res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
+}
+
+function logSteamAuth(event: string, details: Record<string, unknown>) {
+  console.log(JSON.stringify({ event, ...details }));
+}
+
 export function parseOpenIdKeyValues(body: string): Record<string, string> {
   const result: Record<string, string> = {};
   for (const line of String(body || '').split(/\r?\n/)) {
@@ -172,10 +219,16 @@ export function assertSteamCallbackShape(params: Record<string, string>, origin:
   return steamId;
 }
 
+export type SteamAssertionResult = {
+  ok: boolean;
+  reason?: string;
+  status?: number;
+};
+
 export async function verifySteamAssertion(
   params: Record<string, string>,
   fetchImpl: typeof fetch = fetch
-): Promise<boolean> {
+): Promise<SteamAssertionResult> {
   const body = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     body.set(key, key === 'openid.mode' ? 'check_authentication' : value);
@@ -189,14 +242,23 @@ export async function verifySteamAssertion(
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'text/plain' },
       body: body.toString(),
-      redirect: 'error',
+      redirect: 'manual',
       signal: controller.signal
     });
-    if (!response.ok) return false;
+    if (response.status >= 300 && response.status < 400) {
+      return { ok: false, reason: 'steam_verification_redirected', status: response.status };
+    }
+    if (!response.ok) {
+      return { ok: false, reason: 'steam_verification_http_error', status: response.status };
+    }
     const parsed = parseOpenIdKeyValues(await response.text());
-    return parsed.is_valid === 'true';
-  } catch {
-    return false;
+    if (parsed.is_valid !== 'true') {
+      return { ok: false, reason: 'steam_assertion_not_valid', status: response.status };
+    }
+    return { ok: true, status: response.status };
+  } catch (error: any) {
+    const reason = error?.name === 'AbortError' ? 'steam_verification_timeout' : 'steam_verification_fetch_failed';
+    return { ok: false, reason };
   } finally {
     clearTimeout(timeout);
   }
@@ -316,7 +378,8 @@ function stateCookieOptions(base: CookieOptions): CookieOptions {
     httpOnly: true,
     path: '/',
     maxAge: 10 * 60 * 1000,
-    sameSite: base.sameSite ?? 'lax'
+    // Lax is required so the cookie is sent on the top-level GET back from Steam.
+    sameSite: 'lax'
   };
 }
 
@@ -324,18 +387,23 @@ export function createSteamAuthHandlers(deps: SteamAuthDeps) {
   const fetchImpl = deps.fetchImpl || fetch;
 
   const start = (req: Request, res: Response) => {
+    applyAuthNoStoreHeaders(res);
     try {
       const origin = getPublicOrigin(req);
       const state = crypto.randomBytes(24).toString('hex');
       res.cookie(STEAM_STATE_COOKIE, state, stateCookieOptions(deps.cookieOptions));
+      logSteamAuth('steam.auth.start', { origin });
       return res.redirect(302, buildSteamRedirectUrl(origin, state));
     } catch (error: any) {
+      logSteamAuth('steam.auth.start_failed', { reason: error?.message || 'Failed to start Steam login' });
       return res.status(500).json({ error: error?.message || 'Failed to start Steam login' });
     }
   };
 
   const callback = async (req: Request, res: Response) => {
-    const fail = (origin?: string) => {
+    applyAuthNoStoreHeaders(res);
+    const fail = (origin: string | undefined, reason: string, extra: Record<string, unknown> = {}) => {
+      logSteamAuth('steam.auth.callback_failed', { reason, origin: origin || null, ...extra });
       const safeOrigin = origin && isValidHttpOrigin(origin) ? origin.replace(/\/$/, '') : '';
       res.clearCookie(STEAM_STATE_COOKIE, { ...deps.cookieOptions, maxAge: 0 });
       return res.redirect(302, `${safeOrigin}${STEAM_AUTH_ERROR_REDIRECT}`);
@@ -345,12 +413,21 @@ export function createSteamAuthHandlers(deps: SteamAuthDeps) {
     try {
       origin = getPublicOrigin(req);
       const state = String(req.cookies?.[STEAM_STATE_COOKIE] || '');
-      const params = collectOpenIdParams(req.query as Record<string, unknown>);
+      const params = collectOpenIdParamsFromUrl(getRequestSearch(req));
+      if (!state) {
+        return fail(origin, 'missing_state_cookie', {
+          hasReturnTo: Boolean(params['openid.return_to']),
+          mode: params['openid.mode'] || null
+        });
+      }
       const steamId = assertSteamCallbackShape(params, origin, state);
-      const isValid = await verifySteamAssertion(params, fetchImpl);
-      if (!isValid) return fail(origin);
+      const verification = await verifySteamAssertion(params, fetchImpl);
+      if (!verification.ok) {
+        return fail(origin, verification.reason || 'steam_assertion_not_valid', { status: verification.status || null });
+      }
 
       if (!deps.jwtSecret || deps.jwtSecret.length < 32) {
+        logSteamAuth('steam.auth.callback_failed', { reason: 'jwt_secret_missing_or_too_short' });
         return res.status(500).json({ error: 'JWT_SECRET is required and must be at least 32 characters.' });
       }
 
@@ -363,9 +440,10 @@ export function createSteamAuthHandlers(deps: SteamAuthDeps) {
       );
       res.clearCookie(STEAM_STATE_COOKIE, { ...deps.cookieOptions, maxAge: 0 });
       res.cookie(deps.cookieName, token, deps.cookieOptions);
+      logSteamAuth('steam.auth.callback_success', { userId: user.id, usedSteamProfile: Boolean(profile.personaName || profile.avatarUrl) });
       return res.redirect(302, `${origin}${STEAM_AUTH_SUCCESS_REDIRECT}`);
-    } catch {
-      return fail(origin);
+    } catch (error: any) {
+      return fail(origin, error?.message || 'steam_callback_exception');
     }
   };
 
