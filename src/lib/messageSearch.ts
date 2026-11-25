@@ -1,6 +1,7 @@
 export interface SearchUserResult {
   id: number;
   username: string;
+  display_name?: string | null;
   avatar_url: string | null;
 }
 
@@ -12,6 +13,7 @@ const normalizeSearchUserResult = (value: unknown): SearchUserResult | null => {
   const candidate = value as {
     id?: unknown;
     username?: unknown;
+    display_name?: unknown;
     avatar_url?: unknown;
   };
 
@@ -26,7 +28,11 @@ const normalizeSearchUserResult = (value: unknown): SearchUserResult | null => {
     ? candidate.avatar_url
     : null;
 
-  return { id, username, avatar_url };
+  const display_name = typeof candidate.display_name === 'string' && candidate.display_name.trim().length > 0
+    ? candidate.display_name.trim()
+    : undefined;
+
+  return display_name ? { id, username, display_name, avatar_url } : { id, username, avatar_url };
 };
 
 export const normalizeSearchUserResults = (payload: unknown, currentUserId?: number): SearchUserResult[] => {

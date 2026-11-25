@@ -13,11 +13,18 @@ import {
   parseSteamIdFromClaimedId,
   collectOpenIdParamsFromUrl,
   sanitizeSteamUsername,
+  sanitizeSteamDisplayName,
   verifySteamAssertion,
   fetchSteamProfile,
+  parseSteamProfileXml,
+  extractSteamXmlField,
+  resolveSteamApiKey,
+  upsertSteamUser,
+  isSteamPlaceholderUsername,
   STEAM_OPENID_NS,
   STEAM_IDENTIFIER_SELECT
 } from '../src/lib/steamAuth.ts';
+import { getUserAvatarInitial, getUserDisplayName } from '../src/lib/userDisplay.ts';
 
 const origin = 'https://night-dev-web2.vercel.app';
 const state = 'test-state-123';
@@ -132,31 +139,75 @@ test('getPublicOrigin prefers SITE_ORIGIN and ignores the placeholder APP_URL', 
   }
 });
 
-test('fetchSteamProfile degrades when STEAM_API_KEY is missing or the API fails', async () => {
+test('fetchSteamProfile uses the Web API, then keyless community XML', async () => {
   const previousKey = process.env.STEAM_API_KEY;
+  const steamAvatar = 'https://avatars.fastly.steamstatic.com/abcdef_full.jpg';
+  const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><profile>
+    <steamID64>${steamId}</steamID64>
+    <steamID><![CDATA[---.GeforceNow Cloud Gamin]]></steamID>
+    <avatarFull><![CDATA[${steamAvatar}]]></avatarFull>
+  </profile>`;
+
   try {
     delete process.env.STEAM_API_KEY;
-    assert.deepEqual(await fetchSteamProfile(steamId, async () => {
-      throw new Error('should not be called');
-    }), { steamId });
+
+    const xmlFetch: typeof fetch = async (url) => {
+      assert.match(String(url), /steamcommunity\.com\/profiles\/76561198000000000\/\?xml=1/);
+      return new Response(xml, { status: 200, headers: { 'Content-Type': 'text/xml' } });
+    };
+    assert.deepEqual(await fetchSteamProfile(steamId, xmlFetch), {
+      steamId,
+      personaName: '---.GeforceNow Cloud Gamin',
+      avatarUrl: steamAvatar,
+      source: 'community_xml'
+    });
+
+    const failedXmlFetch: typeof fetch = async () => new Response('nope', { status: 500 });
+    assert.deepEqual(await fetchSteamProfile(steamId, failedXmlFetch), { steamId, source: 'unavailable' });
 
     process.env.STEAM_API_KEY = 'test-key';
+    const urls: string[] = [];
     const okFetch: typeof fetch = async (url) => {
+      urls.push(String(url));
       assert.match(String(url), /ISteamUser\/GetPlayerSummaries\/v2/);
       return new Response(JSON.stringify({
         response: {
-          players: [{ steamid: steamId, personaname: 'Pilot', avatarfull: 'https://example.com/avatar.jpg' }]
+          players: [{ steamid: steamId, personaname: 'Pilot', avatarfull: steamAvatar }]
         }
       }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
     assert.deepEqual(await fetchSteamProfile(steamId, okFetch), {
       steamId,
       personaName: 'Pilot',
-      avatarUrl: 'https://example.com/avatar.jpg'
+      avatarUrl: steamAvatar,
+      source: 'get_player_summaries'
+    });
+    assert.equal(urls.length, 1);
+
+    const failThenXml: typeof fetch = async (url) => {
+      if (String(url).includes('GetPlayerSummaries')) {
+        return new Response('nope', { status: 500 });
+      }
+      return new Response(xml, { status: 200, headers: { 'Content-Type': 'text/xml' } });
+    };
+    assert.deepEqual(await fetchSteamProfile(steamId, failThenXml), {
+      steamId,
+      personaName: '---.GeforceNow Cloud Gamin',
+      avatarUrl: steamAvatar,
+      source: 'community_xml'
     });
 
-    const failFetch: typeof fetch = async () => new Response('nope', { status: 500 });
-    assert.deepEqual(await fetchSteamProfile(steamId, failFetch), { steamId });
+    delete process.env.STEAM_API_KEY;
+    const keyedFromOptions: typeof fetch = async (url) => {
+      assert.match(String(url), /ISteamUser\/GetPlayerSummaries\/v2/);
+      return new Response(JSON.stringify({
+        response: { players: [{ steamid: steamId, personaname: 'FromSettings', avatarfull: steamAvatar }] }
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    };
+    assert.equal(
+      (await fetchSteamProfile(steamId, keyedFromOptions, { apiKey: 'db-key' })).personaName,
+      'FromSettings'
+    );
   } finally {
     if (previousKey === undefined) delete process.env.STEAM_API_KEY;
     else process.env.STEAM_API_KEY = previousKey;
@@ -174,4 +225,219 @@ test('parseRawQueryString preserves plus signs in OpenID signatures', () => {
   assert.equal(fromUrl['openid.sig'], 'abc+def/ghi=');
   assert.equal(fromUrl['openid.mode'], 'id_res');
   assert.equal('state' in fromUrl, false);
+});
+
+const steamAvatar = 'https://avatars.fastly.steamstatic.com/4fa32bf590966bb1bb5a2c43a03cf3079882c0e6_full.jpg';
+
+const ronaldXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><profile>
+	<steamID64>76561198778230825</steamID64>
+	<steamID><![CDATA[---.GeforceNow Cloud Gamin]]></steamID>
+	<avatarFull><![CDATA[${steamAvatar}]]></avatarFull>
+	<avatarMedium><![CDATA[https://avatars.fastly.steamstatic.com/4fa32bf590966bb1bb5a2c43a03cf3079882c0e6_medium.jpg]]></avatarMedium>
+</profile>`;
+
+test('parseSteamProfileXml reads CDATA persona name and avatarFull', () => {
+  const profile = parseSteamProfileXml(ronaldXml, '76561198778230825');
+  assert.equal(profile.personaName, '---.GeforceNow Cloud Gamin');
+  assert.equal(profile.avatarUrl, steamAvatar);
+  assert.equal(profile.source, 'community_xml');
+  assert.equal(extractSteamXmlField(ronaldXml, 'steamID'), '---.GeforceNow Cloud Gamin');
+  assert.equal(extractSteamXmlField(ronaldXml, 'steamID64'), '76561198778230825');
+});
+
+test('parseSteamProfileXml supports non-CDATA fields, entities, and rejects a mismatched steamID64', () => {
+  const xml = `<?xml version="1.0"?><profile>
+    <steamID64>76561198000000000</steamID64>
+    <steamID>Pilot &amp; Co</steamID>
+    <avatarFull>https://avatars.fastly.steamstatic.com/pilot_full.jpg</avatarFull>
+  </profile>`;
+  const profile = parseSteamProfileXml(xml, steamId);
+  assert.equal(profile.personaName, 'Pilot & Co');
+  assert.equal(profile.avatarUrl, 'https://avatars.fastly.steamstatic.com/pilot_full.jpg');
+
+  const mismatched = parseSteamProfileXml(ronaldXml, steamId);
+  assert.deepEqual(mismatched, { steamId, source: 'unavailable' });
+
+  const untrustedAvatar = `<?xml version="1.0"?><profile>
+    <steamID64>${steamId}</steamID64>
+    <steamID>Pilot</steamID>
+    <avatarFull>https://evil.example/avatar.jpg</avatarFull>
+  </profile>`;
+  const sanitized = parseSteamProfileXml(untrustedAvatar, steamId);
+  assert.equal(sanitized.personaName, 'Pilot');
+  assert.equal(sanitized.avatarUrl, undefined);
+});
+
+test('getUserDisplayName prefers display_name and avatar initials skip leading punctuation', () => {
+  assert.equal(getUserDisplayName({ username: 'steam_76561198778230825', display_name: '---.GeforceNow Cloud Gamin' }), '---.GeforceNow Cloud Gamin');
+  assert.equal(getUserDisplayName({ username: 'steam_76561198778230825' }), 'steam_76561198778230825');
+  assert.equal(getUserAvatarInitial({ display_name: '---.GeforceNow Cloud Gamin' }), 'G');
+  assert.equal(sanitizeSteamDisplayName('  ---.GeforceNow Cloud Gamin\n'), '---.GeforceNow Cloud Gamin');
+});
+
+test('resolveSteamApiKey prefers the env key, then the admin settings value', async () => {
+  const previousKey = process.env.STEAM_API_KEY;
+  const settings: Record<string, string> = { steam_api_key: '  db-key  ' };
+  const db = {
+    async queryOne(_sql: string, params: any[] = []) {
+      return { value: settings[params[0]] };
+    },
+    async query() { return []; },
+    async execute() { return {}; }
+  };
+
+  try {
+    process.env.STEAM_API_KEY = 'env-key';
+    assert.equal(await resolveSteamApiKey(db), 'env-key');
+    delete process.env.STEAM_API_KEY;
+    assert.equal(await resolveSteamApiKey(db), 'db-key');
+    settings.steam_api_key = '   ';
+    assert.equal(await resolveSteamApiKey(db), undefined);
+  } finally {
+    if (previousKey === undefined) delete process.env.STEAM_API_KEY;
+    else process.env.STEAM_API_KEY = previousKey;
+  }
+});
+
+function createMemoryUsersDb(seed: Array<Record<string, any>> = []) {
+  const users = seed.map((user, index) => ({ id: user.id ?? index + 1, ...user }));
+  let nextId = users.reduce((max, user) => Math.max(max, Number(user.id) || 0), 0) + 1;
+
+  const matches = (sql: string, pattern: RegExp) => pattern.test(sql.replace(/\s+/g, ' ').trim());
+
+  const db = {
+    users,
+    async queryOne(sql: string, params: any[] = []) {
+      if (matches(sql, /WHERE steam_id = \?/)) return users.find((user) => user.steam_id === params[0]) || null;
+      if (matches(sql, /WHERE username = \? AND id != \?/)) {
+        return users.find((user) => user.username === params[0] && user.id !== params[1]) || null;
+      }
+      if (matches(sql, /WHERE username = \?/)) return users.find((user) => user.username === params[0]) || null;
+      if (matches(sql, /WHERE id = \?/)) return users.find((user) => user.id === params[0]) || null;
+      return null;
+    },
+    async query() { return []; },
+    async execute(sql: string, params: any[] = []) {
+      const compact = sql.replace(/\s+/g, ' ').trim();
+      if (compact.startsWith('INSERT INTO users')) {
+        const columns = compact.slice(compact.indexOf('(') + 1, compact.indexOf(')')).split(',').map((item) => item.trim());
+        const row: Record<string, any> = { id: nextId++ };
+        columns.forEach((column, index) => { row[column] = params[index]; });
+        users.push(row);
+        return { lastInsertRowid: row.id };
+      }
+      if (compact.startsWith('UPDATE users SET')) {
+        const setPart = compact.slice('UPDATE users SET '.length, compact.indexOf(' WHERE'));
+        const columns = setPart.split(',').map((part) => part.trim().split('=')[0].trim()).filter((column) => column !== 'last_active');
+        const id = params[params.length - 1];
+        const user = users.find((item) => item.id === id);
+        if (!user) return {};
+        let paramIndex = 0;
+        for (const column of columns) {
+          user[column] = params[paramIndex];
+          paramIndex += 1;
+        }
+        return {};
+      }
+      return {};
+    }
+  };
+
+  return db;
+}
+
+test('upsertSteamUser stores display_name for a new Steam user', async () => {
+  const db = createMemoryUsersDb();
+  const created = await upsertSteamUser(db, {
+    steamId,
+    personaName: '---.GeforceNow Cloud Gamin',
+    avatarUrl: steamAvatar,
+    source: 'community_xml'
+  });
+  assert.equal(created.display_name, '---.GeforceNow Cloud Gamin');
+  assert.equal(created.avatar_url, steamAvatar);
+  assert.equal(created.username, 'GeforceNow_Cloud_Gamin');
+  assert.equal(isSteamPlaceholderUsername(created.username, steamId), false);
+});
+
+test('upsertSteamUser refreshes display_name and avatar on every login', async () => {
+  const existingId = 7;
+  const db = createMemoryUsersDb([{
+    id: existingId,
+    username: `steam_${steamId}`,
+    email: `steam-${steamId}@users.noreply.nightrespawn.app`,
+    role: 'member',
+    steam_id: steamId,
+    avatar_url: null,
+    display_name: null
+  }]);
+
+  const updated = await upsertSteamUser(db, {
+    steamId,
+    personaName: '---.GeforceNow Cloud Gamin',
+    avatarUrl: steamAvatar,
+    source: 'community_xml'
+  });
+
+  assert.equal(updated.id, existingId);
+  assert.equal(updated.display_name, '---.GeforceNow Cloud Gamin');
+  assert.equal(updated.avatar_url, steamAvatar);
+  assert.equal(updated.username, 'GeforceNow_Cloud_Gamin');
+
+  const customNameDb = createMemoryUsersDb([{
+    id: 8,
+    username: 'RonaldCustom',
+    email: 'ronald@example.com',
+    role: 'admin',
+    steam_id: steamId,
+    avatar_url: 'https://avatars.fastly.steamstatic.com/old.jpg',
+    display_name: 'Old Name'
+  }]);
+  const refreshed = await upsertSteamUser(customNameDb, {
+    steamId,
+    personaName: '---.GeforceNow Cloud Gamin',
+    avatarUrl: steamAvatar,
+    source: 'community_xml'
+  });
+  assert.equal(refreshed.username, 'RonaldCustom');
+  assert.equal(refreshed.display_name, '---.GeforceNow Cloud Gamin');
+  assert.equal(refreshed.avatar_url, steamAvatar);
+});
+
+test('upsertSteamUser keeps the steam_ placeholder username if the persona slug is taken', async () => {
+  const db = createMemoryUsersDb([
+    {
+      id: 1,
+      username: `steam_${steamId}`,
+      email: `steam-${steamId}@users.noreply.nightrespawn.app`,
+      role: 'member',
+      steam_id: steamId,
+      display_name: null,
+      avatar_url: null
+    },
+    {
+      id: 2,
+      username: 'GeforceNow_Cloud_Gamin',
+      email: 'other@example.com',
+      role: 'member',
+      steam_id: '76561198000000001',
+      display_name: 'Taken'
+    },
+    {
+      id: 3,
+      username: 'GeforceNow_Cloud_Gamin_0000',
+      email: 'other2@example.com',
+      role: 'member',
+      steam_id: '76561198000000002'
+    }
+  ]);
+
+  const updated = await upsertSteamUser(db, {
+    steamId,
+    personaName: '---.GeforceNow Cloud Gamin',
+    avatarUrl: steamAvatar,
+    source: 'community_xml'
+  });
+  assert.equal(updated.username, `steam_${steamId}`);
+  assert.equal(updated.display_name, '---.GeforceNow Cloud Gamin');
 });

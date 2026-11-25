@@ -264,48 +264,226 @@ export async function verifySteamAssertion(
   }
 }
 
+export type SteamProfileSource = 'get_player_summaries' | 'community_xml' | 'unavailable';
+
 export type SteamProfile = {
   steamId: string;
   personaName?: string;
   avatarUrl?: string;
+  source: SteamProfileSource;
 };
 
-export async function fetchSteamProfile(
-  steamId: string,
-  fetchImpl: typeof fetch = fetch
-): Promise<SteamProfile> {
-  const apiKey = process.env.STEAM_API_KEY?.trim();
-  if (!apiKey) {
-    return { steamId };
-  }
+export function getSteamCommunityXmlUrl(steamId: string): string {
+  return `https://steamcommunity.com/profiles/${steamId}/?xml=1`;
+}
 
+export function sanitizeSteamDisplayName(personaName: string | undefined | null): string | undefined {
+  const cleaned = String(personaName || '')
+    .replace(/[\u0000-\u001F\u007F]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 64);
+  return cleaned || undefined;
+}
+
+export function isSteamPlaceholderUsername(username: string | undefined | null, steamId: string): boolean {
+  return String(username || '') === `steam_${steamId}`.slice(0, 32);
+}
+
+function decodeXmlText(value: string): string {
+  return value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+export function extractSteamXmlField(xml: string, tag: string): string | undefined {
+  const pattern = new RegExp(
+    `<${tag}>(?:<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>|([^<]*))</${tag}>`,
+    'i'
+  );
+  const match = pattern.exec(xml);
+  if (!match) return undefined;
+  const raw = (match[1] ?? match[2] ?? '').trim();
+  if (!raw) return undefined;
+  return decodeXmlText(raw);
+}
+
+export function isAllowedSteamAvatarUrl(url: string | undefined | null): boolean {
+  if (!url) return false;
   try {
-    const url = new URL('/ISteamUser/GetPlayerSummaries/v2/', getSteamApiBase());
-    url.searchParams.set('key', apiKey);
-    url.searchParams.set('steamids', steamId);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10_000);
-    try {
-      const response = await fetchImpl(url.toString(), { method: 'GET', signal: controller.signal, redirect: 'error' });
-      if (!response.ok) return { steamId };
-      const payload = await response.json() as {
-        response?: { players?: Array<{ steamid?: string; personaname?: string; avatarfull?: string; avatarmedium?: string; avatar?: string }> };
-      };
-      const player = payload.response?.players?.find((item) => item.steamid === steamId) || payload.response?.players?.[0];
-      return {
-        steamId,
-        personaName: player?.personaname,
-        avatarUrl: player?.avatarfull || player?.avatarmedium || player?.avatar
-      };
-    } finally {
-      clearTimeout(timeout);
-    }
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return false;
+    const host = parsed.hostname.toLowerCase();
+    return host.endsWith('steamstatic.com') || host.endsWith('steamcdn-a.akamaihd.net');
   } catch {
-    return { steamId };
+    return false;
   }
 }
 
-async function allocateUsername(db: IDatabase, personaName: string | undefined, steamId: string): Promise<string> {
+export function parseSteamProfileXml(xml: string, steamId: string): SteamProfile {
+  const empty: SteamProfile = { steamId, source: 'unavailable' };
+  if (!xml || !/<profile[\s>]|<steamID64>/i.test(xml)) {
+    return empty;
+  }
+
+  const id64 = extractSteamXmlField(xml, 'steamID64');
+  if (id64 && id64 !== steamId) {
+    return empty;
+  }
+
+  const personaName = sanitizeSteamDisplayName(extractSteamXmlField(xml, 'steamID'));
+  const avatarUrl = [
+    extractSteamXmlField(xml, 'avatarFull'),
+    extractSteamXmlField(xml, 'avatarMedium'),
+    extractSteamXmlField(xml, 'avatarIcon')
+  ].find((item) => isAllowedSteamAvatarUrl(item));
+
+  if (!personaName && !avatarUrl) {
+    return empty;
+  }
+
+  return {
+    steamId,
+    personaName,
+    avatarUrl,
+    source: 'community_xml'
+  };
+}
+
+export async function resolveSteamApiKey(db?: IDatabase): Promise<string | undefined> {
+  const fromEnv = process.env.STEAM_API_KEY?.trim();
+  if (fromEnv) return fromEnv;
+  if (!db) return undefined;
+  try {
+    const row = await db.queryOne<{ value?: string | null }>('SELECT value FROM settings WHERE key = ?', ['steam_api_key']);
+    const fromSettings = String(row?.value || '').trim();
+    return fromSettings || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function fetchWithTimeout(
+  fetchImpl: typeof fetch,
+  url: string,
+  init: RequestInit,
+  timeoutMs = 10_000
+): Promise<globalThis.Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetchImpl(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchSteamProfileFromWebApi(
+  steamId: string,
+  apiKey: string,
+  fetchImpl: typeof fetch
+): Promise<SteamProfile> {
+  const url = new URL('/ISteamUser/GetPlayerSummaries/v2/', getSteamApiBase());
+  url.searchParams.set('key', apiKey);
+  url.searchParams.set('steamids', steamId);
+  const response = await fetchWithTimeout(fetchImpl, url.toString(), { method: 'GET', redirect: 'error' });
+  if (!response.ok) {
+    return { steamId, source: 'unavailable' };
+  }
+  const payload = await response.json() as {
+    response?: { players?: Array<{ steamid?: string; personaname?: string; avatarfull?: string; avatarmedium?: string; avatar?: string }> };
+  };
+  const player = payload.response?.players?.find((item) => item.steamid === steamId) || payload.response?.players?.[0];
+  const personaName = sanitizeSteamDisplayName(player?.personaname);
+  const avatarCandidate = player?.avatarfull || player?.avatarmedium || player?.avatar;
+  const avatarUrl = isAllowedSteamAvatarUrl(avatarCandidate) ? avatarCandidate : undefined;
+  if (!personaName && !avatarUrl) {
+    return { steamId, source: 'unavailable' };
+  }
+  return {
+    steamId,
+    personaName,
+    avatarUrl,
+    source: 'get_player_summaries'
+  };
+}
+
+async function fetchSteamProfileFromCommunityXml(
+  steamId: string,
+  fetchImpl: typeof fetch
+): Promise<SteamProfile> {
+  const response = await fetchWithTimeout(fetchImpl, getSteamCommunityXmlUrl(steamId), {
+    method: 'GET',
+    redirect: 'follow',
+    headers: {
+      Accept: 'application/xml, text/xml, */*',
+      'User-Agent': 'NightRespawn/1.0 (+https://nightrespawn.app)'
+    }
+  });
+  if (!response.ok) {
+    return { steamId, source: 'unavailable' };
+  }
+  return parseSteamProfileXml(await response.text(), steamId);
+}
+
+export async function fetchSteamProfile(
+  steamId: string,
+  fetchImpl: typeof fetch = fetch,
+  options?: { apiKey?: string }
+): Promise<SteamProfile> {
+  const apiKey = options?.apiKey?.trim() || process.env.STEAM_API_KEY?.trim();
+  let profile: SteamProfile = { steamId, source: 'unavailable' };
+
+  if (apiKey) {
+    try {
+      const fromApi = await fetchSteamProfileFromWebApi(steamId, apiKey, fetchImpl);
+      if (fromApi.personaName || fromApi.avatarUrl) {
+        profile = fromApi;
+      }
+    } catch {
+      // Fall through to the keyless public profile XML.
+    }
+  }
+
+  if (profile.personaName && profile.avatarUrl) {
+    return profile;
+  }
+
+  try {
+    const fromXml = await fetchSteamProfileFromCommunityXml(steamId, fetchImpl);
+    if (fromXml.personaName || fromXml.avatarUrl) {
+      return {
+        steamId,
+        personaName: profile.personaName || fromXml.personaName,
+        avatarUrl: profile.avatarUrl || fromXml.avatarUrl,
+        source: profile.personaName || profile.avatarUrl ? profile.source : fromXml.source
+      };
+    }
+  } catch {
+    // Keep whatever the Web API already returned, or the empty fallback.
+  }
+
+  return profile;
+}
+
+async function usernameTaken(db: IDatabase, username: string, excludeUserId?: number): Promise<boolean> {
+  if (excludeUserId == null) {
+    const existing = await db.queryOne<{ id: number }>('SELECT id FROM users WHERE username = ?', [username]);
+    return Boolean(existing);
+  }
+  const existing = await db.queryOne<{ id: number }>('SELECT id FROM users WHERE username = ? AND id != ?', [username, excludeUserId]);
+  return Boolean(existing);
+}
+
+async function allocateUsername(
+  db: IDatabase,
+  personaName: string | undefined,
+  steamId: string,
+  excludeUserId?: number
+): Promise<string> {
   const candidates = [
     sanitizeSteamUsername(personaName, steamId),
     sanitizeSteamUsername(`${personaName || 'steam'}_${steamId.slice(-4)}`, steamId),
@@ -314,18 +492,36 @@ async function allocateUsername(db: IDatabase, personaName: string | undefined, 
   const uniqueCandidates = [...new Set(candidates)];
 
   for (const candidate of uniqueCandidates) {
-    const existing = await db.queryOne<{ id: number }>('SELECT id FROM users WHERE username = ?', [candidate]);
-    if (!existing) return candidate;
+    if (!(await usernameTaken(db, candidate, excludeUserId))) return candidate;
   }
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const suffix = crypto.randomBytes(2).toString('hex');
     const candidate = `steam_${steamId.slice(-8)}_${suffix}`.slice(0, 32);
-    const existing = await db.queryOne<{ id: number }>('SELECT id FROM users WHERE username = ?', [candidate]);
-    if (!existing) return candidate;
+    if (!(await usernameTaken(db, candidate, excludeUserId))) return candidate;
   }
 
   throw new Error('Unable to allocate a unique username for Steam login');
+}
+
+async function maybeUpgradePlaceholderUsername(
+  db: IDatabase,
+  existingUsername: string,
+  profile: SteamProfile
+): Promise<string | undefined> {
+  if (!isSteamPlaceholderUsername(existingUsername, profile.steamId) || !profile.personaName) {
+    return undefined;
+  }
+  const placeholder = `steam_${profile.steamId}`.slice(0, 32);
+  const candidates = [
+    sanitizeSteamUsername(profile.personaName, profile.steamId),
+    sanitizeSteamUsername(`${profile.personaName}_${profile.steamId.slice(-4)}`, profile.steamId)
+  ].filter((candidate, index, list) => candidate && candidate !== placeholder && list.indexOf(candidate) === index);
+
+  for (const candidate of candidates) {
+    if (!(await usernameTaken(db, candidate))) return candidate;
+  }
+  return undefined;
 }
 
 export async function upsertSteamUser(db: IDatabase, profile: SteamProfile): Promise<{
@@ -334,25 +530,38 @@ export async function upsertSteamUser(db: IDatabase, profile: SteamProfile): Pro
   email: string;
   role: string;
   avatar_url?: string | null;
+  display_name?: string | null;
 }> {
   const steamUrl = `https://steamcommunity.com/profiles/${profile.steamId}`;
+  const displayName = sanitizeSteamDisplayName(profile.personaName);
+  const avatarUrl = isAllowedSteamAvatarUrl(profile.avatarUrl) ? profile.avatarUrl : undefined;
   const existing = await db.queryOne<any>('SELECT * FROM users WHERE steam_id = ?', [profile.steamId]);
 
   if (existing) {
     const updates: string[] = ['steam_url = ?', 'last_active = CURRENT_TIMESTAMP'];
     const params: any[] = [steamUrl];
-    if (profile.avatarUrl) {
+    if (displayName) {
+      updates.push('display_name = ?');
+      params.push(displayName);
+    }
+    if (avatarUrl) {
       updates.push('avatar_url = ?');
-      params.push(profile.avatarUrl);
+      params.push(avatarUrl);
+    }
+    const nextUsername = await maybeUpgradePlaceholderUsername(db, existing.username, profile);
+    if (nextUsername) {
+      updates.push('username = ?');
+      params.push(nextUsername);
     }
     params.push(existing.id);
     await db.execute(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params);
     return {
       id: existing.id,
-      username: existing.username,
+      username: nextUsername || existing.username,
       email: existing.email,
       role: existing.role,
-      avatar_url: profile.avatarUrl || existing.avatar_url
+      avatar_url: avatarUrl || existing.avatar_url,
+      display_name: displayName || existing.display_name
     };
   }
 
@@ -361,11 +570,14 @@ export async function upsertSteamUser(db: IDatabase, profile: SteamProfile): Pro
   const passwordHash = bcrypt.hashSync(crypto.randomBytes(32).toString('hex'), 10);
 
   await db.execute(
-    'INSERT INTO users (username, email, password, role, avatar_url, steam_url, steam_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [username, email, passwordHash, 'member', profile.avatarUrl || null, steamUrl, profile.steamId]
+    'INSERT INTO users (username, email, password, role, avatar_url, steam_url, steam_id, display_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [username, email, passwordHash, 'member', avatarUrl || null, steamUrl, profile.steamId, displayName || null]
   );
 
-  const created = await db.queryOne<any>('SELECT id, username, email, role, avatar_url FROM users WHERE steam_id = ?', [profile.steamId]);
+  const created = await db.queryOne<any>(
+    'SELECT id, username, email, role, avatar_url, display_name FROM users WHERE steam_id = ?',
+    [profile.steamId]
+  );
   if (!created) {
     throw new Error('Failed to load Steam user after insert');
   }
@@ -431,7 +643,8 @@ export function createSteamAuthHandlers(deps: SteamAuthDeps) {
         return res.status(500).json({ error: 'JWT_SECRET is required and must be at least 32 characters.' });
       }
 
-      const profile = await fetchSteamProfile(steamId, fetchImpl);
+      const apiKey = await resolveSteamApiKey(deps.db);
+      const profile = await fetchSteamProfile(steamId, fetchImpl, { apiKey });
       const user = await upsertSteamUser(deps.db, profile);
       const token = jwt.sign(
         { id: user.id, username: user.username, role: user.role },
@@ -440,7 +653,11 @@ export function createSteamAuthHandlers(deps: SteamAuthDeps) {
       );
       res.clearCookie(STEAM_STATE_COOKIE, { ...deps.cookieOptions, maxAge: 0 });
       res.cookie(deps.cookieName, token, deps.cookieOptions);
-      logSteamAuth('steam.auth.callback_success', { userId: user.id, usedSteamProfile: Boolean(profile.personaName || profile.avatarUrl) });
+      logSteamAuth('steam.auth.callback_success', {
+        userId: user.id,
+        usedSteamProfile: Boolean(profile.personaName || profile.avatarUrl),
+        profileSource: profile.source || 'unavailable'
+      });
       return res.redirect(302, `${origin}${STEAM_AUTH_SUCCESS_REDIRECT}`);
     } catch (error: any) {
       return fail(origin, error?.message || 'steam_callback_exception');
