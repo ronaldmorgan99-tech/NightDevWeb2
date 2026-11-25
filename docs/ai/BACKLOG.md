@@ -1,9 +1,9 @@
 # NightDevWeb2 Backlog
 
-Updated on 2026-06-25
-Last reviewed: 2026-07-10
+Updated on 2026-11-25
+Last reviewed: 2026-11-25
 
-Review note: Verified AI docs freshness check on 2026-07-10.
+Review note: Synced to main `25ea65c` (through PR #245). Long-completed April/June "Now" items were moved to `docs/ai/archive/BACKLOG_ARCHIVE.md`.
 
 ## Document Governance
 
@@ -22,144 +22,92 @@ Review note: Verified AI docs freshness check on 2026-07-10.
 
 ## Now (Current Sprint)
 
-### Critical Bug Fixes
-- **Status**: ✅ Completed
-- **Fixes**:
-  - Suspense infinite recursion causing "Maximum call stack size exceeded" during login
-  - Vite HMR WebSocket failures in GitHub Codespaces
-- **Details**: Individual Suspense boundaries per route, smart HMR detection
+### Player-facing leftovers (priority)
 
-### Studio/Veo Shipping Decision
-- **Status**: ✅ Decided (Feature-flagged in April/May 2026)
-- **Details**: `/studio` is canonicalized as a feature-flagged route: `VITE_ENABLE_STUDIO=true` serves Veo Studio, while `VITE_ENABLE_STUDIO=false` serves Coming Soon at `/studio` (no redirect).
-- **Definition of Done**: App routing, regression assertion, README, admin operations docs, and memory log all match this behavior.
+These still affect people trying to join or vote, as of `25ea65c`:
 
-### Production Media Provider Setup
-- **Status**: ✅ Release-ready (validation + rollback drill documented)
-- **Details**: `/api/media/animate` + `/api/media/poll` implemented with quota/poll guardrails and observability counters. Alert thresholds for media latency/error/quota are now documented, and sc[...]
-- **Definition of Done**: Complete production validation, verify `/api/admin/observability/metrics` dashboards/alerts, then enable `VITE_ENABLE_STUDIO=true` with rollback drill.
+- **Vote button** in the sidebar Quick Actions has no click handler and no vote page or vote-site URL. Store, Discord, and Stats next to it do work (`/store`, Discord invite, `/servers`).
+- **Download Network Tool** on the Servers page is a button with no handler and no downloadable asset.
+- **View Stats** on non-Unturned server cards has no handler.
+- **Ops:** add a Steam Web API key (`STEAM_API_KEY` in Vercel, or `steam_api_key` in admin integrations) so the live status panel can show Online/Offline instead of Unknown. This is configuration, not a code change. After a NightRespawnPilot restart, update `NIGHTRESPAWN_PILOT_SERVER_CODE`.
 
-### Bundle Optimization & Code Splitting
-- **Status**: ✅ Implemented
-- **Details**: Route-level lazy loading with individual Suspense boundaries, chunks <500kB
-- **Definition of Done**: Build passes without size warnings, no infinite re-render issues
+### Unify remaining API drift
 
-### Environment & Configuration
-- **Status**: ✅ Fixed
-- **Details**: .env.local loading, DATABASE_URL detection, DISABLE_HMR flag, Vite HMR for Codespaces
-- **Definition of Done**: All dev environments work without websocket/file loading errors
-
-### Vercel Split-Deployment API Routing
-- **Status**: ✅ Completed (reviewed 2026-04-25)
-- **Owner**: Platform Engineering
-- **Details**:
-  - Added Vercel filesystem-first routing for static assets and stabilized serverless API bootstrap with idempotent default auth-user creation.
-  - Added explicit `VITE_API_BASE_URL` environment validation/fallback logic (same-origin when unset, HTTPS enforcement outside local, preview-safe guidance).
-  - Expanded deployment runbook with a local/preview/production env matrix and checklist steps for post-deploy API health checks (`/api/settings`, `/api/auth/login`) and serverless Node ESM `.js` [...]
-
-### Integration Testing
-- **Status**: ✅ Implemented
-- **Details**: test:integration script with dedicated tmp/test.db, real server/database testing
-- **Definition of Done**: CI runs and validates real auth/API flows
-
-## Next (Next Sprint)
-
-### Deployment Documentation
-- **Owner**: Platform Engineering
-- **Backup owner**: Admin Operations
-- **Escalation path**: Platform Engineering on-call -> Incident Commander -> Head of Engineering
 - **Priority**: High
-- **Status**: ✅ Completed (2026-04-10)
-- **Details**: README now includes a production deployment runbook covering deployment models, environment-variable requirements, DB bootstrap/seed expectations, HTTPS and secrets-management requi[...]
+- **Status**: ⚠️ Partial (forum permissions and live server status are shared; other schemas/handlers are not)
+- **Details**: Track 1 in `docs/ai/refactor-plan/01-unify-api.md`. Concrete remaining bug: registration password minimum is 8 characters in `server.ts` (line 84) and 6 characters in `api/[...path].ts` (line 139).
 
-### Completed (this sprint)
+### Security hardening carry-over
 
-#### Deployment Documentation
-- **Status**: ✅ Completed (2026-04-10)
-- Added explicit deployment section to README covering:
-  - Environment variables breakdown (DATABASE_URL, JWT_SECRET, GEMINI_API_KEY, etc.)
-  - Database migration and seeding steps
-  - HTTPS/secrets management
-  - Health check endpoints and monitoring
-  - Vite HMR configuration for production domains
-
-#### Backend Request Validation & TS Server Checks
-- **Status**: ✅ Completed
-- **Details**: Added server-side request and route parameter validation, fixed `csurf` TypeScript declaration issues, and ensured backend TS compilation passes in CI.
-
-### Pending
-
-### Security Hardening
 - **Priority**: High
-- **Status**: ⚠️ In progress (updated 2026-04-25, owner: Platform Engineering)
-- Audit Socket.IO CORS settings before production (currently origin: '*') — ✅ Completed (owner: Platform Engineering, 2026-04-25)
-- Review cookie auth + CORS interaction for cross-domain scenarios — ✅ Completed (owner: Platform Engineering, 2026-04-25)
-- Add input sanitization validation across all endpoints — ✅ Completed for auth/content/profile/support write paths (owner: Platform Engineering, 2026-04-25)
-- Implement rate limiting on auth endpoints — ✅ Completed (owner: Platform Engineering, 2026-04-25)
-- **Rollout caveat**: Sanitization currently strips HTML/control characters on server-side write paths for profile/forum/post/message/ticket content. Non-content admin catalog payloads still rely [...]
+- **Status**: ⚠️ In progress (updated 2026-11-25)
+- Completed earlier: Socket.IO CORS audit, cookie auth + CORS for cross-domain, input sanitization on auth/content/profile/support write paths, auth endpoint rate limiting.
+- **Remaining**: sanitization of non-content admin catalog payloads still relies on schema validation only; formalize flaky-test quarantine reporting beyond the existing manifest.
 
-### CI/CD Pipeline
-- **Owner**: Platform Engineering
-- **Backup owner**: Admin Operations
-- **Escalation path**: Platform Engineering on-call -> Incident Commander -> Head of Engineering
-- **Priority**: High
-- **Workflow Reference**: `.github/workflows/ci.yml`
-- **Source of truth note**: Treat `.github/workflows/ci.yml` as canonical when backlog checklists drift.
+### Performance monitoring
 
-**Completed (verified in CI)**
-- `npm run lint` runs in the `validate` job.
-- `npm run build` runs in the `validate` job.
-- `npm run test:integration` runs in the `validate` job.
-- Dependency vulnerability scanning runs via `npm audit --audit-level=high` (`dependency-scan` job).
-- SAST scanning runs via CodeQL (`sast` job).
-- Coverage collection is enabled for integration + unit tests and uploaded as artifacts.
-- Integration coverage gating is enforced from existing `coverage/integration` output with an explicit threshold in CI.
-- Flaky/failure behavior is implemented: one retry for integration tests, upload failure logs/database artifact after second failure, then fail the workflow.
-
-**Remaining**
-- Formalize flaky-test quarantine/reporting automation beyond inline workflow comments.
-- _None currently. Re-open when new CI/CD gaps are identified._
-
-### Performance Monitoring
 - **Priority**: Medium
 - Add bundle analyzer to track chunk sizes post-optimization
 - Monitor media API (Gemini) latency and quota usage
 - Set up error tracking for production (e.g., Sentry)
 - Add performance monitoring for Socket.IO connections
 
+## Next
+
+### Finish public-site cleanup
+
+Wire or hide the dead Vote, Download Network Tool, and View Stats controls. Remove or compute the hardcoded "+12%" trend badge on the admin dashboard. Delete or route the orphaned `CategoryPage.tsx`.
+
+### Make the site feel live (remaining)
+
+Live NightRespawnPilot status shipped in PR #245. Still open: next-wipe countdown, homepage news/wipe treatment beyond the existing `/news` feed, and consuming any `network_servers` admin JSON (the playtest server comes from env vars, not that setting).
+
+### Engagement
+
+Vote-for-rewards page (the destination the Vote button still lacks), achievements and badges.
+
+### Commerce
+
+Replace the simulated Store checkout with real Stripe Elements / PayPal approval, then build the admin Economy tab. Webhook signature checks already exist; fraud/chargeback handling and subscription edge cases do not.
+
+## Shipped (November 2026)
+
+Recorded here so the plan and this backlog stop listing them as open. Details are in `docs/ai/MEMORY.md`.
+
+- **PR #245** — Live server status panel at the top of `/#/servers`. Removed the fake Network Health panel. Steam `GetServerList` status check, Unknown state without a key, shared `src/lib/serverStatus.ts` and `src/lib/liveServers.ts`.
+- **PR #244** — Live-site polish: nav breakpoints, floating post menu, Home vs Forums, servers/store fixes, focus ring. Store and Stats Quick Actions are wired.
+- **PR #243** — CodeQL sanitize test fix.
+- **PR #242** — Forum backend: author delete, locked-thread replies blocked server-side (staff exempt), `edited_at` + Edited label, shared `src/lib/forumPermissions.ts`.
+- **PR #241** — Forum post overflow menu.
+- **PR #240** — Support and contact pages readable by signed-out visitors.
+- **PRs #233–#239, #236, #237** — Steam OpenID sign-in and callback/display-name fixes, `/forums` route and forum authors, Vercel `userDisplay` import fix.
+
 ## Later (Future Sprints)
 
 ### Advanced Features
+
 - Expand media provider support (beyond Gemini)
-- Add user-generated content moderation
 - Implement advanced forum features (polls, reactions)
 
 ### Scalability Improvements
+
 - Database connection pooling
 - Redis for session/cache management
 - CDN for static assets
-- **Refactor plan**: A multi-track architecture refactor plan operationalizing these scalability items (unify duplicate API, externalize in-memory state, real-time host, history routing) lives in [`docs/ai/refactor-plan/`](refactor-plan/README.md).
+- **Refactor plan**: A multi-track architecture refactor plan operationalizing these scalability items (unify duplicate API, externalize in-memory state, real-time host, history routing) lives in [`docs/ai/refactor-plan/`](refactor-plan/README.md). Track 1 is partially started in the sense that forum permissions and live server status are shared modules; the track itself is still open.
 
 ## Open Risks
 
 ### Media API Dependency
+
 - **Risk Level**: High
 - Single provider (Gemini) creates vendor lock-in
 - Fallback UX now exists for provider outage/quota errors, but multi-provider failover is not yet implemented
 - Initial rate limiting/guardrails implemented; thresholds still need production tuning
 - **Mitigation**: Add provider abstraction layer, implement request queuing, and review guardrail thresholds after one week of production telemetry
 
-## Studio Go/No-Go Gate (April 2026)
-
-| Check | Status | Owner |
-| --- | --- | --- |
-| Media routes (`/api/media/animate`, `/api/media/poll`) implemented and locally validated | ✅ | Platform Engineering |
-| Provider outage + quota fallback UX in Studio page | ✅ | Frontend Engineering |
-| Monitoring endpoint includes media latency/failure/guardrail counters | ✅ | Platform Engineering |
-| Production provisioning, alert wiring, and rollback drill complete | ✅ Complete (2026-04-09, Owner: Platform Engineering + Admin Operations) | Platform Engineering + Admin Operations |
-| Enable discoverability (`VITE_ENABLE_STUDIO=true`) | ✅ Complete (2026-04-09, Owner: Platform Engineering) | Platform Engineering |
-
 ### Real-time Scaling
+
 - **Risk Level**: Medium
 - Socket.IO with SQLite may not scale to high concurrency
 - No message persistence or delivery guarantees beyond session
@@ -167,17 +115,24 @@ Review note: Verified AI docs freshness check on 2026-07-10.
 - **Mitigation**: Add Redis for session persistence, implement connection limits
 
 ### Frontend State Management
+
 - **Risk Level**: Low (now resolved)
 - Was: Suspense infinite recursion during lazy route transitions
 - **Fixed**: Individual Suspense boundaries prevent cascade
 - **Monitoring**: Watch for similar patterns with other async boundaries
 
 ### Payment Security
+
 - **Risk Level**: High
-- PayPal webhooks not validated in current implementation
+- Store checkout UI is still simulated (no card entry or PayPal redirect).
+- Stripe and PayPal webhook signature verification is implemented (`verifyStripeWebhookSignature`, `verifyPayPalWebhookSignature`) when the webhook secrets/IDs are configured. Earlier backlog text that said PayPal webhooks were not validated is outdated.
 - No fraud detection or chargeback handling
 - Subscription management edge cases not covered
-- **Mitigation**: Validate webhook signatures, add subscription audit logs
+- **Mitigation**: Finish real checkout, keep webhook signatures required in production, add subscription audit logs
+
+### Studio Go/No-Go Gate (April 2026)
+
+Historical gate; all checklist rows were marked complete on 2026-04-09. `/studio` remains feature-flagged with `VITE_ENABLE_STUDIO` (default false → Coming Soon). See `docs/admin/studio-support-status.md`.
 
 ## Definition of Done Template
 

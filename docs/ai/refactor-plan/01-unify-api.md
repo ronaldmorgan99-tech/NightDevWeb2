@@ -2,7 +2,7 @@
 
 - **Owner**: Unassigned
 - **Status**: ⬜ Todo
-- **Last updated**: 2026-06-25
+- **Last updated**: 2026-11-25
 
 ## Problem
 
@@ -21,16 +21,23 @@ Each file declares its **own** copy of:
 - Route handlers
 
 Because they are maintained separately, **they have already drifted**. Concrete example
-— the registration password minimum length:
+still present on main `25ea65c` — the registration password minimum length:
 
 | File | Line | Rule |
 | --- | --- | --- |
-| [`server.ts`](../../../server.ts#L66) | ~65 | `password: z.string().min(8).max(128)` |
-| [`api/[...path].ts`](../../../api/[...path].ts#L128) | ~128 | `password: z.string().min(6).max(128)` |
+| [`server.ts`](../../../server.ts#L84) | 84 | `password: z.string().min(8).max(128)` |
+| [`api/[...path].ts`](../../../api/[...path].ts#L139) | 139 | `password: z.string().min(6).max(128)` |
 
 A user who registers via the serverless API can set a 6-character password that the
 Express server would reject — a real security/consistency bug caused purely by
 duplication. More drift like this is likely lurking across the other shared concerns.
+
+**Partial progress (not the full track):** some domains now have a single shared module imported by both entrypoints:
+
+- [`src/lib/forumPermissions.ts`](../../../src/lib/forumPermissions.ts) — forum thread/post permission rules (PR #242).
+- [`src/lib/liveServers.ts`](../../../src/lib/liveServers.ts) and [`src/lib/serverStatus.ts`](../../../src/lib/serverStatus.ts) — configured server list and Steam status check (PR #245).
+
+Zod request schemas, CSRF/rate-limit middleware, auth helpers, and most route handlers remain duplicated. This track stays ⬜ Todo until those are extracted.
 
 ## Goal
 

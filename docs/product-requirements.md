@@ -1,14 +1,16 @@
 # NightDevWeb2 Product Requirements and System Flows
 
+Reviewed 2026-11-25 against main `25ea65c`. This document is still a requirements baseline, not a full current-state runbook. See `README.md` for how the shipped site works.
+
 ## 1) Functional Requirements
 
 | Area | Requirement | Notes |
 | --- | --- | --- |
-| Authentication & Authorization | Secure registration/login/session lifecycle using JWT + bcrypt; role-aware access for Member, Moderator, Admin. | Enforce server-side authorization checks on privileged endpoints. |
-| Community Interaction (Forums) | Category/forum/thread/post model with rich content support and moderation actions. | Support thread lifecycle controls (pin/lock/solved where applicable). |
+| Authentication & Authorization | Secure registration/login/session lifecycle using JWT + bcrypt, plus Steam OpenID sign-in; role-aware access for Member, Moderator, Admin. | Enforce server-side authorization checks on privileged endpoints. Forum checks use the live database role (`src/lib/forumPermissions.ts`). |
+| Community Interaction (Forums) | Category/forum/thread/post model with rich content support and moderation actions. | Thread lifecycle: pin/lock/hide (staff), solved (author or staff), author or staff delete. Authors can soft-delete their own posts (not if hidden by a moderator). Locked threads reject replies server-side except from staff. Content edits set `edited_at` and show an Edited label. |
 | Real-time Communication | Direct messaging with delivery, presence, and user-visible notifications. | Backed by Socket.IO events and authenticated socket sessions. |
 | AI Media Services (Veo Studio) | Prompt/image-driven media generation workflow with queued execution and status polling. | Feature-gated via environment config and API key controls. |
-| Commerce | Product catalog, cart flow, and secure third-party checkout integrations. | Payment/webhook processing must be idempotent and validated. |
+| Commerce | Product catalog, cart flow, and secure third-party checkout integrations. | Payment/webhook processing must be idempotent and validated. **Current gap:** the Store page still simulates confirmation; webhook signature checks exist, but the public checkout is not a complete production flow. |
 | Administrative Oversight | Central dashboard for moderation, configuration, and activity/financial analytics. | Include audit-friendly controls for sensitive administrative actions. |
 
 ## 2) Non-Functional Requirements
@@ -16,7 +18,7 @@
 | Category | Requirement | Implementation Targets |
 | --- | --- | --- |
 | Performance | Fast page loads and responsive state transitions. | Vite optimization, route/code splitting, TanStack Query caching/refetch strategy. |
-| Scalability | Multi-database compatibility and deploy flexibility. | SQLite for local iteration, MySQL for production, cloud-friendly stateless API patterns. |
+| Scalability | Multi-database compatibility and deploy flexibility. | SQLite for local iteration, Turso/LibSQL for Vercel production, MySQL as an alternate production backend. There is no Postgres driver. Stateless serverless API on Vercel (`api/[...path].ts`) plus a long-lived Express server (`server.ts`). |
 | Observability | Operational visibility for reliability and incident response. | Structured logs, health endpoints, metrics collection, error triage runbooks. |
 | Security | Defense-in-depth across auth, input handling, and integrations. | Rate limiting, request validation, sanitization, CSRF-aware session/cookie policy, secure webhook verification. |
 | Availability | Predictable deployment and rollback behavior. | CI checks, deploy runbooks, post-deploy smoke tests, rollback procedures. |
@@ -60,14 +62,15 @@
 ## 4) Module-by-Module Documentation Outline
 
 ### 4.1 Authentication Module
-- Identity lifecycle: registration, login, refresh/session validation, logout.
+- Identity lifecycle: registration, login, Steam OpenID (`/api/auth/steam`), refresh/session validation, logout.
 - Token/cookie behavior by deployment mode (same-origin vs split-origin).
 - Password hashing, auth rate limiting, and failed-attempt handling.
 - Role assignment and permission checks.
 
 ### 4.2 Forums Module
 - Data model: categories, threads, posts, reactions/metadata.
-- Thread lifecycle events: create/edit/lock/pin/solve/archive.
+- Thread lifecycle events: create/edit/lock/pin/solve/hide/delete. Shared rules in `src/lib/forumPermissions.ts`.
+- Post lifecycle: author or staff edit and soft-delete; `edited_at` + Edited label; staff hide/restore.
 - Pagination/search/filter patterns and content sanitization rules.
 - Moderator intervention points and user-facing status states.
 
@@ -104,6 +107,8 @@
 | --- | :---: | :---: | :---: |
 | Register/login/manage own profile | ✅ | ✅ | ✅ |
 | Create/edit own posts/threads | ✅ | ✅ | ✅ |
+| Soft-delete own posts (not if staff-hidden) | ✅ | ✅ | ✅ |
+| Reply to a locked thread | ❌ | ✅ | ✅ |
 | Send direct messages | ✅ | ✅ | ✅ |
 | Access Veo Studio (when enabled) | ✅ | ✅ | ✅ |
 | Purchase products / view own orders | ✅ | ✅ | ✅ |
@@ -141,6 +146,7 @@
 - Periodically review moderation metrics for bias/drift and policy updates.
 
 ## 7) Recommended Follow-up Docs
+- Current-state orientation now lives in `README.md` (How the website works). Keep this PRD for requirements; do not treat it as the only ops guide.
 - API endpoint catalog with concrete schemas/examples.
 - Event contract document for Socket.IO channels.
 - Moderation reason-code taxonomy and appeal SLA definitions.

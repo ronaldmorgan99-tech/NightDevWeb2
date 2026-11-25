@@ -1,52 +1,88 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# NightRespawn (NightDevWeb2)
 
-# Run and deploy your AI Studio app
+NightRespawn is the community website for the NightRespawn gaming network: forums, player profiles, a store, direct messages, and a live server browser for the **NightRespawnPilot** Unturned playtest. The usual production deployment is [night-dev-web2.vercel.app](https://night-dev-web2.vercel.app). Client routes are hash-based, so URLs look like `/#/servers` and `/#/forums`.
 
-This contains everything you need to run your app locally.
+This repository includes production build tooling (`npm run build`), a deployment runbook, and post-deploy verification steps.
 
-## Build and Launch Readiness
+## How the website works
 
-✅ **Status: This app is ready for build and launch.**
+### Stack
 
-The project includes production build tooling (`npm run build`), deployment runbook guidance, and post-deploy verification steps to support a launch workflow.
+- **Frontend:** React 19, TypeScript, Vite, Tailwind CSS (cyberpunk theme), and TanStack Query. Client routing uses React Router `HashRouter`.
+- **Backend:** The API exists in two places that must stay in sync:
+  - [`server.ts`](server.ts) — the long-lived Node/Express app used by `npm run dev` and local/CI smoke checks.
+  - [`api/[...path].ts`](api/[...path].ts) — the Vercel (and Netlify) serverless gateway used in production.
+  Shared modules already used by both include [`src/lib/forumPermissions.ts`](src/lib/forumPermissions.ts) (PR #242) and [`src/lib/liveServers.ts`](src/lib/liveServers.ts) / [`src/lib/serverStatus.ts`](src/lib/serverStatus.ts) (PR #245). Other request schemas and handlers are still duplicated; see [`docs/ai/refactor-plan/01-unify-api.md`](docs/ai/refactor-plan/01-unify-api.md).
+- **Database:** SQLite for local development (`DATABASE_URL` as a file path; default `nightrespawn.db`). On Vercel, Turso/LibSQL is used when `DATABASE_URL` or `TURSO_DATABASE_URL` starts with `libsql://` (with `TURSO_AUTH_TOKEN`). MySQL is supported when the URL starts with `mysql`. There is no Postgres driver.
+- **Auth:** A JWT is stored in an httpOnly cookie named `token` (24-hour expiry). Same-origin cookies use `SameSite=Lax`; split-origin production cookies use `SameSite=None; Secure`. CSRF uses a double-submit cookie. Passwords are hashed with bcrypt. Visitors can also sign in with **Steam OpenID** (`GET /api/auth/steam` → `/api/auth/steam/callback`). Set `SITE_ORIGIN` to the public site URL for Steam `return_to` and realm (`APP_URL` is a fallback).
+- **Realtime:** Socket.IO for direct messages, authenticated from the JWT cookie.
+- **State:** React Context for session/UI state, TanStack Query for server data.
 
-View your app in AI Studio: https://ai.studio/apps/760e6625-d344-4b21-a27e-ffbef0bdf8e6
+### Main pages
+
+| Hash path | What it is |
+| --- | --- |
+| `/#/` | Home |
+| `/#/forums` | Forum index (sectors and forums) |
+| `/#/forums/:id` | Threads in a forum |
+| `/#/forums/:id/new` | Create a thread |
+| `/#/threads/:id` | Thread and posts |
+| `/#/servers` | Server browser and live status panel |
+| `/#/store` | Store |
+| `/#/members`, `/#/profile`, `/#/profile/:id` | Members directory and profiles |
+| `/#/messages` | Direct messages |
+| `/#/news` | News feed from `/api/news` |
+| `/#/support`, `/#/contact` | Support and contact. Page content is visible to signed-out visitors; opening or viewing tickets requires sign-in (PR #240). |
+| `/#/help`, `/#/rules`, `/#/privacy`, `/#/terms` | Help and policy pages |
+| `/#/login`, `/#/register`, `/#/settings` | Sign-in, registration, and account settings |
+| `/#/discord` | Discord invite |
+| `/#/studio` | Veo Studio when `VITE_ENABLE_STUDIO=true`; otherwise the Coming Soon page, with no redirect |
+| `/#/admin/*` | Admin control plane (dashboard, users, moderation, forums, tags, store, integrations, analytics, support, settings) |
+
+### Live server status
+
+The **Live Server Status** panel sits at the top of the Servers page (`/#/servers`) and replaced the old hardcoded Network Health box (Frankfurt / London / New York / Singapore all stuck on "OK"). Shipped in [PR #245](https://github.com/ronaldmorgan99-tech/NightDevWeb2/pull/245).
+
+- NightRespawnPilot is listed from deployment config: `NIGHTRESPAWN_PILOT_ENABLED`, `NIGHTRESPAWN_PILOT_SERVER_CODE`, and `NIGHTRESPAWN_PILOT_INTERNAL_ADDRESS`. The Server Code is a 17-digit Steam game-server ID and **changes on every dedicated-server restart**. Update `NIGHTRESPAWN_PILOT_SERVER_CODE` after a restart, or set `NIGHTRESPAWN_PILOT_ENABLED=false` to hide the card.
+- Status is checked with Steam Web API `IGameServersService/GetServerList`, filtered by Unturned app id `304930` and name `NightRespawnPilot*`, then matched on the Server Code. The API key is resolved by `resolveSteamApiKey`: the `STEAM_API_KEY` environment variable first, then the admin integrations setting `steam_api_key`. No separate status-only key exists.
+- **Online:** Steam lists the server, and the panel shows the real player count. **Offline:** Steam answers but the server is not listed. **Unknown / not verified:** there is no key, Steam returns an error, or the request times out after 4 seconds. The site never reports Online just because a Server Code is configured.
+- Results Steam confirms are cached for 30 seconds per function instance. The NightRespawnPilot card, the stat tiles, and the sidebar Network Status widget use the same status.
+- **Join with Steam** uses `steam://run/304930//+connect <code>/` when Steam confirms the server is online. If status is Unknown, the card offers **Try joining with Steam** and a not-verified warning. If Offline, it shows "Server offline" and no join button.
+- A direct A2S query is not possible: this playtest server has no public game port and is reached only through Steam's relay.
+
+### Forums
+
+Forum permission rules live in [`src/lib/forumPermissions.ts`](src/lib/forumPermissions.ts) and are imported by both `server.ts` and `api/[...path].ts` so the two backends cannot drift (PR #242).
+
+- Authors can soft-delete their own posts, unless a moderator has already hidden the post. Only staff can restore a deleted post.
+- Replies to locked threads are rejected on the server. Moderators and admins may still reply.
+- When post content actually changes, `edited_at` is set. The thread page shows an **Edited** label with the time. Hide/unhide and other moderation-only updates do not set `edited_at`.
+- Pin, lock, and hide are staff-only. The thread author or staff can mark a thread solved. The thread author or staff can delete a thread.
+- Checks use the user's live role from the database, not the role stored in a 24-hour JWT.
+- Each post has an overflow menu (PR #241). Later polish renders that menu in a floating portal so it is not clipped (PR #244).
+
+### Store and payments
+
+The catalog and payment API routes exist (`/api/payments/stripe/*`, `/api/payments/paypal/*`). The Store page still **simulates** confirmation: it does not present Stripe Elements or a PayPal approval redirect. `MOCK_PAYMENTS=1` returns fake payment intents and orders. The real Stripe and PayPal SDK paths run when provider credentials are set, and webhook signature checks exist (`STRIPE_WEBHOOK_SECRET`, `PAYPAL_WEBHOOK_ID`). That is not yet a complete production checkout. The admin Settings → Economy tab is still "Under Construction".
+
+### Admin
+
+`/#/admin` is the operator back office: users and roles, moderation, sectors/forums, tags, store catalog, integrations (including `steam_api_key`), analytics, support tickets, and site settings. Some analytics trend badges (for example "+12%") are still hardcoded.
+
+Known player-facing leftovers on the public site: the sidebar **Vote** button, the Servers page **Download Network Tool** button, and **View Stats** still have no click action. See [`docs/ai/incomplete-features-and-ideas-plan.md`](docs/ai/incomplete-features-and-ideas-plan.md).
 
 ## Tech Stack Overview
 
-> **Source of truth:** See `package.json` for the exact runtime dependency set and version constraints used by this project.
+> **Source of truth:** See `package.json` for the exact runtime dependency set and version constraints used by this project. Local and CI Node version is **24** (`.nvmrc` / `engines.node`).
 
-### Framework: React 19 + TypeScript + Vite
-The frontend is built with **React 19** for modern component-based UI development, **TypeScript** for static typing and safer refactors, and **Vite** for fast local development and optimized production builds.
+### Frontend
+React 19 + TypeScript + Vite, Tailwind CSS with a custom cyberpunk theme, TanStack Query, and React Context.
 
 ### Workflow automation docs
 Workflow automation is documented under `docs/workflows/` for the active GitHub Actions workflows. See `docs/workflows/WORKFLOW_INDEX.md` for the current workflow catalog.
 
-### Backend: Express.js + Node.js (via `server.ts`)
-The server runs on **Node.js** and uses **Express.js** to handle API routes, middleware, and server-side logic. The main backend entry point is `server.ts`, which centralizes server configuration and startup behavior.
-
-### Database: SQLite (local) + Turso/LibSQL or MySQL (production)
-The data layer supports both runtime environments:
-- **SQLite** for local development (simple setup, file-based storage, ideal for quick iteration).
-- **Turso/LibSQL** for production serverless persistence on Vercel (SQLite-compatible, managed, and durable).
-- **MySQL** as an alternative production backend (robust and scalable for traditional deployments).
-
-This allows developers to get started quickly while keeping production infrastructure reliable.
-
-### Real-time: Socket.IO integration
-The app includes **Socket.IO** for real-time, bidirectional communication between client and server. This is useful for features like live updates, notifications, presence, or collaborative interactions.
-
-### Styling: Tailwind CSS with custom cyberpunk theme
-UI styling is built with **Tailwind CSS**, enabling utility-first styling and rapid UI implementation. A **custom cyberpunk theme** is layered on top to provide a distinct visual identity and consistent design language across the app.
-
-### State Management: React Context API + TanStack React Query
-State is managed using a combination of:
-- **React Context API** for shared app-level/client state (such as UI state and global settings).
-- **TanStack React Query** for async server state (fetching, caching, background refetching, and synchronization).
-
-Together, they keep local UI state and remote API data organized, performant, and maintainable.
+### Backend and data
+Node.js and Express, with the dual API entrypoints described above. Persistence is SQLite locally, Turso/LibSQL on Vercel, or MySQL. Socket.IO handles realtime messaging.
 
 ## Admin Stability and Navigation Hardening (April 14, 2026)
 
@@ -65,14 +101,14 @@ Together, they keep local UI state and remote API data organized, performant, an
 - `npm run dev` — starts the Node/Express app via `tsx server.ts`.
 - `npm run lint` — runs `tsc --noEmit`.
 - `npm run build` — runs `npm run check:profilepage-clean && vite build`.
-- `npm run test` / `npm run test:regression` — runs Node regression suite (`test/regression.test.js`).
+- `npm run test` / `npm run test:regression` — Node test runner plus `tsx --test` coverage of unit/regression files, including forum permissions, Steam auth, sanitization, site polish, and server status.
 - `npm run test:integration` — runs `regression-tests.js`.
 - `npm run smoke:postdeploy` — executes post-deploy smoke checks script.
 - `npm run check:serverless-imports` — verifies serverless ESM `.js` imports.
 
 ## Run Locally
 
-**Prerequisites:** Node.js
+**Prerequisites:** Node.js 24 (see `.nvmrc`).
 
 1. Install dependencies:
    `npm install`
@@ -82,8 +118,10 @@ Together, they keep local UI state and remote API data organized, performant, an
    - `JWT_SECRET` (required): secret used by auth token code in `server.ts`.
    - `NODE_ENV` (required): `development` locally, `production` in deployed environments.
    - `VITE_ENABLE_STUDIO` (recommended): set to `true` to render the Veo Studio experience at `/studio`; set to `false` (default) to keep `/studio` on the Coming Soon experience.
-4. Optional values:
-   - `APP_URL`: used in hosted environments for callback/self links.
+4. Optional but important values:
+   - `SITE_ORIGIN` (or `APP_URL`): public origin used for Steam OpenID callbacks.
+   - `STEAM_API_KEY`: needed for live NightRespawnPilot status and Steam persona/avatar lookup. Steam login still works without it.
+   - `NIGHTRESPAWN_PILOT_SERVER_CODE`: update this whenever the playtest server restarts.
    - `VITE_API_BASE_URL`: set this when frontend and API are hosted on different domains (example: `https://api.yourdomain.com`). If omitted, frontend calls relative `/api/*` paths on the current origin.
 5. Run the app:
    `npm run dev`
@@ -106,6 +144,7 @@ Together, they keep local UI state and remote API data organized, performant, an
   - User-generated text writes are sanitized server-side (profile bio, thread title, post body, support ticket subject/message, and direct message content).
 - **Rollout caveat**:
   - Sanitization is currently scoped to user-generated content fields. Admin catalog/config mutation endpoints rely on schema validation but do not sanitize rich text fields yet.
+  - Registration password minimum length still differs between the two API copies: `server.ts` requires 8 characters, `api/[...path].ts` requires 6. See `docs/ai/refactor-plan/01-unify-api.md`.
 
 ## Production Deployment Runbook
 
@@ -132,7 +171,7 @@ Use this runbook before every production deployment (Vercel, containers, or VM-b
 | --- | --- | --- | --- |
 | `NODE_ENV` | Yes | Runtime behavior and security defaults | Set to `production`. |
 | `JWT_SECRET` | Yes | JWT signing/verification | Minimum 32 random characters; rotate via secret manager. |
-| `DATABASE_URL` | Yes (for persistent data) | Primary production DB connection | Use managed MySQL/Postgres-equivalent persistent DB URL; avoid ephemeral files. |
+| `DATABASE_URL` | Yes (for persistent data) | Primary production DB connection | On Vercel, use a Turso/LibSQL URL (`libsql://…`) plus `TURSO_AUTH_TOKEN`. `TURSO_DATABASE_URL` is accepted as a fallback. MySQL URLs (`mysql…`) are also supported. Do not use an ephemeral SQLite file on serverless hosts. There is no Postgres driver. |
 | `CLIENT_ORIGIN` | Same-origin: No, Split: Yes | CORS + Socket.IO origin allowlist | For split deployments, set trusted HTTPS origins only. |
 | `VITE_API_BASE_URL` | Same-origin: No, Split: Yes | Frontend API target | For split deployments, set canonical API URL with HTTPS. |
 | `AUTH_RATE_LIMIT_CREDENTIAL_WINDOW_MS` | No | Login/register limiter window | Defaults to `600000` (10 minutes). |
@@ -140,6 +179,14 @@ Use this runbook before every production deployment (Vercel, containers, or VM-b
 | `AUTH_RATE_LIMIT_SESSION_WINDOW_MS` | No | Session endpoint limiter window | Defaults to `300000` (5 minutes). |
 | `AUTH_RATE_LIMIT_SESSION_MAX` | No | Session endpoint max requests per window | Defaults to `30`. |
 | `GEMINI_API_KEY` | Feature-gated | Gemini-backed media features | Required when `VITE_ENABLE_STUDIO=true`; keep unset when Studio stays in Coming Soon mode. |
+| `SITE_ORIGIN` | Yes, if Steam sign-in is used | Public site origin for Steam OpenID `return_to` and realm | Set to the live canonical URL (example: `https://night-dev-web2.vercel.app`). `APP_URL` is accepted as a fallback. |
+| `STEAM_API_KEY` | For live server status and Steam profile hydration | Steam Web API key ([steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey)) | Resolved by `resolveSteamApiKey`: env var first, then the admin setting `steam_api_key`. Required for the Servers page to show Online/Offline with a real player count. Without a key, status is **Unknown / not verified**. Steam OpenID login still works without it; persona name and avatar lookup will fall back to Community XML. |
+| `NIGHTRESPAWN_PILOT_ENABLED` | No (defaults to enabled) | Whether to list NightRespawnPilot on `/api/servers` | Set to `false` to hide the playtest server. |
+| `NIGHTRESPAWN_PILOT_SERVER_CODE` | Yes, if the playtest server is listed | Steam relay Server Code (17-digit Steam game-server ID) | **Changes on every dedicated-server restart.** Update this after a restart or players cannot join. |
+| `NIGHTRESPAWN_PILOT_INTERNAL_ADDRESS` | No | Internal address recorded on the server card | Informational only; players join by Server Code, not this address. |
+| `TURSO_AUTH_TOKEN` | Yes, when using Turso | Turso/LibSQL auth token | Required with a `libsql://` database URL. |
+| `STRIPE_SECRET_KEY` / `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` | For live payment APIs | Payment provider credentials | Optional. Store checkout in the UI is still simulated. `MOCK_PAYMENTS=1` returns fake intents/orders. |
+| `STRIPE_WEBHOOK_SECRET` / `PAYPAL_WEBHOOK_ID` | For webhook signature checks | Payment webhook verification | Used by `/api/payments/stripe/webhook` and `/api/payments/paypal/webhook`. |
 
 ### 3) Database bootstrap and seed expectations
 
@@ -206,7 +253,7 @@ Minimum expected results:
    - Verify static file routing precedence (assets before SPA fallback).
    - Verify deployment artifact revision and CDN cache invalidation.
 2. **500 errors**
-   - Verify `JWT_SECRET`, `DATABASE_URL`, `NODE_ENV`, and feature-gated secrets.
+   - Verify `JWT_SECRET`, `DATABASE_URL` (and `TURSO_AUTH_TOKEN` for Turso), `NODE_ENV`, and feature-gated secrets (`STEAM_API_KEY`, `GEMINI_API_KEY`, payment keys).
    - Review startup/bootstrap logs for DB or initialization failures.
 3. **CORS/auth-cookie errors**
    - Reconfirm same-origin vs split-deployment choice.

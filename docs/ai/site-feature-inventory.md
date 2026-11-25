@@ -7,6 +7,8 @@ NightRespawn is a **cyberpunk-styled community operations platform for multiplay
 Unlike traditional forums that only handle discussion, NightRespawn functions as a hybrid between a **gaming forum, server control panel, player analytics dashboard, and digital economy platform**.
 
 > Companion docs: `community-forum-research.md` (competitor ideas) and `incomplete-features-and-ideas-plan.md` (gaps + sequencing).
+>
+> Reviewed 2026-11-25 against main `25ea65c` (through PR #245).
 
 ---
 
@@ -65,12 +67,14 @@ Admin control plane oversees: users · roles · forums · store · integrations 
 ### 1. Community discussion system
 Public-facing foundation. NightRespawn brands categories as cyberpunk-themed **Sectors** while preserving familiar forum mechanics. Structure is two-level: **categories → forums**, with per-forum minimum-role-to-post permissions.
 
-- **Forums index** (`/`) — sector/forum discovery, thread counts, activity overview, latest discussion.
+- **Home** (`/`) — marketing/landing page (`HomePage`), not the forum index.
+- **Forums index** (`/forums`) — sector/forum discovery, thread counts, activity overview, latest discussion.
 - **Sector / forum view** (`/forums/:id`) — threads in a forum, metadata, creation shortcut. Posting can be gated to `member` / `moderator` / `admin`.
 - **Create thread** (`/forums/:id/new`).
-- **Thread system** (`/threads/:id`) — thread + flat replies, content persistence, **moderation reporting** (report modal).
+- **Thread system** (`/threads/:id`) — thread + flat replies, content persistence, **moderation reporting** (report modal), post overflow menu (PRs #241/#244), and an **Edited** label when `edited_at` is set (PR #242).
+- **Permissions** (shared `src/lib/forumPermissions.ts`, used by both API entrypoints, PR #242): authors can soft-delete their own posts (not if a moderator hid them); locked threads reject replies except from staff; pin/lock/hide are staff-only; authors or staff can mark solved or delete a thread.
 
-**Maturity:** Production-ready.
+**Maturity:** Production-ready for the core loop. Shared permission module is in place; other API schemas can still drift between `server.ts` and `api/[...path].ts`.
 
 ### 2. Player identity & Operative Dossier
 One of NightRespawn's strongest differentiators. Instead of generic profiles, players have persistent **Operative Dossiers** combining social identity with server-derived telemetry.
@@ -86,10 +90,14 @@ One of NightRespawn's strongest differentiators. Instead of generic profiles, pl
 **Note:** social *links* and telemetry exist; a *social engagement* layer (reputation, badges, reactions, followers) does not yet.
 
 ### 3. Server intelligence layer
-- **Route:** `/servers` — server listing, regional breakdown, health indicators, download CTAs, network visibility.
-- **Planned live telemetry:** online population · tick rate · ping distribution · queue counts · crash detection · uptime %.
+- **Route:** `/servers` — server listing plus the **Live Server Status** panel at the top (PR #245). The fake per-region Network Health panel (Frankfurt/London/NY/Singapore, hardcoded "OK") was removed.
+- **NightRespawnPilot source:** env vars `NIGHTRESPAWN_PILOT_ENABLED`, `NIGHTRESPAWN_PILOT_SERVER_CODE`, `NIGHTRESPAWN_PILOT_INTERNAL_ADDRESS`. The Server Code changes on every dedicated-server restart.
+- **Live check:** Steam Web API `IGameServersService/GetServerList` by Unturned app id and server name, matched on the Server Code. Key is `STEAM_API_KEY` or admin setting `steam_api_key`. States: Online (listed, real player count), Offline (Steam answered, not listed), Unknown / not verified (no key, error, or timeout). Confirmed results are cached for 30 seconds. The server card, stat tiles, and sidebar Network Status widget share this status.
+- **Join:** `steam://run/304930//+connect <code>/` when Online; "Try joining with Steam" when Unknown; no join button when Offline.
+- Still unwired on this page: **Download Network Tool** and **View Stats**.
+- **Planned / not built:** tick rate, ping distribution, queue counts, crash detection, uptime %, next-wipe countdown.
 
-**State:** 🟡 UI complete, backend telemetry partially mocked (regional health is currently hardcoded). Major future growth area; intended to consume the admin Steam/network-servers config.
+**State:** 🟡 Live NightRespawnPilot status is real when a Steam Web API key is configured; otherwise the panel correctly shows Unknown. Other telemetry (wipe countdown, `network_servers` JSON, Twitch) is not consumed yet.
 
 ### 4. Real-time communication layer — "Neural Link"
 - **Route:** `/messages` (Socket.IO).
@@ -108,7 +116,7 @@ One of NightRespawn's strongest differentiators. Instead of generic profiles, pl
 
 ### 6. Membership & authentication
 - **Routes:** `/register`, `/login`, `/settings`.
-- **Security:** JWT access tokens · session persistence · bootstrap accounts (admin + member on first run) · CSRF double-submit cookie · protected routes.
+- **Security:** JWT in an httpOnly `token` cookie (24h) · Steam OpenID (`/api/auth/steam`) · session persistence · bootstrap accounts (admin + member on first run) · CSRF double-submit cookie · protected routes.
 - **Role model (4 roles):**
 
 | Role | Access |
@@ -124,18 +132,18 @@ Forums additionally enforce a `min_role_to_thread` per forum.
 
 ### 7. Support & policy layer
 - **Routes:** `/support`, `/contact`, `/help`, `/rules`, `/privacy`, `/terms`.
-- **Purpose:** user support · policy disclosure · rule enforcement · legal compliance. Present and functional.
+- **Purpose:** user support · policy disclosure · rule enforcement · legal compliance. Present and functional. Support/contact **content is visible to signed-out visitors**; opening or reviewing tickets requires sign-in (PR #240).
 
 ### 8. External integrations
 - **Discord** (`/discord`) — guild `1480660543869161562`, invite `discord.gg/3axtkUBN`.
 - **Admin-configurable adapters:** Discord webhooks · X · Steam API · Twitch API · network-servers JSON feeds.
 
-**Maturity:** Mixed — config storage works; some adapters not yet consumed by the public site (e.g. Servers page still uses static data).
+**Maturity:** Mixed — config storage works. `steam_api_key` is now consumed for live server status (PR #245). `network_servers` JSON and Twitch are not yet consumed by the public Servers page; NightRespawnPilot comes from env vars.
 
 ### 9. AI media studio — "Veo Studio"
 - **Route:** `/studio` (Google Gemini / Veo video generation).
 - **Capabilities:** AI video generation · media-assisted content · community promotional assets.
-- **Feature flag:** `VITE_ENABLE_STUDIO`; when off, `StudioUnavailablePage` renders.
+- **Feature flag:** `VITE_ENABLE_STUDIO`; when off, `ComingSoonPage` is rendered at `/studio` (imported as `StudioUnavailablePage` in `App.tsx`). There is no redirect.
 
 **Status:** 🟢 Built but hidden behind a feature gate — unusual for gaming-community software and a real differentiator.
 
@@ -151,7 +159,7 @@ Dashboard · Users · Moderation · Forums (Sectors) · Tags · Store · Integra
 ---
 
 ## Missing / planned systems
-**Content & community:** ❌ news feed · ❌ wiki/guides · ❌ patch-notes system
+**Content & community:** ✅ `/news` feed exists (backed by `/api/news`; it can be empty) · ❌ wiki/guides · ❌ dedicated patch-notes system · ❌ homepage wipe countdown
 **Social systems:** ❌ reputation · ❌ reactions · ❌ badges · ❌ activity feed
 **Group systems:** ❌ guilds/clubs · ❌ teams/squads
 **Events:** ❌ event calendar · ❌ tournament scheduling · ❌ server-event automation
@@ -162,7 +170,7 @@ Dashboard · Users · Moderation · Forums (Sectors) · Tags · Store · Integra
 
 **Strengths:** strong thematic branding · unusually deep player telemetry · full admin suite · hybrid forum + analytics model · AI feature-expansion path.
 
-**Weaknesses:** several systems still mocked · missing social retention loops · server telemetry not fully live · payments not production-complete.
+**Weaknesses:** several systems still mocked or unwired (Vote, Download Network Tool, View Stats, simulated checkout) · missing social retention loops · server telemetry is live for NightRespawnPilot only when a Steam key is set · payments not production-complete.
 
 ### Maturity score
 | Pillar | Status |
@@ -171,7 +179,7 @@ Dashboard · Users · Moderation · Forums (Sectors) · Tags · Store · Integra
 | Profiles | 9.5 / 10 |
 | Messaging | 7 / 10 |
 | Economy | 6.5 / 10 |
-| Server telemetry | 5 / 10 |
+| Server telemetry | 7 / 10 (live Steam status for NightRespawnPilot; other telemetry still planned) |
 | Admin tooling | 9 / 10 |
 | Social systems | 4 / 10 |
 | AI tooling | 8 / 10 |
