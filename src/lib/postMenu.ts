@@ -120,3 +120,34 @@ export function buildQuotedReply(authorName: string, content: string, existing =
   const prior = existing.trimEnd();
   return prior ? `${prior}\n\n${block}` : block;
 }
+
+export type MenuPosition = { top: number; left: number; width: number; placement: 'below' | 'above' };
+
+/**
+ * Where to place the ⋮ menu (fixed positioning, viewport coordinates). Right-aligned to the
+ * button. It prefers opening above the button so it floats over the post header instead of
+ * covering the post body; it opens below when there is not enough room above (for example
+ * under the sticky site header). It always stays inside the viewport (and below `minTop`,
+ * the sticky header's bottom edge) and is never wider than the viewport allows.
+ */
+export function computeMenuPosition(
+  anchor: { top: number; bottom: number; right: number },
+  viewport: { width: number; height: number },
+  menuHeight: number,
+  menuWidth = 208,
+  gap = 8,
+  margin = 8,
+  minTop = margin
+): MenuPosition {
+  const width = Math.max(0, Math.min(menuWidth, viewport.width - margin * 2));
+  const topLimit = Math.max(margin, minTop);
+  const spaceAbove = anchor.top - gap - topLimit;
+  const spaceBelow = viewport.height - anchor.bottom - gap - margin;
+  const placement: MenuPosition['placement'] =
+    menuHeight <= spaceAbove || spaceAbove > spaceBelow ? 'above' : 'below';
+  let top = placement === 'above' ? anchor.top - gap - menuHeight : anchor.bottom + gap;
+  top = Math.min(Math.max(top, topLimit), Math.max(topLimit, viewport.height - margin - menuHeight));
+  let left = anchor.right - width;
+  left = Math.min(Math.max(left, margin), viewport.width - margin - width);
+  return { top, left, width, placement };
+}

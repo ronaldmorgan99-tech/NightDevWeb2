@@ -27,7 +27,10 @@ import {
   Globe,
   Monitor,
   Ticket,
-  Newspaper
+  Newspaper,
+  Home,
+  LogIn,
+  UserPlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getUserAvatarInitial, getUserDisplayName } from '../lib/userDisplay';
@@ -183,12 +186,19 @@ const MainLayout: React.FC = () => {
     setBrandTransform('perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)');
   };
 
+  // "/" is the Home landing page; Forums covers the forum index, boards and threads.
   const isNavItemActive = (path: string) => {
+    if (path === '/') return location.pathname === '/';
     if (path === '/forums') {
-      return location.pathname === '/' || location.pathname.startsWith('/forums') || location.pathname.startsWith('/threads');
+      return location.pathname.startsWith('/forums') || location.pathname.startsWith('/threads');
     }
     return location.pathname === path || location.pathname.startsWith(`${path}/`);
   };
+
+  // Close the mobile menu whenever the route changes (link taps, back/forward, hash links).
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [location.pathname, location.search, location.hash]);
 
   const navItems = [
     { label: 'Forums', path: '/forums', icon: MessageSquare },
@@ -385,7 +395,7 @@ const MainLayout: React.FC = () => {
           <div className="flex justify-between items-center h-20">
             <div>
               <div
-                className="bg-cyber-dark/40 p-3 pr-8 pl-6 rounded-sm relative group transition-all duration-300 cursor-pointer hover:shadow-[0_0_20px_rgba(0,243,255,0.1)] border-t border-l border-neon-cyan/30 border-b border-r border-neon-magenta/30"
+                className="bg-cyber-dark/40 p-3 pr-4 pl-4 xl:pr-8 xl:pl-6 rounded-sm relative group transition-all duration-300 cursor-pointer hover:shadow-[0_0_20px_rgba(0,243,255,0.1)] border-t border-l border-neon-cyan/30 border-b border-r border-neon-magenta/30"
                 onMouseMove={handleBrandMouseMove}
                 onMouseLeave={handleBrandMouseLeave}
                 style={{ transition: 'transform 0.15s ease-out, box-shadow 0.3s ease', transform: brandTransform }}
@@ -396,7 +406,7 @@ const MainLayout: React.FC = () => {
                 <div className="absolute -bottom-[1px] -left-[1px] w-3 h-3 border-b-2 border-l-2 border-neon-cyan z-20" />
                 <div className="absolute -bottom-[1px] -right-[1px] w-3 h-3 border-b-2 border-r-2 border-neon-magenta z-20 shadow-[0_0_10px_rgba(255,0,255,0.5)]" />
 
-                <Link to="/" className="flex items-center gap-4 relative z-10">
+                <Link to="/" aria-label="NightRespawn home" aria-current={location.pathname === '/' ? 'page' : undefined} className="flex items-center gap-4 relative z-10">
                   <div className="relative">
                     <div className="w-10 h-10 bg-cyber-dark border border-neon-cyan/50 rounded-lg flex items-center justify-center shadow-[0_0_10px_rgba(0,243,255,0.2)] group-hover:shadow-[0_0_20px_rgba(0,243,255,0.4)] transition-all duration-500 overflow-hidden">
                       <div className="absolute inset-0 bg-gradient-to-br from-neon-cyan/20 to-neon-purple/20 opacity-50" />
@@ -426,12 +436,12 @@ const MainLayout: React.FC = () => {
             </div>
 
             {/* Desktop Nav */}
-            <nav className="hidden lg:flex items-center gap-2">
+            <nav className="hidden lg:flex items-center gap-0.5 2xl:gap-2" aria-label="Main">
               {navItems.map((item) => (
                 <Link
                   key={item.path}
                   to={item.path}
-                  className={`relative px-6 py-2 text-xs uppercase tracking-[0.2em] font-bold transition-all duration-300 group ${
+                  className={`relative px-2 xl:px-2.5 2xl:px-6 py-2 text-xs uppercase tracking-[0.1em] xl:tracking-[0.12em] 2xl:tracking-[0.2em] font-bold whitespace-nowrap transition-all duration-300 group ${
                     isNavItemActive(item.path)
                       ? 'text-neon-cyan'
                       : 'text-zinc-500 hover:text-white'
@@ -450,7 +460,7 @@ const MainLayout: React.FC = () => {
             </nav>
 
             {/* Actions */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 xl:gap-4 shrink-0">
               <button 
                 onClick={() => setIsSearchOpen(true)}
                 className="p-2 text-zinc-400 hover:text-neon-cyan transition-all duration-300 group relative"
@@ -589,10 +599,10 @@ const MainLayout: React.FC = () => {
                   </AnimatePresence>
                 </div>
               ) : (
-                <div className="relative z-[120] pointer-events-auto flex items-center gap-2">
+                <div className="relative z-[120] pointer-events-auto hidden sm:flex items-center gap-2">
                   <Link
                     to="/login"
-                    className="btn-holographic px-4 py-2 text-[10px]"
+                    className="btn-holographic px-4 py-2 text-[10px] whitespace-nowrap"
                     onClick={(event) => {
                       event.preventDefault();
                       setIsMobileMenuOpen(false);
@@ -603,7 +613,7 @@ const MainLayout: React.FC = () => {
                   </Link>
                   <Link
                     to="/register"
-                    className="btn-neon-cyan px-4 py-2 text-[10px]"
+                    className="btn-neon-cyan px-4 py-2 text-[10px] whitespace-nowrap"
                     onClick={(event) => {
                       event.preventDefault();
                       setIsMobileMenuOpen(false);
@@ -616,7 +626,12 @@ const MainLayout: React.FC = () => {
               )}
 
               <button 
-                className="md:hidden p-2 text-zinc-400 hover:text-white"
+                type="button"
+                className="lg:hidden p-2 text-zinc-400 hover:text-white"
+                aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
+                aria-expanded={isMobileMenuOpen}
+                aria-controls="mobile-menu"
+                data-testid="mobile-menu-button"
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               >
                 {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -632,21 +647,41 @@ const MainLayout: React.FC = () => {
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="md:hidden border-t border-white/5 bg-[#0a0a0c] overflow-hidden"
+              id="mobile-menu"
+              className="lg:hidden border-t border-white/5 bg-[#0a0a0c] overflow-hidden"
             >
-              <div className="px-4 py-6 space-y-4">
-                {navItems.map((item) => (
+              <nav className="px-4 py-6 space-y-4" aria-label="Mobile">
+                {[{ label: 'Home', path: '/', icon: Home }, ...navItems].map((item) => (
                   <Link
                     key={item.path}
                     to={item.path}
                     onClick={() => setIsMobileMenuOpen(false)}
-                    className="flex items-center gap-4 text-lg font-medium text-zinc-400 hover:text-white"
+                    aria-current={isNavItemActive(item.path) ? 'page' : undefined}
+                    className={`flex items-center gap-4 text-lg font-medium rounded-lg px-2 py-1 ${isNavItemActive(item.path) ? 'text-neon-cyan' : 'text-zinc-400 hover:text-white'}`}
                   >
                     <item.icon className="w-6 h-6" />
                     {item.label}
                   </Link>
                 ))}
-              </div>
+                {!user && (
+                  <div className="pt-4 mt-2 border-t border-white/5 grid grid-cols-2 gap-3" data-testid="mobile-auth-links">
+                    <Link
+                      to="/login"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="btn-holographic px-4 py-3 text-xs whitespace-nowrap flex items-center justify-center gap-2"
+                    >
+                      <LogIn className="w-4 h-4" /> Sign In
+                    </Link>
+                    <Link
+                      to="/register"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="btn-neon-cyan px-4 py-3 text-xs whitespace-nowrap flex items-center justify-center gap-2"
+                    >
+                      <UserPlus className="w-4 h-4" /> Join Now
+                    </Link>
+                  </div>
+                )}
+              </nav>
             </motion.div>
           )}
         </AnimatePresence>

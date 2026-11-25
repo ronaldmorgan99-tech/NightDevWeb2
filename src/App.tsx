@@ -53,6 +53,7 @@ const LoadingFallback = () => (
   </div>
 );
 
+const HomePage = lazy(() => import('./pages/HomePage'));
 const ForumsPage = lazy(() => import('./pages/ForumsPage'));
 const ForumViewPage = lazy(() => import('./pages/ForumViewPage'));
 const ThreadViewPage = lazy(() => import('./pages/ThreadViewPage'));
@@ -196,7 +197,7 @@ export default function App() {
             <ScrollToTop />
             <Routes>
               <Route path="/" element={<MainLayout />}>
-                <Route index element={<Suspense fallback={<LoadingFallback />}><ForumsPage /></Suspense>} />
+                <Route index element={<Suspense fallback={<LoadingFallback />}><HomePage /></Suspense>} />
                 <Route path="forums" element={<Suspense fallback={<LoadingFallback />}><ForumsPage /></Suspense>} />
                 <Route path="forums/:id" element={<Suspense fallback={<LoadingFallback />}><ForumViewPage /></Suspense>} />
                 <Route path="forums/:id/new" element={<Suspense fallback={<LoadingFallback />}><CreateThreadPage /></Suspense>} />

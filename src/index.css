@@ -577,3 +577,18 @@ a, button, input, select, textarea, label, [role="button"], .cursor-pointer {
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
 }
+
+/* Site-wide keyboard focus ring: a consistent cyan ring on links, buttons, menu items and
+   form toggles. Unlayered and !important on the outline so utility classes such as
+   outline-none or focus:outline-none cannot hide it for keyboard users. Mouse clicks do
+   not trigger :focus-visible, so pointer users see no change. */
+:is(a, button, summary, select, [role="button"], [role="menuitem"], [role="tab"], [role="option"], input[type="checkbox"], input[type="radio"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--color-neon-cyan) !important;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(0, 243, 255, 0.22), 0 0 18px rgba(0, 243, 255, 0.35);
+}
+
+/* Menu items sit inside overflow-hidden panels, so draw their ring inside the item. */
+[role="menuitem"]:focus-visible {
+  outline-offset: -2px;
+}

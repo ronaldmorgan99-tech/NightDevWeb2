@@ -119,10 +119,20 @@ export async function seedDb() {
   }
 
   // Products
-  const insertProduct = 'INSERT INTO products (name, description, price, category) VALUES (?, ?, ?, ?)';
-  await db.execute(insertProduct, ['Elite Member Badge', 'A shiny badge for your profile', 9.99, 'Digital']);
-  await db.execute(insertProduct, ['Custom Profile Theme', 'Personalize your profile with custom colors', 4.99, 'Digital']);
-  await db.execute(insertProduct, ['NightRespawn T-Shirt', 'High quality cotton t-shirt', 24.99, 'Merch']);
+  // Only insert a starter product when no product with that name exists yet. Seeding re-runs
+  // whenever any of its "already seeded" checks fail, and the old plain INSERT added another
+  // copy of each product every time (production had 34 copies of each).
+  const starterProducts: Array<[string, string, number, string]> = [
+    ['Elite Member Badge', 'A shiny badge for your profile', 9.99, 'Digital'],
+    ['Custom Profile Theme', 'Personalize your profile with custom colors', 4.99, 'Digital'],
+    ['NightRespawn T-Shirt', 'High quality cotton t-shirt', 24.99, 'Merch']
+  ];
+  for (const [name, description, price, category] of starterProducts) {
+    const existing = await db.queryOne<{ id: number }>('SELECT id FROM products WHERE name = ? LIMIT 1', [name]);
+    if (!existing) {
+      await db.execute('INSERT INTO products (name, description, price, category) VALUES (?, ?, ?, ?)', [name, description, price, category]);
+    }
+  }
 
   // Tickets
   const insertTicket = 'INSERT INTO tickets (user_id, subject, priority) VALUES (?, ?, ?)';
