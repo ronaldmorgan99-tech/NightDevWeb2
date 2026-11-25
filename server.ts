@@ -27,7 +27,7 @@ import {
   verifyStripeWebhookSignature
 } from './src/lib/payments';
 import { sanitizeUserText } from './src/lib/sanitize';
-import { getConfiguredServers } from './src/lib/configuredServers';
+import { getLiveConfiguredServers } from './src/lib/liveServers';
 import { createSteamAuthHandlers } from './src/lib/steamAuth';
 import { attachForumLastPosts, getForumThreads, getThreadWithPosts, incrementThreadViews, isViewerStaff } from './src/lib/forumData';
 import { userDisplayNameSql } from './src/lib/userDisplay';
@@ -1442,7 +1442,7 @@ async function start() {
         players: Number(server.players_current) || 0,
         status: server.status === 'online' ? 'online' : 'offline'
       }));
-      res.json([...getConfiguredServers(), ...normalized]);
+      res.json([...(await getLiveConfiguredServers(db)), ...normalized]);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

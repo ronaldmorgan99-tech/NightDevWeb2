@@ -21,7 +21,7 @@ import {
 } from '../src/lib/payments.js';
 import { isPublicSetting } from '../src/lib/settingsAllowlist.js';
 import { sanitizeUserText } from '../src/lib/sanitize.js';
-import { getConfiguredServers } from '../src/lib/configuredServers.js';
+import { getLiveConfiguredServers } from '../src/lib/liveServers.js';
 import { createSteamAuthHandlers } from '../src/lib/steamAuth.js';
 import { attachForumLastPosts, getForumThreads, getThreadWithPosts, incrementThreadViews, isViewerStaff } from '../src/lib/forumData.js';
 import { userDisplayNameSql } from '../src/lib/userDisplay.js';
@@ -1735,8 +1735,9 @@ const serversHandler = async (_req: Request, res: Response) => {
       FROM server_nodes
       ORDER BY created_at DESC
     `);
+    const configured = await getLiveConfiguredServers(db);
     return res.json([
-      ...getConfiguredServers(),
+      ...configured,
       ...servers.map((server: any) => ({
         ...server,
         players_current: Number(server.players_current) || 0,
