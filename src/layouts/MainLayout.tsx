@@ -49,9 +49,9 @@ type SearchResultItem = {
 type SidebarServer = {
   id: number;
   name: string;
-  players_current: number;
-  players: number;
-  status: 'online' | 'offline';
+  players_current: number | null;
+  players: number | null;
+  status: 'online' | 'offline' | 'unknown';
   map: string;
 };
 
@@ -77,11 +77,11 @@ const XIcon = () => (
   <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"/></svg>
 );
 
-const ServerStatus: React.FC<{ name: string; players: string; map: string; status: 'online' | 'offline'; color: string }> = ({ name, players, map, status, color }) => (
+const ServerStatus: React.FC<{ name: string; players: string; map: string; status: 'online' | 'offline' | 'unknown'; color: string }> = ({ name, players, map, status, color }) => (
   <div className="group relative p-3 bg-cyber-black/40 border border-white/5 rounded-xl hover:border-neon-cyan/30 transition-all duration-300">
     <div className="flex items-center justify-between mb-2">
       <div className="flex items-center gap-2">
-        <div className={`w-2 h-2 rounded-full animate-pulse ${status === 'online' ? 'bg-neon-green shadow-[0_0_8px_#39ff14]' : 'bg-red-500'}`} />
+        <div className={`w-2 h-2 rounded-full ${status === 'online' ? 'animate-pulse bg-neon-green shadow-[0_0_8px_#39ff14]' : status === 'unknown' ? 'bg-amber-400' : 'bg-red-500'}`} title={status === 'unknown' ? 'Status not verified' : status} />
         <span className="text-[10px] uppercase tracking-tighter font-bold text-zinc-400 group-hover:text-white transition-colors">{name}</span>
       </div>
       <span className="text-[10px] font-mono text-neon-cyan">{players}</span>
@@ -118,6 +118,8 @@ const MainLayout: React.FC = () => {
 
   const activeUplinkPlayers = sidebarServers.reduce((sum, server) => sum + (server.players || 0), 0);
   const onlineNodes = sidebarServers.filter(server => server.status === 'online').length;
+  const unverifiedNodes = sidebarServers.filter(server => server.status !== 'online' && server.status !== 'offline').length;
+  const hasVerifiedNodes = sidebarServers.length > unverifiedNodes;
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
@@ -715,12 +717,12 @@ const MainLayout: React.FC = () => {
                   <div className="mt-3 space-y-2 text-[10px] uppercase tracking-[0.15em]">
                     <div className="flex items-center justify-between">
                       <span className="text-zinc-500">Active Uplinks</span>
-                      <span className="font-mono text-neon-cyan">{activeUplinkPlayers} PLAYERS</span>
+                      <span className="font-mono text-neon-cyan">{hasVerifiedNodes || sidebarServers.length === 0 ? `${activeUplinkPlayers} PLAYERS` : 'UNKNOWN'}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-zinc-500">Global Nodes</span>
-                      <span className={onlineNodes > 0 ? 'font-mono text-neon-green' : 'font-mono text-red-400'}>
-                        {onlineNodes > 0 ? `${onlineNodes} ONLINE` : 'OFFLINE'}
+                      <span className={onlineNodes > 0 ? 'font-mono text-neon-green' : unverifiedNodes > 0 ? 'font-mono text-amber-300' : 'font-mono text-red-400'}>
+                        {onlineNodes > 0 ? `${onlineNodes} ONLINE` : unverifiedNodes > 0 ? 'UNVERIFIED' : 'OFFLINE'}
                       </span>
                     </div>
                   </div>
@@ -731,9 +733,9 @@ const MainLayout: React.FC = () => {
                     <ServerStatus
                       key={server.id}
                       name={server.name}
-                      players={`${server.players} PLAYERS`}
+                      players={server.players === null || server.players === undefined ? 'STATUS UNKNOWN' : `${server.players} PLAYERS`}
                       map={server.map || 'UNKNOWN'}
-                      status={server.status}
+                      status={server.status === 'online' || server.status === 'offline' ? server.status : 'unknown'}
                       color="neon-cyan"
                     />
                   ))
