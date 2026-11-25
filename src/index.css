@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Orbitron:wght@400;700;900&display=swap');
 @import "tailwindcss";
+@import "./styles/depth.css";
 
 :root {
   --noise-overlay: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
@@ -103,21 +104,25 @@
 @layer components {
   .cyber-card {
     @apply bg-cyber-dark/60 backdrop-blur-xl border border-white/[0.06] rounded-2xl relative overflow-hidden;
-    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 40%);
+    background-image:
+      radial-gradient(120% 80% at 50% -20%, rgba(0, 243, 255, 0.05) 0%, transparent 60%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.045) 0%, rgba(255, 255, 255, 0) 38%, rgba(0, 0, 0, 0.2) 100%);
     box-shadow:
-      0 1px 0 0 rgba(255, 255, 255, 0.06) inset,
-      0 18px 40px -24px rgba(0, 0, 0, 0.9),
-      0 4px 16px rgba(0, 0, 0, 0.5);
-    transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.35s ease, border-color 0.35s ease;
+      var(--depth-highlight-strong),
+      var(--depth-underside),
+      var(--depth-shadow-md);
+    transition: transform 0.35s var(--depth-ease), box-shadow 0.35s ease, border-color 0.35s ease;
   }
 
   .cyber-card:hover {
     transform: translateY(-4px);
     border-color: rgba(0, 243, 255, 0.22);
     box-shadow:
-      0 1px 0 0 rgba(255, 255, 255, 0.08) inset,
-      0 24px 50px -20px rgba(0, 0, 0, 0.95),
-      0 0 28px -4px rgba(0, 243, 255, 0.18);
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.14),
+      var(--depth-underside),
+      0 8px 16px -6px rgba(0, 0, 0, 0.6),
+      0 28px 56px -20px rgba(0, 0, 0, 0.95),
+      0 0 32px -6px rgba(0, 243, 255, 0.2);
   }
 
   .cyber-card::after {
@@ -167,36 +172,87 @@
 
   .cyber-button-primary {
     @apply bg-neon-cyan text-cyber-black hover:bg-white hover:shadow-[0_0_20px_rgba(255,255,255,0.5)];
+    /* clip-path cuts outer shadows, so depth comes from a gloss gradient + inner edges */
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.05) 50%, rgba(0, 0, 0, 0.18) 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -2px 0 rgba(0, 0, 0, 0.22);
   }
 
   .cyber-button-secondary {
     @apply bg-white/5 text-white border border-white/10 hover:bg-white/10;
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0) 50%, rgba(0, 0, 0, 0.2) 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 rgba(0, 0, 0, 0.4);
+  }
+
+  .cyber-button:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+
+  .cyber-button:active:not(:disabled) {
+    transform: translateY(0);
   }
 
   /* Neon Glow Button Style */
   .btn-neon-cyan {
     @apply relative bg-neon-cyan/10 text-neon-cyan border-2 border-neon-cyan font-black uppercase tracking-[0.2em] transition-all duration-300;
-    box-shadow: 0 0 10px rgba(0, 243, 255, 0.3), inset 0 0 10px rgba(0, 243, 255, 0.2);
+    background-image: linear-gradient(180deg, rgba(0, 243, 255, 0.14) 0%, rgba(0, 243, 255, 0) 55%, rgba(0, 0, 0, 0.25) 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      inset 0 0 10px rgba(0, 243, 255, 0.2),
+      0 2px 4px rgba(0, 0, 0, 0.55),
+      0 8px 18px -8px rgba(0, 0, 0, 0.8),
+      0 0 10px rgba(0, 243, 255, 0.3);
   }
 
   .btn-neon-cyan:hover {
     @apply bg-neon-cyan text-cyber-black scale-105 -translate-y-1;
-    box-shadow: 0 0 30px rgba(0, 243, 255, 0.6), 0 0 60px rgba(0, 243, 255, 0.2), inset 0 0 20px rgba(255, 255, 255, 0.4);
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0) 55%, rgba(0, 0, 0, 0.12) 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.6),
+      inset 0 0 20px rgba(255, 255, 255, 0.4),
+      0 6px 12px -4px rgba(0, 0, 0, 0.6),
+      0 18px 36px -14px rgba(0, 0, 0, 0.9),
+      0 0 30px rgba(0, 243, 255, 0.6),
+      0 0 60px rgba(0, 243, 255, 0.2);
   }
 
   .btn-neon-magenta {
     @apply relative bg-neon-magenta/10 text-neon-magenta border-2 border-neon-magenta font-black uppercase tracking-[0.2em] transition-all duration-300;
-    box-shadow: 0 0 10px rgba(255, 0, 255, 0.3), inset 0 0 10px rgba(255, 0, 255, 0.2);
+    background-image: linear-gradient(180deg, rgba(255, 0, 255, 0.14) 0%, rgba(255, 0, 255, 0) 55%, rgba(0, 0, 0, 0.25) 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      inset 0 0 10px rgba(255, 0, 255, 0.2),
+      0 2px 4px rgba(0, 0, 0, 0.55),
+      0 8px 18px -8px rgba(0, 0, 0, 0.8),
+      0 0 10px rgba(255, 0, 255, 0.3);
   }
 
   .btn-neon-magenta:hover {
     @apply bg-neon-magenta text-white scale-105 -translate-y-1;
-    box-shadow: 0 0 30px rgba(255, 0, 255, 0.6), 0 0 60px rgba(255, 0, 255, 0.2), inset 0 0 20px rgba(255, 255, 255, 0.4);
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0) 55%, rgba(0, 0, 0, 0.12) 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.5),
+      inset 0 0 20px rgba(255, 255, 255, 0.4),
+      0 6px 12px -4px rgba(0, 0, 0, 0.6),
+      0 18px 36px -14px rgba(0, 0, 0, 0.9),
+      0 0 30px rgba(255, 0, 255, 0.6),
+      0 0 60px rgba(255, 0, 255, 0.2);
+  }
+
+  .btn-neon-cyan:active,
+  .btn-neon-magenta:active {
+    @apply scale-100 translate-y-0;
+    transition-duration: 80ms;
   }
 
   /* Holographic Glass Button */
   .btn-holographic {
     @apply relative bg-white/5 backdrop-blur-md border border-white/20 text-white font-black uppercase tracking-[0.2em] transition-all duration-300 overflow-hidden;
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 50%, rgba(0, 0, 0, 0.22) 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+      0 2px 4px rgba(0, 0, 0, 0.5),
+      0 8px 18px -8px rgba(0, 0, 0, 0.8);
   }
 
   .btn-holographic::before {
@@ -209,7 +265,18 @@
   }
 
   .btn-holographic:hover {
-    @apply border-neon-cyan/50 bg-white/10 scale-105 shadow-[0_0_20px_rgba(0,243,255,0.2)];
+    @apply border-neon-cyan/50 bg-white/10 scale-105 -translate-y-0.5;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+      0 6px 12px -4px rgba(0, 0, 0, 0.6),
+      0 16px 32px -12px rgba(0, 0, 0, 0.9),
+      0 0 20px rgba(0, 243, 255, 0.2);
+  }
+
+  .btn-holographic:active {
+    @apply scale-100 translate-y-0;
+    transition-duration: 80ms;
   }
   /* Admin Animated Tab */
   .btn-admin-animated {

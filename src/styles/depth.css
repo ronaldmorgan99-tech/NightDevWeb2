@@ -1,0 +1,223 @@
+/*
+ * Depth system
+ * ------------
+ * Shared shadow / gradient / lift tokens plus low-specificity rules that give
+ * the existing panels, cards, buttons and inputs a layered, three-dimensional
+ * finish without touching layout or colors.
+ *
+ * Every selector is wrapped in :where() (specificity 0) and lives in the
+ * `components` cascade layer, so any Tailwind utility on an element
+ * (shadow-*, bg-gradient-*, ring-*, transition-*, hover:scale-*, ...) still
+ * wins. Pages that already style themselves explicitly keep their look.
+ */
+
+:root {
+  /* Motion */
+  --depth-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --depth-duration: 260ms;
+  --depth-lift: -2px;
+  --depth-lift-card: -4px;
+
+  /* Highlights: a 1px top light edge and a bottom contact edge */
+  --depth-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.07);
+  --depth-highlight-strong: inset 0 1px 0 0 rgba(255, 255, 255, 0.12);
+  --depth-underside: inset 0 -1px 0 0 rgba(0, 0, 0, 0.4);
+
+  /* Elevation scale: contact (key) shadow + soft ambient shadow */
+  --depth-shadow-sm:
+    0 1px 2px rgba(0, 0, 0, 0.55),
+    0 4px 10px -4px rgba(0, 0, 0, 0.6);
+  --depth-shadow-md:
+    0 2px 4px rgba(0, 0, 0, 0.5),
+    0 12px 28px -12px rgba(0, 0, 0, 0.8),
+    0 4px 14px rgba(0, 0, 0, 0.35);
+  --depth-shadow-lg:
+    0 4px 8px rgba(0, 0, 0, 0.5),
+    0 24px 48px -18px rgba(0, 0, 0, 0.9),
+    0 8px 24px rgba(0, 0, 0, 0.4);
+
+  /* Composite surfaces */
+  --depth-surface: var(--depth-highlight), var(--depth-underside), var(--depth-shadow-sm);
+  --depth-surface-raised: var(--depth-highlight-strong), var(--depth-underside), var(--depth-shadow-md);
+  --depth-surface-hover:
+    var(--depth-highlight-strong),
+    var(--depth-underside),
+    0 6px 12px -4px rgba(0, 0, 0, 0.6),
+    0 20px 40px -16px rgba(0, 0, 0, 0.9),
+    0 0 24px -8px rgba(0, 243, 255, 0.22);
+  --depth-recessed:
+    inset 0 2px 5px rgba(0, 0, 0, 0.55),
+    inset 0 1px 1px rgba(0, 0, 0, 0.4),
+    0 1px 0 rgba(255, 255, 255, 0.04);
+
+  /* Soft sheen gradients layered over the existing background colors */
+  --depth-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0) 42%, rgba(0, 0, 0, 0.14) 100%);
+  --depth-sheen-strong: linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.01) 38%, rgba(0, 0, 0, 0.18) 100%);
+  --depth-sheen-button: linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.04) 48%, rgba(0, 0, 0, 0.16) 100%);
+}
+
+/* Utility classes for opt-in use (shadow-depth-sm / -md / -lg / -inset) */
+@theme {
+  --shadow-depth-sm: inset 0 1px 0 0 rgba(255, 255, 255, 0.07), 0 1px 2px rgba(0, 0, 0, 0.55), 0 4px 10px -4px rgba(0, 0, 0, 0.6);
+  --shadow-depth-md: inset 0 1px 0 0 rgba(255, 255, 255, 0.1), 0 2px 4px rgba(0, 0, 0, 0.5), 0 12px 28px -12px rgba(0, 0, 0, 0.8), 0 4px 14px rgba(0, 0, 0, 0.35);
+  --shadow-depth-lg: inset 0 1px 0 0 rgba(255, 255, 255, 0.12), 0 4px 8px rgba(0, 0, 0, 0.5), 0 24px 48px -18px rgba(0, 0, 0, 0.9), 0 8px 24px rgba(0, 0, 0, 0.4);
+  --inset-shadow-depth: inset 0 2px 5px rgba(0, 0, 0, 0.55);
+}
+
+@layer components {
+  /* ---------------------------------------------------------------------
+   * Panels & tiles: any bordered, rounded (xl+) surface with a background.
+   * Gets a top light edge, a bottom contact edge, a soft drop shadow and a
+   * faint vertical sheen so it reads as a raised slab instead of a flat box.
+   * ------------------------------------------------------------------- */
+  :where(div, section, article, aside, li, form, header, footer, a, button, details):where(.rounded-xl, .rounded-2xl, .rounded-3xl, [class*="rounded-["]):where(.border):where(
+    [class*="bg-cyber-"],
+    [class*="bg-white/"],
+    [class*="bg-black"],
+    [class*="bg-zinc-"],
+    [class*="bg-[#"],
+    [class*="bg-neon-"]
+  ):where(:not(.cyber-card, .inset-0)) {
+    background-image: var(--depth-sheen);
+    box-shadow: var(--depth-surface);
+  }
+
+  /* Large hero / section panels sit one step higher */
+  :where(section, article, div):where(.rounded-3xl, [class*="rounded-[2"], [class*="rounded-[3"]):where(.border):where([class*="bg-"]):where(:not(.cyber-card, .absolute, .fixed)) {
+    box-shadow: var(--depth-surface-raised);
+  }
+
+  /* Media wells inside cards (product art, thumbnails) read as recessed */
+  :where(.cyber-card, .glitch-card) :where(.aspect-square, .aspect-video) {
+    box-shadow:
+      inset 0 -24px 40px -24px rgba(0, 0, 0, 0.7),
+      inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Interactive lift: clickable rounded tiles, list rows and cards rise a
+   * couple of pixels on hover / keyboard focus with a stronger shadow.
+   * Elements that already scale or translate on hover are left alone.
+   * ------------------------------------------------------------------- */
+  :where(a, button, [role="button"], label):where(.rounded-xl, .rounded-2xl, .rounded-3xl):where(.border, .glitch-card) {
+    transition:
+      transform var(--depth-duration) var(--depth-ease),
+      box-shadow var(--depth-duration) var(--depth-ease),
+      border-color var(--depth-duration) ease,
+      background-color var(--depth-duration) ease,
+      color var(--depth-duration) ease;
+    will-change: transform;
+  }
+
+  :where(a, button, [role="button"], label):where(.rounded-xl, .rounded-2xl, .rounded-3xl):where(.border, .glitch-card):where(:not(:disabled, [aria-disabled="true"], [class*="hover:scale"], [class*="hover:-translate"], [class*="hover:translate"])):where(:hover, :focus-visible) {
+    transform: translateY(var(--depth-lift));
+    box-shadow: var(--depth-surface-hover);
+  }
+
+  :where(a, button, [role="button"]):where(.rounded-xl, .rounded-2xl, .rounded-3xl):where(.border, .glitch-card):where(:not(:disabled, [class*="active:scale"])):active {
+    transform: translateY(0);
+    box-shadow: var(--depth-highlight), var(--depth-shadow-sm);
+    transition-duration: 80ms;
+  }
+
+  /* Big clickable cards (forum categories, news tiles) lift a bit further */
+  :where(a, button).glitch-card:where(.rounded-2xl, .rounded-3xl):where(:hover, :focus-visible) {
+    transform: translateY(var(--depth-lift-card));
+  }
+
+  /* ---------------------------------------------------------------------
+   * Filled neon buttons: glossy top-to-bottom gradient, light top edge,
+   * pressed-in bottom edge, contact shadow and a soft glow in their own hue.
+   * ------------------------------------------------------------------- */
+  :where(a, button):where([class~="bg-neon-cyan"]) { --depth-glow-rgb: 0, 243, 255; }
+  :where(a, button):where([class~="bg-neon-green"]) { --depth-glow-rgb: 57, 255, 20; }
+  :where(a, button):where([class~="bg-neon-pink"], [class~="bg-neon-magenta"]) { --depth-glow-rgb: 255, 0, 255; }
+  :where(a, button):where([class~="bg-neon-purple"]) { --depth-glow-rgb: 188, 19, 254; }
+
+  :where(a, button):where([class~="bg-neon-cyan"], [class~="bg-neon-green"], [class~="bg-neon-pink"], [class~="bg-neon-magenta"], [class~="bg-neon-purple"]) {
+    background-image: var(--depth-sheen-button);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.4),
+      inset 0 -2px 0 rgba(0, 0, 0, 0.2),
+      0 2px 4px rgba(0, 0, 0, 0.5),
+      0 10px 22px -8px rgba(var(--depth-glow-rgb), 0.45);
+    transition:
+      transform var(--depth-duration) var(--depth-ease),
+      box-shadow var(--depth-duration) var(--depth-ease),
+      background-color var(--depth-duration) ease,
+      filter var(--depth-duration) ease;
+  }
+
+  :where(a, button):where([class~="bg-neon-cyan"], [class~="bg-neon-green"], [class~="bg-neon-pink"], [class~="bg-neon-magenta"], [class~="bg-neon-purple"]):where(:not(:disabled)):where(:hover, :focus-visible) {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.5),
+      inset 0 -2px 0 rgba(0, 0, 0, 0.18),
+      0 4px 8px rgba(0, 0, 0, 0.5),
+      0 16px 32px -10px rgba(var(--depth-glow-rgb), 0.6);
+  }
+
+  :where(a, button):where([class~="bg-neon-cyan"], [class~="bg-neon-green"], [class~="bg-neon-pink"], [class~="bg-neon-magenta"], [class~="bg-neon-purple"]):where(:not(:disabled, [class*="hover:scale"], [class*="hover:-translate"], .rounded-full)):where(:hover, :focus-visible) {
+    transform: translateY(var(--depth-lift));
+  }
+
+  :where(a, button):where([class~="bg-neon-cyan"], [class~="bg-neon-green"], [class~="bg-neon-pink"], [class~="bg-neon-magenta"], [class~="bg-neon-purple"]):active {
+    box-shadow:
+      inset 0 2px 4px rgba(0, 0, 0, 0.25),
+      0 1px 2px rgba(0, 0, 0, 0.5);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Form fields: recessed into the surface, with a soft cyan halo on focus.
+   * ------------------------------------------------------------------- */
+  :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]), textarea, select):where([class*="bg-"]):where(.border, [class*="rounded"]):where(:not(.bg-transparent, .border-none)) {
+    box-shadow: var(--depth-recessed);
+    transition:
+      border-color var(--depth-duration) ease,
+      box-shadow var(--depth-duration) ease,
+      background-color var(--depth-duration) ease;
+  }
+
+  :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]), textarea, select):where([class*="bg-"]):where(.border, [class*="rounded"]):where(:not(.bg-transparent, .border-none)):focus {
+    box-shadow:
+      var(--depth-recessed),
+      0 0 0 3px rgba(0, 243, 255, 0.12),
+      0 0 18px -4px rgba(0, 243, 255, 0.25);
+  }
+
+  /* Keyboard focus ring for interactive elements that don't opt out */
+  :where(a, button, [role="button"], summary):focus-visible {
+    outline: 2px solid rgba(0, 243, 255, 0.7);
+    outline-offset: 2px;
+  }
+
+  /* Overlays (dropdowns, popovers, modal shells) float above everything */
+  :where(div):where(.absolute, .fixed):where(.rounded-xl, .rounded-2xl):where(.border):where([class*="bg-cyber-"], [class*="bg-[#"]) {
+    box-shadow: var(--depth-highlight-strong), var(--depth-shadow-lg);
+  }
+}
+
+/* Utilities like transition-colors only animate colors; widen them on the
+   lift targets so the rise and shadow change are smooth instead of jumping.
+   (Unlayered on purpose: it must beat the utilities layer. Durations from
+   duration-* utilities still apply.) */
+:where(a, button, [role="button"], label):where(.rounded-xl, .rounded-2xl, .rounded-3xl):where(.border, .glitch-card):where(.transition-colors, .transition-opacity, .transition-shadow) {
+  transition-property: color, background-color, border-color, opacity, box-shadow, transform;
+}
+
+/* Respect reduced-motion: keep the shadows, drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+  :where(a, button, [role="button"], label):where(.rounded-xl, .rounded-2xl, .rounded-3xl):where(.border, .glitch-card):where(:hover, :focus-visible),
+  :where(a, button):where([class~="bg-neon-cyan"], [class~="bg-neon-green"], [class~="bg-neon-pink"], [class~="bg-neon-magenta"], [class~="bg-neon-purple"]):where(:hover, :focus-visible) {
+    transform: none !important;
+  }
+
+  .cyber-card:hover,
+  .btn-neon-cyan:hover,
+  .btn-neon-magenta:hover,
+  .btn-holographic:hover,
+  .cyber-button:hover {
+    transform: none !important;
+    translate: none !important;
+    scale: none !important;
+  }
+}
