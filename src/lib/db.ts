@@ -136,6 +136,11 @@ if (isTurso && databaseUrl) {
   db = new SQLiteWrapper();
 }
 
+
+function columnName(item: any): string | undefined {
+  return item?.name ?? item?.NAME ?? item?.[1];
+}
+
 export async function initDb() {
   const run = async (sql: string) => {
     let finalSql = sql;
@@ -188,7 +193,7 @@ export async function initDb() {
   if (!(db instanceof MySQLWrapper)) {
     const userColumns = await db.query<any>('PRAGMA table_info(users)');
     for (const column of socialColumns) {
-      const hasColumn = userColumns.some((item) => item.name === column);
+      const hasColumn = userColumns.some((item) => columnName(item) === column);
       if (!hasColumn) {
         await db.execute(`ALTER TABLE users ADD COLUMN ${column} TEXT`);
       }
@@ -209,8 +214,13 @@ export async function initDb() {
   // Steam OpenID identity (nullable; unique when present)
   if (!(db instanceof MySQLWrapper)) {
     const userColumns = await db.query<any>('PRAGMA table_info(users)');
-    if (!userColumns.some((item) => item.name === 'steam_id')) {
-      await db.execute('ALTER TABLE users ADD COLUMN steam_id TEXT');
+    if (!userColumns.some((item) => columnName(item) === 'steam_id')) {
+      try {
+        await db.execute('ALTER TABLE users ADD COLUMN steam_id TEXT');
+      } catch (error: any) {
+        const message = String(error?.message || error);
+        if (!/duplicate column name/i.test(message)) throw error;
+      }
     }
     await run('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_steam_id ON users(steam_id)');
   } else {

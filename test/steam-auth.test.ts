@@ -9,7 +9,9 @@ import {
   isAllowedReturnTo,
   isValidHttpOrigin,
   parseOpenIdKeyValues,
+  parseRawQueryString,
   parseSteamIdFromClaimedId,
+  collectOpenIdParamsFromUrl,
   sanitizeSteamUsername,
   verifySteamAssertion,
   fetchSteamProfile,
@@ -84,13 +86,14 @@ test('verifySteamAssertion requires is_valid:true from Steam', async () => {
     assert.match(body, /openid\.mode=check_authentication/);
     return new Response('ns:http://specs.openid.net/auth/2.0\nis_valid:true\n', { status: 200 });
   };
-  assert.equal(await verifySteamAssertion(validParams(), okFetch), true);
+  assert.deepEqual(await verifySteamAssertion(validParams(), okFetch), { ok: true, status: 200 });
 
   const badFetch: typeof fetch = async () => new Response('ns:http://specs.openid.net/auth/2.0\nis_valid:false\n', { status: 200 });
-  assert.equal(await verifySteamAssertion(validParams(), badFetch), false);
+  assert.equal((await verifySteamAssertion(validParams(), badFetch)).ok, false);
+  assert.equal((await verifySteamAssertion(validParams(), badFetch)).reason, 'steam_assertion_not_valid');
 
   const spoofedFetch: typeof fetch = async () => new Response('note:is_valid:true\nis_valid:false\n', { status: 200 });
-  assert.equal(await verifySteamAssertion(validParams(), spoofedFetch), false);
+  assert.equal((await verifySteamAssertion(validParams(), spoofedFetch)).reason, 'steam_assertion_not_valid');
 });
 
 test('parseOpenIdKeyValues and collectOpenIdParams ignore non-openid fields', () => {
@@ -158,4 +161,17 @@ test('fetchSteamProfile degrades when STEAM_API_KEY is missing or the API fails'
     if (previousKey === undefined) delete process.env.STEAM_API_KEY;
     else process.env.STEAM_API_KEY = previousKey;
   }
+});
+
+test('parseRawQueryString preserves plus signs in OpenID signatures', () => {
+  const raw = 'openid.mode=id_res&openid.sig=abc+def/ghi=&other=1';
+  const parsed = parseRawQueryString(raw);
+  assert.equal(parsed['openid.sig'], 'abc+def/ghi=');
+  assert.notEqual(parsed['openid.sig'], 'abc def/ghi=');
+  assert.equal(new URLSearchParams(raw).get('openid.sig'), 'abc def/ghi=');
+
+  const fromUrl = collectOpenIdParamsFromUrl('/api/auth/steam/callback?openid.sig=abc+def/ghi=&openid.mode=id_res&state=keep');
+  assert.equal(fromUrl['openid.sig'], 'abc+def/ghi=');
+  assert.equal(fromUrl['openid.mode'], 'id_res');
+  assert.equal('state' in fromUrl, false);
 });
