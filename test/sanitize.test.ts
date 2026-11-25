@@ -2,14 +2,27 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { sanitizeUserText, stripHtmlTags } from '../src/lib/sanitize.ts';
 
-const legacy = (value: string) => value.replace(/<[^>]*>/g, '');
+// Expected outputs are fixed strings (captured from the previous /<[^>]*>/g implementation),
+// so the test no longer embeds that regex.
+const cases: Array<[string, string]> = [
+  ['', ''],
+  ['plain text', 'plain text'],
+  ['<b>bold</b>', 'bold'],
+  ['a<b<c>d', 'ad'],
+  ['a<b', 'a<b'],
+  ['x > y < z', 'x > y < z'],
+  ['<<>>', '>'],
+  ['<>', ''],
+  ['a<>b', 'ab'],
+  ['<script>alert(1)</script>ok', 'alert(1)ok'],
+  ['tail <', 'tail <'],
+  ['> lead', '> lead'],
+  ['<a href="x">link</a> & <i>more</i>', 'link & more'],
+  ['<<<<b>', '']
+];
 
-test('stripHtmlTags matches the old /<[^>]*>/g behaviour', () => {
-  const samples = [
-    '', 'plain text', '<b>bold</b>', 'a<b<c>d', 'a<b', 'x > y < z', '<<>>', '<>', 'a<>b',
-    '<script>alert(1)</script>ok', 'tail <', '> lead', '<a href="x">link</a> & <i>more</i>', '<<<<b>'
-  ];
-  for (const sample of samples) assert.equal(stripHtmlTags(sample), legacy(sample), JSON.stringify(sample));
+test('stripHtmlTags keeps the previous tag-stripping behaviour', () => {
+  for (const [input, expected] of cases) assert.equal(stripHtmlTags(input), expected, JSON.stringify(input));
 });
 
 test('stripHtmlTags is linear on many unclosed "<" characters', () => {
