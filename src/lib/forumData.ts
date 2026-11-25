@@ -1,10 +1,15 @@
 import type { IDatabase } from './db';
+import { userDisplayNameSql } from './userDisplay';
+
+const AUTHOR_NAME_SQL = userDisplayNameSql('u');
 
 /**
  * Shared forum queries used by both the local Express server (server.ts) and the
  * Vercel serverless API (api/[...path].ts), so both return the same author info.
  *
- * Only public user fields are exposed here (id, username, avatar, role, bio,
+ * Author names prefer the Steam persona display_name (PR #235) over username; avatars
+ * come from avatar_url, which Steam login refreshes with the Steam avatar.
+ * Only public user fields are exposed here (id, display name, username, avatar, role, bio,
  * join date, last activity, post count). Never select email or password.
  */
 
@@ -34,7 +39,7 @@ export async function attachForumLastPosts<T extends { id: number }>(db: IDataba
       t.title AS last_thread_title,
       p.created_at AS last_post_at,
       u.id AS last_post_author_id,
-      u.username AS last_post_author_name,
+      ${AUTHOR_NAME_SQL} AS last_post_author_name,
       u.avatar_url AS last_post_author_avatar
     FROM posts p
     JOIN threads t ON t.id = p.thread_id
@@ -62,7 +67,7 @@ export async function getForumThreads(db: IDatabase, forumId: number | string, v
   const threads = await db.query<any>(`
     SELECT
       t.*,
-      u.username AS author_name,
+      ${AUTHOR_NAME_SQL} AS author_name,
       u.avatar_url AS author_avatar,
       u.role AS author_role,
       (SELECT COUNT(*) FROM posts p WHERE p.thread_id = t.id AND COALESCE(p.is_deleted, 0) = 0) AS post_count
@@ -79,7 +84,7 @@ export async function getForumThreads(db: IDatabase, forumId: number | string, v
       p.thread_id,
       p.created_at AS last_post_at,
       u.id AS last_post_author_id,
-      u.username AS last_post_author_name,
+      ${AUTHOR_NAME_SQL} AS last_post_author_name,
       u.avatar_url AS last_post_author_avatar
     FROM posts p
     JOIN users u ON u.id = p.author_id
@@ -108,7 +113,7 @@ export async function getForumThreads(db: IDatabase, forumId: number | string, v
  */
 export async function getThreadWithPosts(db: IDatabase, threadId: number | string, viewerIsStaff: boolean) {
   const thread = await db.queryOne<any>(`
-    SELECT t.*, u.username AS author_name, u.avatar_url AS author_avatar, u.role AS author_role, f.name AS forum_name
+    SELECT t.*, ${AUTHOR_NAME_SQL} AS author_name, u.avatar_url AS author_avatar, u.role AS author_role, f.name AS forum_name
     FROM threads t
     JOIN users u ON t.author_id = u.id
     JOIN forums f ON t.forum_id = f.id
@@ -120,7 +125,7 @@ export async function getThreadWithPosts(db: IDatabase, threadId: number | strin
   const posts = await db.query<any>(`
     SELECT
       p.*,
-      u.username AS author_name,
+      ${AUTHOR_NAME_SQL} AS author_name,
       u.avatar_url AS author_avatar,
       u.role AS author_role,
       u.bio AS author_bio,

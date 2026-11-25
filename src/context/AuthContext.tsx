@@ -4,6 +4,7 @@ import { apiJson } from '../lib/api';
 interface User {
   id: number;
   username: string;
+  display_name?: string | null;
   email: string;
   role: 'admin' | 'moderator' | 'member';
   avatar_url?: string;

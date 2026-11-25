@@ -7,10 +7,12 @@ import { format } from 'date-fns';
 import { useSearchParams, Navigate } from 'react-router';
 import { buildMembersSearchUrl } from '../lib/messagesSearch';
 import type { SearchUserResult } from '../lib/messageSearch';
+import { getUserAvatarInitial, getUserDisplayName } from '../lib/userDisplay';
 
 interface Conversation {
   id: number;
   username: string;
+  display_name?: string | null;
   avatar_url: string | null;
   last_message: string;
   last_message_at: string;
@@ -250,10 +252,11 @@ export default function MessagesPage() {
             'id' in userData &&
             String((userData as { id: number | string }).id) === userIdParam
           ) {
-            const typedUserData = userData as { id: number; username: string; avatar_url: string | null };
+            const typedUserData = userData as { id: number; username: string; display_name?: string | null; avatar_url: string | null };
             setSelectedUser({
               id: typedUserData.id,
               username: typedUserData.username,
+              display_name: typedUserData.display_name,
               avatar_url: typedUserData.avatar_url,
               last_message: '',
               last_message_at: new Date().toISOString(),
@@ -479,13 +482,13 @@ export default function MessagesPage() {
                   >
                     <div className="w-10 h-10 rounded-lg bg-cyber-black border border-white/10 flex items-center justify-center text-sm font-black text-white group-hover:border-neon-cyan/50 transition-all overflow-hidden">
                       {u.avatar_url ? (
-                        <img src={u.avatar_url} alt={u.username} className="w-full h-full object-cover" />
+                        <img src={u.avatar_url} alt={getUserDisplayName(u)} className="w-full h-full object-cover" />
                       ) : (
-                        u.username?.charAt(0)?.toUpperCase() || '?'
+                        getUserAvatarInitial(u)
                       )}
                     </div>
                     <div className="text-left">
-                      <p className="text-sm font-black text-zinc-300 group-hover:text-white transition-colors">{u.username}</p>
+                      <p className="text-sm font-black text-zinc-300 group-hover:text-white transition-colors">{getUserDisplayName(u)}</p>
                       <p className="text-[10px] text-zinc-600 uppercase tracking-tighter">Initialize Link</p>
                     </div>
                   </button>
@@ -510,7 +513,7 @@ export default function MessagesPage() {
               >
                 <div className="relative">
                   {conv.avatar_url ? (
-                    <img src={conv.avatar_url} alt={conv.username} className="w-12 h-12 rounded-full object-cover border border-white/10" referrerPolicy="no-referrer" />
+                    <img src={conv.avatar_url} alt={getUserDisplayName(conv)} className="w-12 h-12 rounded-full object-cover border border-white/10" referrerPolicy="no-referrer" />
                   ) : (
                     <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
                       <User className="w-6 h-6 text-zinc-500" />
@@ -524,7 +527,7 @@ export default function MessagesPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-start mb-1">
-                    <span className="font-medium text-zinc-200 truncate">{conv.username}</span>
+                    <span className="font-medium text-zinc-200 truncate">{getUserDisplayName(conv)}</span>
                     <span className="text-[10px] text-zinc-500">{format(new Date(conv.last_message_at), 'HH:mm')}</span>
                   </div>
                   <p className="text-xs text-zinc-500 truncate">{conv.last_message}</p>
@@ -554,14 +557,14 @@ export default function MessagesPage() {
                   <ArrowLeft className="w-5 h-5" />
                 </button>
                 {selectedUser.avatar_url ? (
-                  <img src={selectedUser.avatar_url} alt={selectedUser.username} className="w-10 h-10 rounded-full object-cover border border-white/10" referrerPolicy="no-referrer" />
+                  <img src={selectedUser.avatar_url} alt={getUserDisplayName(selectedUser)} className="w-10 h-10 rounded-full object-cover border border-white/10" referrerPolicy="no-referrer" />
                 ) : (
                   <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
                     <User className="w-5 h-5 text-zinc-500" />
                   </div>
                 )}
                 <div>
-                  <h3 className="font-medium text-zinc-200">{selectedUser.username}</h3>
+                  <h3 className="font-medium text-zinc-200">{getUserDisplayName(selectedUser)}</h3>
                   <span className="text-[10px] text-neon-green uppercase tracking-wider">Online</span>
                 </div>
               </div>

@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Calendar, MessageSquare, Award, ShieldCheck, Clock, MapPin, Camera, Save, X, Settings, Github, Youtube, Twitch, Facebook, Server, TrendingUp, Wallet, Target, Activity, History, ArrowUpRight, ArrowDownLeft, Car, Zap, Trophy, MessageCircle } from 'lucide-react';
 import { motion, useMotionValue, useSpring, animate, AnimatePresence } from 'motion/react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
+import { getUserAvatarInitial, getUserDisplayName } from '../lib/userDisplay';
 
 const SteamIcon = () => (
   <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
@@ -65,6 +66,7 @@ const PROFILE_SOCIAL_ITEMS: SocialItem[] = [
 interface UserProfile {
   id: number;
   username: string;
+  display_name?: string | null;
   role: string;
   avatar_url?: string;
   banner_url?: string;
@@ -709,9 +711,9 @@ export default function ProfilePage() {
           <div className="relative group">
             <div className="w-36 h-36 rounded-3xl bg-cyber-black border-2 border-neon-cyan/50 flex items-center justify-center text-5xl font-black text-white shadow-[0_0_40px_rgba(0,243,255,0.3)] overflow-hidden relative">
               {profile.avatar_url ? (
-                <img src={profile.avatar_url} alt={profile.username} className="w-full h-full object-cover" />
+                <img src={profile.avatar_url} alt={getUserDisplayName(profile)} className="w-full h-full object-cover" />
               ) : (
-                <span className="relative z-10">{(profile.username || '?').charAt(0).toUpperCase()}</span>
+                <span className="relative z-10">{getUserAvatarInitial(profile)}</span>
               )}
               {/* Decorative Frame */}
               <div className="absolute inset-2 border border-white/5 rounded-2xl pointer-events-none" />
@@ -738,7 +740,7 @@ export default function ProfilePage() {
           <div className="flex-1 text-center md:text-left pb-2">
             <div className="flex flex-col md:flex-row md:items-center gap-4 mb-4">
               <h1 className="text-5xl font-black text-white italic tracking-tighter uppercase leading-none neon-glow-white">
-                {profile.username}
+                {getUserDisplayName(profile)}
               </h1>
               <div className={`inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.4em] font-black px-4 py-1.5 rounded-lg self-center md:self-auto border translate-y-1 ${
                 profile.role === 'admin' ? 'bg-neon-pink/10 text-neon-pink border-neon-pink/30 shadow-[0_0_15px_rgba(255,0,255,0.2)]' :
@@ -1191,13 +1193,13 @@ export default function ProfilePage() {
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg bg-cyber-black border border-white/10 overflow-hidden flex items-center justify-center text-[10px] font-black text-white group-hover:border-neon-cyan/50 transition-colors">
                       {player.avatar_url ? (
-                        <img src={player.avatar_url} alt={player.username} className="w-full h-full object-cover" />
+                        <img src={player.avatar_url} alt={getUserDisplayName(player)} className="w-full h-full object-cover" />
                       ) : (
-                        (player.username || '?').charAt(0).toUpperCase()
+                        getUserAvatarInitial(player)
                       )}
                     </div>
                     <div>
-                      <div className="text-[10px] font-black text-white uppercase tracking-wider">{player.username}</div>
+                      <div className="text-[10px] font-black text-white uppercase tracking-wider">{getUserDisplayName(player)}</div>
                       <div className="text-[8px] font-black text-zinc-600 uppercase tracking-widest">Rank #{i + 1}</div>
                     </div>
                   </div>

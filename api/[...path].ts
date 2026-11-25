@@ -24,6 +24,7 @@ import { sanitizeUserText } from '../src/lib/sanitize.js';
 import { getConfiguredServers } from '../src/lib/configuredServers.js';
 import { createSteamAuthHandlers } from '../src/lib/steamAuth.js';
 import { attachForumLastPosts, getForumThreads, getThreadWithPosts, incrementThreadViews, isViewerStaff } from '../src/lib/forumData.js';
+import { userDisplayNameSql } from '../src/lib/userDisplay.js';
 
 const app = express();
 app.use(express.json({
@@ -417,7 +418,7 @@ async function requireAuthUser(req: Request, res: Response) {
     return null;
   }
 
-  const user = await db.queryOne<any>('SELECT id, username, role FROM users WHERE id = ?', [payload.id]);
+  const user = await db.queryOne<any>('SELECT id, username, display_name, role FROM users WHERE id = ?', [payload.id]);
   if (!user) {
     res.status(401).json({ error: 'Not authenticated' });
     return null;
@@ -536,14 +537,14 @@ const registerHandler = async (req: Request, res: Response) => {
   try {
     const hashedPassword = bcrypt.hashSync(password, 10);
     await db.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)', [username, email, hashedPassword]);
-    const user = await db.queryOne<any>('SELECT id, username, email, role FROM users WHERE username = ?', [username]);
+    const user = await db.queryOne<any>('SELECT id, username, display_name, email, role, avatar_url FROM users WHERE username = ?', [username]);
     if (!user) {
       return res.status(500).json({ error: 'Failed to load registered user' });
     }
 
     const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
     res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
-    return res.json({ user: { id: user.id, username: user.username, email: user.email, role: user.role } });
+    return res.json({ user: { id: user.id, username: user.username, display_name: user.display_name, email: user.email, role: user.role, avatar_url: user.avatar_url } });
   } catch (err: any) {
     return res.status(400).json({ error: err?.message || 'Registration failed' });
   }
@@ -564,7 +565,7 @@ const loginHandler = async (req: Request, res: Response) => {
 
     const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
     res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
-    return res.json({ user: { id: user.id, username: user.username, email: user.email, role: user.role } });
+    return res.json({ user: { id: user.id, username: user.username, display_name: user.display_name, email: user.email, role: user.role, avatar_url: user.avatar_url } });
   } catch (err: any) {
     await captureException(err, { scope: 'auth', flow: 'login' });
     return res.status(500).json({ error: err?.message || 'Login failed' });
@@ -609,7 +610,7 @@ const meHandler = async (req: Request, res: Response) => {
   }
   try {
     const user = await db.queryOne<any>(
-      'SELECT id, username, email, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?',
+      'SELECT id, username, display_name, email, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?',
       [payload.id]
     );
     if (!user) {
@@ -663,7 +664,7 @@ const meUpdateHandler = async (req: Request, res: Response) => {
     await db.execute(`UPDATE users SET ${columns}, last_active = CURRENT_TIMESTAMP WHERE id = ?`, [...values, user.id]);
 
     const updatedUser = await db.queryOne<any>(
-      'SELECT id, username, email, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?',
+      'SELECT id, username, display_name, email, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?',
       [user.id]
     );
 
@@ -677,7 +678,7 @@ app.patch(['/api/auth/me', '/auth/me'], meUpdateHandler);
 const userProfileHandler = async (req: Request, res: Response) => {
   try {
     const user = await db.queryOne<any>(
-      'SELECT id, username, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?',
+      'SELECT id, username, display_name, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?',
       [req.params.id]
     );
 
@@ -699,14 +700,14 @@ const membersHandler = async (req: Request, res: Response) => {
   try {
     const members = search
       ? await db.query<any>(
-          `SELECT id, username, role, avatar_url, last_active, created_at
+          `SELECT id, username, display_name, role, avatar_url, last_active, created_at
            FROM users
-           WHERE username LIKE ?
+           WHERE username LIKE ? OR display_name LIKE ?
            ORDER BY last_active DESC, created_at DESC`,
-          [`%${search}%`]
+          [`%${search}%`, `%${search}%`]
         )
       : await db.query<any>(
-          `SELECT id, username, role, avatar_url, last_active, created_at
+          `SELECT id, username, display_name, role, avatar_url, last_active, created_at
            FROM users
            ORDER BY last_active DESC, created_at DESC`
         );
@@ -754,7 +755,7 @@ app.get(['/api/users/:id/game-matches', '/users/:id/game-matches'], userGameMatc
 const wealthLeaderboardHandler = async (_req: Request, res: Response) => {
   try {
     const leaderboard = await db.query<any>(`
-      SELECT u.username, u.avatar_url, SUM(gs.total_wealth) as total_wealth
+      SELECT u.username, u.display_name, u.avatar_url, SUM(gs.total_wealth) as total_wealth
       FROM users u
       JOIN game_stats gs ON u.id = gs.user_id
       GROUP BY u.id
@@ -1133,7 +1134,7 @@ const newsHandler = async (req: Request, res: Response) => {
         t.views,
         t.created_at,
         t.author_id,
-        u.username as author_name,
+        ${userDisplayNameSql('u')} as author_name,
         u.avatar_url as author_avatar,
         (SELECT COUNT(*) - 1 FROM posts p WHERE p.thread_id = t.id) as reply_count,
         (SELECT p2.content FROM posts p2 WHERE p2.thread_id = t.id ORDER BY p2.id ASC LIMIT 1) as excerpt
@@ -1161,7 +1162,7 @@ const threadListHandler = async (req: Request, res: Response) => {
         t.title,
         t.views,
         t.created_at as createdAt,
-        u.username as author,
+        ${userDisplayNameSql('u')} as author,
         (SELECT COUNT(*) - 1 FROM posts p WHERE p.thread_id = t.id) as replies
       FROM threads t
       JOIN users u ON u.id = t.author_id
@@ -1463,7 +1464,7 @@ const ticketDetailHandler = async (req: Request, res: Response) => {
 
   try {
     const ticket = await db.queryOne<any>(`
-      SELECT t.*, u.username as author_name, u.avatar_url as author_avatar
+      SELECT t.*, ${userDisplayNameSql('u')} as author_name, u.avatar_url as author_avatar
       FROM tickets t
       JOIN users u ON t.user_id = u.id
       WHERE t.id = ? AND t.user_id = ?
@@ -1474,7 +1475,7 @@ const ticketDetailHandler = async (req: Request, res: Response) => {
     }
 
     const messages = await db.query<any>(`
-      SELECT tm.*, u.username as author_name, u.avatar_url as author_avatar, u.role as author_role
+      SELECT tm.*, ${userDisplayNameSql('u')} as author_name, u.avatar_url as author_avatar, u.role as author_role
       FROM ticket_messages tm
       JOIN users u ON tm.user_id = u.id
       WHERE tm.ticket_id = ?
@@ -1515,7 +1516,7 @@ const messageConversationsHandler = async (req: Request, res: Response) => {
   try {
     const conversations = await db.query<any>(`
       SELECT
-        u.id, u.username, u.avatar_url,
+        u.id, u.username, u.display_name, u.avatar_url,
         m.content as last_message, m.created_at as last_message_at,
         (SELECT COUNT(*) FROM messages WHERE sender_id = u.id AND receiver_id = ? AND is_read = 0) as unread_count
       FROM users u
@@ -1961,7 +1962,7 @@ const adminUsersListHandler = async (req: Request, res: Response) => {
   const user = await requireAdminUser(req, res);
   if (!user) return;
   try {
-    const users = await db.query<any>('SELECT id, username, email, role, created_at, last_active FROM users ORDER BY created_at DESC');
+    const users = await db.query<any>('SELECT id, username, display_name, email, role, avatar_url, created_at, last_active FROM users ORDER BY created_at DESC');
     return res.json(users);
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to load admin users' });
@@ -1990,7 +1991,7 @@ const adminReportsHandler = async (req: Request, res: Response) => {
   if (!user) return;
   try {
     const reports = await db.query<any>(`
-      SELECT r.*, u.username as reporter_name
+      SELECT r.*, ${userDisplayNameSql('u')} as reporter_name
       FROM reports r
       JOIN users u ON r.reporter_id = u.id
       ORDER BY r.created_at DESC
@@ -2042,7 +2043,7 @@ const adminAuditLogHandler = async (req: Request, res: Response) => {
   if (!user) return;
   try {
     const logs = await db.query<any>(`
-      SELECT m.*, u.username as moderator_name
+      SELECT m.*, ${userDisplayNameSql('u')} as moderator_name
       FROM moderation_actions m
       JOIN users u ON m.moderator_id = u.id
       ORDER BY m.created_at DESC
@@ -2297,7 +2298,7 @@ const adminTicketsListHandler = async (req: Request, res: Response) => {
     const tickets = await db.query<any>(`
       SELECT
         t.*,
-        u.username as author_name,
+        ${userDisplayNameSql('u')} as author_name,
         u.avatar_url as author_avatar,
         (SELECT COUNT(*) FROM ticket_messages tm WHERE tm.ticket_id = t.id) as message_count
       FROM tickets t
@@ -2316,14 +2317,14 @@ const adminTicketDetailHandler = async (req: Request, res: Response) => {
   if (!user) return;
   try {
     const ticket = await db.queryOne<any>(`
-      SELECT t.*, u.username as author_name, u.avatar_url as author_avatar
+      SELECT t.*, ${userDisplayNameSql('u')} as author_name, u.avatar_url as author_avatar
       FROM tickets t
       JOIN users u ON u.id = t.user_id
       WHERE t.id = ?
     `, [req.params.id]);
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
     const messages = await db.query<any>(`
-      SELECT tm.*, u.username as author_name, u.avatar_url as author_avatar, u.role as author_role
+      SELECT tm.*, ${userDisplayNameSql('u')} as author_name, u.avatar_url as author_avatar, u.role as author_role
       FROM ticket_messages tm
       JOIN users u ON u.id = tm.user_id
       WHERE tm.ticket_id = ?

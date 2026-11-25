@@ -8,11 +8,12 @@ import { parseDbDate, formatRelativeTime } from '../src/lib/dates';
 function makeDb(): IDatabase {
   const raw = new Database(':memory:');
   raw.exec(`
-    CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT, email TEXT, password TEXT, role TEXT, avatar_url TEXT, bio TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP, last_active TEXT DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT, display_name TEXT, email TEXT, password TEXT, role TEXT, avatar_url TEXT, bio TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP, last_active TEXT DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE forums (id INTEGER PRIMARY KEY, name TEXT);
     CREATE TABLE threads (id INTEGER PRIMARY KEY, forum_id INTEGER, author_id INTEGER, title TEXT, is_pinned INTEGER DEFAULT 0, is_hidden INTEGER DEFAULT 0, views INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE posts (id INTEGER PRIMARY KEY, thread_id INTEGER, author_id INTEGER, content TEXT, is_hidden INTEGER DEFAULT 0, is_deleted INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
     INSERT INTO users (id, username, email, password, role, avatar_url) VALUES (1, 'alice', 'a@x.test', 'hash', 'admin', 'https://img/a.png'), (2, 'bob', 'b@x.test', 'hash', 'member', NULL);
+    UPDATE users SET display_name = 'Bob Steam' WHERE id = 2;
     INSERT INTO forums (id, name) VALUES (10, 'General'), (11, 'Empty');
     INSERT INTO threads (id, forum_id, author_id, title) VALUES (100, 10, 1, 'Hello'), (101, 10, 2, 'Secret');
     UPDATE threads SET is_hidden = 1 WHERE id = 101;
@@ -33,7 +34,7 @@ test('forum list gets the latest visible post author', async () => {
   const db = makeDb();
   const forums = await attachForumLastPosts(db, [{ id: 10 }, { id: 11 }]);
   assert.equal(forums[0].last_post_author_id, 2);
-  assert.equal(forums[0].last_post_author_name, 'bob');
+  assert.equal(forums[0].last_post_author_name, 'Bob Steam');
   assert.equal(forums[0].last_thread_id, 100);
   assert.equal((forums[1] as any).last_post_author_id, undefined);
 });
@@ -43,7 +44,8 @@ test('forum threads include author avatar and hide hidden threads from guests', 
   const guest = await getForumThreads(db, 10, false);
   assert.deepEqual(guest.map((t: any) => t.id), [100]);
   assert.equal(guest[0].author_avatar, 'https://img/a.png');
-  assert.equal(guest[0].last_post_author_name, 'bob');
+  assert.equal(guest[0].last_post_author_name, 'Bob Steam');
+  assert.equal(guest[0].author_name, 'alice');
   assert.equal(Number(guest[0].post_count), 3);
   assert.ok(!('email' in guest[0]) && !('password' in guest[0]));
   const staff = await getForumThreads(db, 10, true);

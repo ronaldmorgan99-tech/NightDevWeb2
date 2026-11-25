@@ -3,10 +3,12 @@ import { apiJson } from '../../lib/api';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Users, ShieldCheck, Award, MoreVertical, Search, Filter, User as UserIcon, ShieldAlert, XCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { getUserAvatarInitial, getUserDisplayName } from '../../lib/userDisplay';
 
 interface User {
   id: number;
   username: string;
+  display_name?: string | null;
   email: string;
   role: string;
   created_at: string;
@@ -38,6 +40,7 @@ const AdminUsersPage: React.FC = () => {
   });
 
   const filteredUsers = asArray(users).filter(u => 
+    getUserDisplayName(u).toLowerCase().includes(searchQuery.toLowerCase()) ||
     u.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
     u.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -86,10 +89,13 @@ const AdminUsersPage: React.FC = () => {
                 <td className="px-8 py-6">
                   <div className="flex items-center gap-4">
                     <div className="w-10 h-10 rounded-xl bg-cyber-black border border-white/10 flex items-center justify-center text-xs font-black text-white group-hover:border-neon-cyan/30 transition-colors">
-                      {user.username.charAt(0).toUpperCase()}
+                      {getUserAvatarInitial(user)}
                     </div>
                     <div>
-                      <div className="font-black text-white uppercase italic tracking-tight">{user.username}</div>
+                      <div className="font-black text-white uppercase italic tracking-tight">{getUserDisplayName(user)}</div>
+                      {user.display_name && user.display_name !== user.username ? (
+                        <div className="text-[10px] text-zinc-500 font-mono">{user.username}</div>
+                      ) : null}
                       <div className="text-[10px] text-zinc-600 font-mono">{user.email}</div>
                     </div>
                   </div>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
+import { getUserAvatarInitial } from '../lib/userDisplay';
 
 type Size = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 
@@ -24,7 +25,7 @@ interface UserAvatarProps {
 export const UserAvatar: React.FC<UserAvatarProps> = ({ name, src, size = 'md', className = '' }) => {
   const [failed, setFailed] = useState(false);
   const label = (name || '?').trim();
-  const initial = label.charAt(0).toUpperCase() || '?';
+  const initial = getUserAvatarInitial({ display_name: label });
   return (
     <span
       className={`inline-flex shrink-0 items-center justify-center overflow-hidden bg-cyber-black border border-white/10 font-black text-white ${sizeClasses[size]} ${className}`}

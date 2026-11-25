@@ -4,10 +4,12 @@ import { Search, User, ShieldCheck, Award, Clock, Calendar } from 'lucide-react'
 import { motion } from 'motion/react';
 import { Link } from 'react-router';
 import { formatDbDate } from '../lib/dates';
+import { getUserAvatarInitial, getUserDisplayName } from '../lib/userDisplay';
 
 interface Member {
   id: number;
   username: string;
+  display_name?: string | null;
   role: string;
   avatar_url?: string;
   last_active: string;
@@ -31,7 +33,8 @@ const MembersPage: React.FC = () => {
   });
 
   const filteredMembers = members?.filter(m => 
-    m.username.toLowerCase().includes(searchTerm.toLowerCase())
+    getUserDisplayName(m).toLowerCase().includes(searchTerm.toLowerCase())
+    || m.username.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (isLoading) return <div className="animate-pulse grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">{[1, 2, 3, 4].map(i => <div key={i} className="h-64 bg-white/5 rounded-2xl" />)}</div>;
@@ -65,17 +68,17 @@ const MembersPage: React.FC = () => {
             transition={{ delay: idx * 0.05 }}
             className="group cyber-card p-8 border-white/5 hover:border-neon-cyan/30 transition-all duration-500 text-center relative overflow-hidden"
           >
-            <Link to={`/profile/${member.id}`} title={`View ${member.username}'s profile`} className="block w-24 h-24 rounded-2xl bg-cyber-black border-2 border-white/10 flex items-center justify-center text-3xl font-black text-white mx-auto mb-6 shadow-2xl group-hover:border-neon-cyan/50 transition-all duration-500 overflow-hidden relative">
+            <Link to={`/profile/${member.id}`} title={`View ${getUserDisplayName(member)}'s profile`} className="block w-24 h-24 rounded-2xl bg-cyber-black border-2 border-white/10 flex items-center justify-center text-3xl font-black text-white mx-auto mb-6 shadow-2xl group-hover:border-neon-cyan/50 transition-all duration-500 overflow-hidden relative">
               {member.avatar_url ? (
-                <img src={member.avatar_url} alt={member.username} className="w-full h-full object-cover" />
+                <img src={member.avatar_url} alt={getUserDisplayName(member)} className="w-full h-full object-cover" />
               ) : (
-                member.username.charAt(0).toUpperCase()
+                getUserAvatarInitial(member)
               )}
               <div className="absolute inset-0 bg-neon-cyan/5 opacity-0 group-hover:opacity-100 transition-opacity" />
             </Link>
             
             <h3 className="text-xl font-black text-white mb-2 italic tracking-tighter uppercase group-hover:text-neon-cyan transition-colors break-all">
-              <Link to={`/profile/${member.id}`}>{member.username}</Link>
+              <Link to={`/profile/${member.id}`}>{getUserDisplayName(member)}</Link>
             </h3>
 
             <div className={`inline-flex items-center gap-2 text-[8px] uppercase tracking-[0.3em] font-black px-3 py-1 rounded-lg mb-8 border ${
