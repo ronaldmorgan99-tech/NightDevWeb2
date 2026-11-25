@@ -11,6 +11,30 @@ export const STEAM_STATE_COOKIE = 'steam_openid_state';
 export const STEAM_AUTH_ERROR_REDIRECT = '/#/login?error=steam_auth_failed';
 export const STEAM_AUTH_SUCCESS_REDIRECT = '/#/';
 
+export function isSteamCallbackLandingPath(target: string): boolean {
+  return target === STEAM_AUTH_SUCCESS_REDIRECT || target === STEAM_AUTH_ERROR_REDIRECT;
+}
+
+/** Same-document landing HTML so Chrome's desktop-site reload does not replay the OpenID redirect chain. */
+export function buildSteamCallbackLandingHtml(target: string): string {
+  if (!isSteamCallbackLandingPath(target)) {
+    throw new Error('Invalid Steam callback landing path');
+  }
+  const jsonTarget = JSON.stringify(target);
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="0;url=${target}">
+  <title>Continuing</title>
+  <script>location.replace(${jsonTarget});</script>
+</head>
+<body>
+  <p>Continuing to the site… <a href="${target}">Continue</a></p>
+</body>
+</html>`;
+}
+
 const DEFAULT_OPENID_ENDPOINT = 'https://steamcommunity.com/openid/login';
 const DEFAULT_API_BASE = 'https://api.steampowered.com';
 
@@ -153,6 +177,12 @@ function applyAuthNoStoreHeaders(res: Response) {
   res.setHeader('Expires', '0');
   res.setHeader('CDN-Cache-Control', 'no-store');
   res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
+}
+
+export function sendSteamCallbackLanding(res: Response, target: string) {
+  applyAuthNoStoreHeaders(res);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  return res.status(200).send(buildSteamCallbackLandingHtml(target));
 }
 
 function logSteamAuth(event: string, details: Record<string, unknown>) {
@@ -616,9 +646,8 @@ export function createSteamAuthHandlers(deps: SteamAuthDeps) {
     applyAuthNoStoreHeaders(res);
     const fail = (origin: string | undefined, reason: string, extra: Record<string, unknown> = {}) => {
       logSteamAuth('steam.auth.callback_failed', { reason, origin: origin || null, ...extra });
-      const safeOrigin = origin && isValidHttpOrigin(origin) ? origin.replace(/\/$/, '') : '';
       res.clearCookie(STEAM_STATE_COOKIE, { ...deps.cookieOptions, maxAge: 0 });
-      return res.redirect(302, `${safeOrigin}${STEAM_AUTH_ERROR_REDIRECT}`);
+      return sendSteamCallbackLanding(res, STEAM_AUTH_ERROR_REDIRECT);
     };
 
     let origin = '';
@@ -658,7 +687,7 @@ export function createSteamAuthHandlers(deps: SteamAuthDeps) {
         usedSteamProfile: Boolean(profile.personaName || profile.avatarUrl),
         profileSource: profile.source || 'unavailable'
       });
-      return res.redirect(302, `${origin}${STEAM_AUTH_SUCCESS_REDIRECT}`);
+      return sendSteamCallbackLanding(res, STEAM_AUTH_SUCCESS_REDIRECT);
     } catch (error: any) {
       return fail(origin, error?.message || 'steam_callback_exception');
     }
