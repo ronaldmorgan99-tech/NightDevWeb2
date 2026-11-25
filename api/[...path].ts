@@ -23,6 +23,7 @@ import { isPublicSetting } from '../src/lib/settingsAllowlist.js';
 import { sanitizeUserText } from '../src/lib/sanitize.js';
 import { getConfiguredServers } from '../src/lib/configuredServers.js';
 import { createSteamAuthHandlers } from '../src/lib/steamAuth.js';
+import { attachForumLastPosts, getForumThreads, getThreadWithPosts, incrementThreadViews, isViewerStaff } from '../src/lib/forumData.js';
 
 const app = express();
 app.use(express.json({
@@ -1083,15 +1084,16 @@ const forumCategoriesHandler = async (_req: Request, res: Response) => {
       LEFT JOIN (
         SELECT t.forum_id, COUNT(p.id) AS post_count
         FROM threads t
-        LEFT JOIN posts p ON p.thread_id = t.id
+        LEFT JOIN posts p ON p.thread_id = t.id AND COALESCE(p.is_deleted, 0) = 0
         GROUP BY t.forum_id
       ) pc ON pc.forum_id = f.id
       ORDER BY f.display_order ASC
     `);
 
+    const forumsWithLastPost = await attachForumLastPosts(db, forums);
     return res.json(categories.map((cat: any) => ({
       ...cat,
-      forums: forums.filter((f: any) => f.category_id === cat.id)
+      forums: forumsWithLastPost.filter((f: any) => f.category_id === cat.id)
     })));
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to load forums' });
@@ -1106,18 +1108,7 @@ const forumDetailHandler = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Forum not found' });
     }
 
-    const threads = await db.query<any>(`
-      SELECT
-        t.*,
-        u.username as author_name,
-        COUNT(p.id) as post_count
-      FROM threads t
-      JOIN users u ON t.author_id = u.id
-      LEFT JOIN posts p ON p.thread_id = t.id
-      WHERE t.forum_id = ?
-      GROUP BY t.id, u.username
-      ORDER BY t.is_pinned DESC, t.created_at DESC
-    `, [req.params.id]);
+    const threads = await getForumThreads(db, req.params.id, await isViewerStaff(db, getTokenPayload(req)));
 
     return res.json({ forum, threads });
   } catch (err: any) {
@@ -1141,6 +1132,7 @@ const newsHandler = async (req: Request, res: Response) => {
         t.is_pinned,
         t.views,
         t.created_at,
+        t.author_id,
         u.username as author_name,
         u.avatar_url as author_avatar,
         (SELECT COUNT(*) - 1 FROM posts p WHERE p.thread_id = t.id) as reply_count,
@@ -1187,26 +1179,12 @@ app.get(['/api/threads', '/threads'], threadListHandler);
 
 const threadDetailHandler = async (req: Request, res: Response) => {
   try {
-    const thread = await db.queryOne<any>(`
-      SELECT t.*, u.username as author_name, f.name as forum_name
-      FROM threads t
-      JOIN users u ON t.author_id = u.id
-      JOIN forums f ON t.forum_id = f.id
-      WHERE t.id = ?
-    `, [req.params.id]);
-    if (!thread) {
+    const result = await getThreadWithPosts(db, req.params.id, await isViewerStaff(db, getTokenPayload(req)));
+    if (!result) {
       return res.status(404).json({ error: 'Thread not found' });
     }
-
-    const posts = await db.query<any>(`
-      SELECT p.*, u.username as author_name, u.avatar_url as author_avatar, u.role as author_role
-      FROM posts p
-      JOIN users u ON p.author_id = u.id
-      WHERE p.thread_id = ?
-      ORDER BY p.created_at ASC
-    `, [req.params.id]);
-
-    return res.json({ thread, posts });
+    await incrementThreadViews(db, req.params.id);
+    return res.json(result);
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Failed to load thread' });
   }

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { Navigate } from 'react-router';
 import { apiJson } from '../lib/api';
 import { useMutation } from '@tanstack/react-query';
 import { 
@@ -22,7 +23,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 
 const SettingsPage: React.FC = () => {
-  const { user, updateProfile } = useAuth();
+  const { user, isLoading: authLoading, updateProfile } = useAuth();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<'profile' | 'account' | 'security' | 'notifications'>('profile');
   const [showPassword, setShowPassword] = useState(false);
@@ -115,6 +116,10 @@ const SettingsPage: React.FC = () => {
     { id: 'security', label: 'Security Protocols', icon: Shield },
     { id: 'notifications', label: 'Neural Alerts', icon: Bell },
   ];
+
+  if (!authLoading && !user) {
+    return <Navigate to="/login" replace />;
+  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">

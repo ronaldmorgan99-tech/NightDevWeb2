@@ -82,6 +82,7 @@ const ServersPage = lazy(() => import('./pages/ServersPage'));
 const NewsPage = lazy(() => import('./pages/NewsPage'));
 const StudioUnavailablePage = lazy(() => import('./pages/ComingSoonPage'));
 const VeoStudioPage = lazy(() => import('./pages/VeoStudioPage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -196,6 +197,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<MainLayout />}>
                 <Route index element={<Suspense fallback={<LoadingFallback />}><ForumsPage /></Suspense>} />
+                <Route path="forums" element={<Suspense fallback={<LoadingFallback />}><ForumsPage /></Suspense>} />
                 <Route path="forums/:id" element={<Suspense fallback={<LoadingFallback />}><ForumViewPage /></Suspense>} />
                 <Route path="forums/:id/new" element={<Suspense fallback={<LoadingFallback />}><CreateThreadPage /></Suspense>} />
                 <Route path="threads/:id" element={<Suspense fallback={<LoadingFallback />}><ThreadViewPage /></Suspense>} />
@@ -224,6 +226,7 @@ export default function App() {
                     </Suspense>
                   }
                 />
+                <Route path="*" element={<Suspense fallback={<LoadingFallback />}><NotFoundPage /></Suspense>} />
               </Route>
               <Route path="/admin" element={<AdminLayout />}>
                 <Route index element={<Suspense fallback={<LoadingFallback />}><AdminDashboard /></Suspense>} />

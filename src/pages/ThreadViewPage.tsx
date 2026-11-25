@@ -30,6 +30,8 @@ import { apiJson } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import ReportModal from '../components/ReportModal';
 import ConfirmationModal from '../components/ConfirmationModal';
+import { AuthorLink, UserAvatar, profilePath } from '../components/UserAvatar';
+import { formatDbDate, formatDbDateTime, isRecentlyActive, parseDbDate } from '../lib/dates';
 
 interface Post {
   id: number;
@@ -38,7 +40,10 @@ interface Post {
   author_name: string;
   author_avatar?: string;
   author_role: string;
-  author_bio?: string;
+  author_bio?: string | null;
+  author_joined_at?: string | null;
+  author_last_active?: string | null;
+  author_post_count?: number;
   is_hidden: number;
   is_hidden_placeholder?: boolean;
   created_at: string;
@@ -53,6 +58,12 @@ interface ThreadData {
     is_pinned: number;
     is_solved: number;
     is_hidden: number;
+    author_id?: number;
+    author_name?: string;
+    author_avatar?: string | null;
+    forum_name?: string;
+    views?: number;
+    created_at?: string;
   };
   posts: Post[];
 }
@@ -156,7 +167,14 @@ const ThreadViewPage: React.FC = () => {
   });
 
   if (isLoading) return <div className="animate-pulse space-y-4"><div className="h-12 w-64 bg-white/5 rounded-lg" /><div className="h-96 bg-white/5 rounded-2xl" /></div>;
-  if (!data) return <div>Thread not found</div>;
+  if (!data?.thread) {
+    return (
+      <div className="cyber-card p-12 text-center space-y-4">
+        <p className="text-zinc-400 font-bold">Thread not found.</p>
+        <Link to="/forums" className="text-neon-cyan hover:underline text-sm">Back to forums</Link>
+      </div>
+    );
+  }
 
   const isStaff = user && ['admin', 'moderator'].includes(user.role);
 
@@ -186,9 +204,9 @@ const ThreadViewPage: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <nav className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-black text-zinc-600 mb-4">
-            <Link to="/" className="hover:text-neon-cyan transition-colors">Network</Link>
+            <Link to="/forums" className="hover:text-neon-cyan transition-colors">Forums</Link>
             <ChevronRight className="w-3 h-3" />
-            <Link to={`/forums/${data.thread.forum_id}`} className="hover:text-neon-cyan transition-colors">Sector</Link>
+            <Link to={`/forums/${data.thread.forum_id}`} className="hover:text-neon-cyan transition-colors">{data.thread.forum_name || 'Sector'}</Link>
             <ChevronRight className="w-3 h-3" />
             <span className="text-neon-cyan truncate max-w-[200px]">{data.thread.title}</span>
           </nav>
@@ -201,6 +219,23 @@ const ThreadViewPage: React.FC = () => {
               {data.thread.title}
             </h1>
           </div>
+          {data.thread.author_id && (
+            <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+              <span>Started by</span>
+              <AuthorLink
+                userId={data.thread.author_id}
+                name={data.thread.author_name}
+                avatar={data.thread.author_avatar}
+                size="sm"
+                nameClassName="text-zinc-200 hover:text-neon-cyan"
+              />
+              {data.thread.created_at && (
+                <span className="font-mono" title={formatDbDateTime(data.thread.created_at)}>
+                  {formatDbDate(data.thread.created_at)}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {isStaff && (
@@ -253,18 +288,27 @@ const ThreadViewPage: React.FC = () => {
             <div className="w-full md:w-64 bg-cyber-dark p-8 flex flex-col items-center text-center border-b md:border-b-0 md:border-r border-white/5 relative">
               <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-neon-cyan/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
               
-              <Link to={`/profile/${post.author_id}`} className="group/avatar relative mb-6">
-                <div className="w-24 h-24 rounded-2xl bg-cyber-black border border-white/10 flex items-center justify-center text-3xl font-black text-white shadow-2xl overflow-hidden group-hover/avatar:border-neon-cyan/50 transition-all duration-500">
-                  {post.author_avatar ? (
-                    <img src={post.author_avatar} alt={post.author_name} className="w-full h-full object-cover" />
-                  ) : (
-                    post.author_name.charAt(0).toUpperCase()
-                  )}
-                </div>
-                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-neon-green rounded-full border-2 border-cyber-dark shadow-[0_0_8px_#39ff14]" />
+              <Link to={profilePath(post.author_id)} title={`View ${post.author_name}'s profile`} className="group/avatar relative mb-6">
+                <UserAvatar
+                  name={post.author_name}
+                  src={post.author_avatar}
+                  size="xl"
+                  className="shadow-2xl group-hover/avatar:border-neon-cyan/50 transition-all duration-500"
+                />
+                {isRecentlyActive(post.author_last_active) && (
+                  <div
+                    className="absolute -bottom-1 -right-1 w-4 h-4 bg-neon-green rounded-full border-2 border-cyber-dark shadow-[0_0_8px_#39ff14]"
+                    title="Active recently"
+                  />
+                )}
               </Link>
               
-              <h4 className="font-black text-white mb-2 italic tracking-tight text-lg uppercase">{post.author_name}</h4>
+              <Link
+                to={profilePath(post.author_id)}
+                className="font-black text-white hover:text-neon-cyan transition-colors mb-2 italic tracking-tight text-lg uppercase break-all"
+              >
+                {post.author_name}
+              </Link>
               
               <div className={`text-[8px] uppercase tracking-[0.3em] font-black px-3 py-1.5 rounded-lg mb-6 flex items-center gap-2 border ${
                 post.author_role === 'admin' ? 'bg-neon-pink/10 text-neon-pink border-neon-pink/20' :
@@ -287,12 +331,12 @@ const ThreadViewPage: React.FC = () => {
                   </button>
                 )}
                 <div className="flex justify-between text-[8px] text-zinc-600 uppercase tracking-[0.2em] font-black">
-                  <span>Data Points</span>
-                  <span className="text-neon-cyan font-mono">124</span>
+                  <span>Posts</span>
+                  <span className="text-neon-cyan font-mono">{post.author_post_count ?? 0}</span>
                 </div>
                 <div className="flex justify-between text-[8px] text-zinc-600 uppercase tracking-[0.2em] font-black">
-                  <span>Uplink</span>
-                  <span className="text-zinc-400 font-mono">2023</span>
+                  <span>Joined</span>
+                  <span className="text-zinc-400 font-mono">{parseDbDate(post.author_joined_at)?.getFullYear() ?? '—'}</span>
                 </div>
               </div>
             </div>
@@ -303,7 +347,7 @@ const ThreadViewPage: React.FC = () => {
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2 text-neon-cyan/50">
                     <Clock className="w-3 h-3" />
-                    <span className="font-mono">{new Date(post.created_at).toLocaleString()}</span>
+                    <span className="font-mono">{formatDbDateTime(post.created_at)}</span>
                   </div>
                   {post.is_hidden === 1 && (
                     <span className="flex items-center gap-1 text-neon-purple neon-glow-purple">

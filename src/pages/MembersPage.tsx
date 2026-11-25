@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Search, User, ShieldCheck, Award, Clock, Calendar } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Link } from 'react-router';
+import { formatDbDate } from '../lib/dates';
 
 interface Member {
   id: number;
@@ -64,17 +65,17 @@ const MembersPage: React.FC = () => {
             transition={{ delay: idx * 0.05 }}
             className="group cyber-card p-8 border-white/5 hover:border-neon-cyan/30 transition-all duration-500 text-center relative overflow-hidden"
           >
-            <div className="w-24 h-24 rounded-2xl bg-cyber-black border-2 border-white/10 flex items-center justify-center text-3xl font-black text-white mx-auto mb-6 shadow-2xl group-hover:border-neon-cyan/50 transition-all duration-500 overflow-hidden relative">
+            <Link to={`/profile/${member.id}`} title={`View ${member.username}'s profile`} className="block w-24 h-24 rounded-2xl bg-cyber-black border-2 border-white/10 flex items-center justify-center text-3xl font-black text-white mx-auto mb-6 shadow-2xl group-hover:border-neon-cyan/50 transition-all duration-500 overflow-hidden relative">
               {member.avatar_url ? (
                 <img src={member.avatar_url} alt={member.username} className="w-full h-full object-cover" />
               ) : (
                 member.username.charAt(0).toUpperCase()
               )}
               <div className="absolute inset-0 bg-neon-cyan/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-            </div>
+            </Link>
             
-            <h3 className="text-xl font-black text-white mb-2 italic tracking-tighter uppercase group-hover:text-neon-cyan transition-colors">
-              {member.username}
+            <h3 className="text-xl font-black text-white mb-2 italic tracking-tighter uppercase group-hover:text-neon-cyan transition-colors break-all">
+              <Link to={`/profile/${member.id}`}>{member.username}</Link>
             </h3>
 
             <div className={`inline-flex items-center gap-2 text-[8px] uppercase tracking-[0.3em] font-black px-3 py-1 rounded-lg mb-8 border ${
@@ -93,14 +94,14 @@ const MembersPage: React.FC = () => {
                   <Clock className="w-3 h-3 text-neon-pink/50" />
                   Last Scan
                 </span>
-                <span className="text-zinc-400 font-mono">{new Date(member.last_active).toLocaleDateString()}</span>
+                <span className="text-zinc-400 font-mono">{formatDbDate(member.last_active, {}) || '—'}</span>
               </div>
               <div className="flex items-center justify-between text-[8px] text-zinc-600 uppercase tracking-[0.2em] font-black">
                 <span className="flex items-center gap-2">
                   <Calendar className="w-3 h-3 text-neon-cyan/50" />
                   Uplinked
                 </span>
-                <span className="text-zinc-400 font-mono">{new Date(member.created_at).toLocaleDateString()}</span>
+                <span className="text-zinc-400 font-mono">{formatDbDate(member.created_at, {}) || '—'}</span>
               </div>
             </div>
 

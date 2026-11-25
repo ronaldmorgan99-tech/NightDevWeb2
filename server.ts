@@ -29,6 +29,7 @@ import {
 import { sanitizeUserText } from './src/lib/sanitize';
 import { getConfiguredServers } from './src/lib/configuredServers';
 import { createSteamAuthHandlers } from './src/lib/steamAuth';
+import { attachForumLastPosts, getForumThreads, getThreadWithPosts, incrementThreadViews, isViewerStaff } from './src/lib/forumData';
 import dotenv from 'dotenv';
 
 // Load environment variables
@@ -1275,15 +1276,16 @@ async function start() {
         LEFT JOIN (
           SELECT t.forum_id, COUNT(p.id) AS post_count
           FROM threads t
-          LEFT JOIN posts p ON p.thread_id = t.id
+          LEFT JOIN posts p ON p.thread_id = t.id AND COALESCE(p.is_deleted, 0) = 0
           GROUP BY t.forum_id
         ) pc ON pc.forum_id = f.id
         ORDER BY f.display_order ASC
       `);
       
+      const forumsWithLastPost = await attachForumLastPosts(db, forums);
       const result = categories.map(cat => ({
         ...cat,
-        forums: forums.filter(f => f.category_id === cat.id)
+        forums: forumsWithLastPost.filter((f: any) => f.category_id === cat.id)
       }));
       
       res.json(result);
@@ -1481,18 +1483,9 @@ async function start() {
   app.get('/api/forums/:id', validateParams(idParamSchema), async (req: any, res) => {
     try {
       const forum = await db.queryOne<any>('SELECT * FROM forums WHERE id = ?', [req.params.id]);
-      const threads = await db.query<any>(`
-        SELECT
-          t.*,
-          u.username as author_name,
-          COUNT(p.id) as post_count
-        FROM threads t 
-        JOIN users u ON t.author_id = u.id 
-        LEFT JOIN posts p ON p.thread_id = t.id
-        WHERE t.forum_id = ? 
-        GROUP BY t.id, u.username
-        ORDER BY t.is_pinned DESC, t.created_at DESC
-      `, [req.params.id]);
+      if (!forum) return res.status(404).json({ error: 'Forum not found' });
+      const viewerIsStaff = await isViewerStaff(db, getUserFromToken(req));
+      const threads = await getForumThreads(db, req.params.id, viewerIsStaff);
       res.json({ forum, threads });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1515,6 +1508,7 @@ async function start() {
           t.is_pinned,
           t.views,
           t.created_at,
+          t.author_id,
           u.username as author_name,
           u.avatar_url as author_avatar,
           (SELECT COUNT(*) - 1 FROM posts p WHERE p.thread_id = t.id) as reply_count,
@@ -1558,21 +1552,11 @@ async function start() {
 
   app.get('/api/threads/:id', validateParams(idParamSchema), async (req: any, res) => {
     try {
-      const thread = await db.queryOne<any>(`
-        SELECT t.*, u.username as author_name, f.name as forum_name 
-        FROM threads t 
-        JOIN users u ON t.author_id = u.id 
-        JOIN forums f ON t.forum_id = f.id 
-        WHERE t.id = ?
-      `, [req.params.id]);
-      const posts = await db.query<any>(`
-        SELECT p.*, u.username as author_name, u.avatar_url as author_avatar, u.role as author_role 
-        FROM posts p 
-        JOIN users u ON p.author_id = u.id 
-        WHERE p.thread_id = ? 
-        ORDER BY p.created_at ASC
-      `, [req.params.id]);
-      res.json({ thread, posts });
+      const viewerIsStaff = await isViewerStaff(db, getUserFromToken(req));
+      const result = await getThreadWithPosts(db, req.params.id, viewerIsStaff);
+      if (!result) return res.status(404).json({ error: 'Thread not found' });
+      await incrementThreadViews(db, req.params.id);
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -1830,10 +1814,10 @@ async function start() {
 
       const members = search
         ? await db.query<any>(
-            'SELECT id, username, role, avatar_url, created_at FROM users WHERE username LIKE ? COLLATE NOCASE ORDER BY created_at DESC',
+            'SELECT id, username, role, avatar_url, last_active, created_at FROM users WHERE username LIKE ? COLLATE NOCASE ORDER BY created_at DESC',
             [`%${search}%`]
           )
-        : await db.query<any>('SELECT id, username, role, avatar_url, created_at FROM users ORDER BY created_at DESC');
+        : await db.query<any>('SELECT id, username, role, avatar_url, last_active, created_at FROM users ORDER BY created_at DESC');
 
       res.json(members);
     } catch (err: any) {
