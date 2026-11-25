@@ -1,9 +1,12 @@
+import { parseDbDate } from './dates';
+
 export interface NewsItem {
   id: number;
   title: string;
   is_pinned: number;
   views: number;
   created_at: string;
+  author_id?: number;
   author_name: string;
   author_avatar: string | null;
   reply_count: number;
@@ -26,7 +29,7 @@ export const newsExcerpt = (raw: string | null, maxLength = 180): string => {
 };
 
 export const formatNewsDate = (value: string): string => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
+  const date = parseDbDate(value);
+  if (!date) return '';
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 };

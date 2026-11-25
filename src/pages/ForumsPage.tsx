@@ -4,6 +4,8 @@ import { Link } from 'react-router';
 import { MessageSquare, ChevronRight, Users, Hash, Gamepad2, Server, Globe, Zap, Newspaper, Pin } from 'lucide-react';
 import { motion } from 'motion/react';
 import { fetchNews, newsExcerpt, formatNewsDate, type NewsItem } from '../lib/news';
+import { AuthorLink } from '../components/UserAvatar';
+import { formatRelativeTime, formatDbDateTime } from '../lib/dates';
 
 interface Forum {
   id: number;
@@ -12,6 +14,12 @@ interface Forum {
   display_order: number;
   thread_count: number;
   post_count: number;
+  last_thread_id?: number | null;
+  last_thread_title?: string | null;
+  last_post_at?: string | null;
+  last_post_author_id?: number | null;
+  last_post_author_name?: string | null;
+  last_post_author_avatar?: string | null;
 }
 
 interface Category {
@@ -188,7 +196,7 @@ const ForumsPage: React.FC = () => {
                     {item.is_pinned ? <Pin className="w-3 h-3 text-neon-magenta" /> : <Newspaper className="w-3 h-3 text-neon-cyan" />}
                     <span>{formatNewsDate(item.created_at)}</span>
                     <span className="text-zinc-700">//</span>
-                    <span className="text-zinc-400">{item.author_name}</span>
+                    <AuthorLink nested userId={item.author_id} name={item.author_name} avatar={item.author_avatar} size="xs" nameClassName="text-zinc-400 hover:text-neon-cyan" />
                   </div>
                   <h3 className="relative z-10 text-lg font-black text-zinc-200 group-hover:text-white transition-colors italic tracking-tight line-clamp-1">
                     {item.title}
@@ -275,13 +283,37 @@ const ForumsPage: React.FC = () => {
                     <MessageSquare className="w-7 h-7 text-zinc-600 group-hover:text-neon-cyan transition-colors" />
                   </div>
                   
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <h3 className="text-xl font-black text-zinc-300 group-hover:text-white transition-colors italic tracking-tight">
                       {forum.name}
                     </h3>
                     <p className="text-zinc-500 text-sm mt-1 line-clamp-1 font-medium">
                       {forum.description}
                     </p>
+                  </div>
+
+                  <div className="hidden md:flex w-56 shrink-0 flex-col gap-1 border-l border-white/5 pl-6 min-w-0">
+                    <p className="text-[8px] uppercase tracking-[0.2em] font-black text-zinc-600">Last Post</p>
+                    {forum.last_post_author_id ? (
+                      <>
+                        <AuthorLink
+                          nested
+                          userId={forum.last_post_author_id}
+                          name={forum.last_post_author_name}
+                          avatar={forum.last_post_author_avatar}
+                          size="sm"
+                          nameClassName="text-xs text-zinc-300 hover:text-neon-cyan"
+                        />
+                        {forum.last_thread_title && (
+                          <p className="text-[11px] text-zinc-500 truncate" title={forum.last_thread_title}>{forum.last_thread_title}</p>
+                        )}
+                        <p className="text-[10px] font-mono text-zinc-600" title={formatDbDateTime(forum.last_post_at)}>
+                          {formatRelativeTime(forum.last_post_at)}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-[11px] text-zinc-600">No posts yet</p>
+                    )}
                   </div>
 
                   <div className="hidden sm:flex items-center gap-10 text-sm">

@@ -244,7 +244,7 @@ async function startMockSteamServer() {
             players: [{
               steamid: steamId,
               personaname: 'Night Pilot',
-              avatarfull: 'https://example.com/steam-avatar.jpg'
+              avatarfull: 'https://avatars.steamstatic.com/regression-test-avatar_full.jpg'
             }]
           }
         }));
@@ -363,7 +363,7 @@ async function verifySteamOpenIdLogin() {
     if (!meRes.ok || meBody.user?.username !== 'Night_Pilot') {
       throw new Error(`Expected logged-in Steam user Night_Pilot, got ${JSON.stringify(meBody)}`);
     }
-    if (meBody.user.avatar_url !== 'https://example.com/steam-avatar.jpg') {
+    if (meBody.user.avatar_url !== 'https://avatars.steamstatic.com/regression-test-avatar_full.jpg') {
       throw new Error(`Expected Steam avatar to be stored, got ${meBody.user.avatar_url}`);
     }
     console.log('✅ Steam OpenID callback verifies the assertion and creates a logged-in session');

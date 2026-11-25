@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { Newspaper, Pin, MessageSquare, Eye, ChevronRight } from 'lucide-react';
 import { motion } from 'motion/react';
+import { AuthorLink } from '../components/UserAvatar';
 import { fetchNews, newsExcerpt, formatNewsDate, type NewsItem } from '../lib/news';
 
 const NewsPage: React.FC = () => {
@@ -74,7 +75,7 @@ const NewsPage: React.FC = () => {
                   )}
                   <span>{formatNewsDate(item.created_at)}</span>
                   <span className="text-zinc-700">//</span>
-                  <span className="text-zinc-400">{item.author_name}</span>
+                  <AuthorLink nested userId={item.author_id} name={item.author_name} avatar={item.author_avatar} size="xs" nameClassName="text-zinc-400 hover:text-neon-cyan" />
                 </div>
                 <h2 className="relative z-10 text-xl md:text-2xl font-black text-zinc-100 group-hover:text-white transition-colors italic tracking-tight">
                   {item.title}

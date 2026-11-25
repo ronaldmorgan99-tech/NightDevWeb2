@@ -1,16 +1,24 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
-import { MessageSquare, Clock, User, ChevronRight, Pin, Lock, CheckCircle2, Plus, EyeOff } from 'lucide-react';
+import { MessageSquare, Clock, ChevronRight, Pin, Lock, CheckCircle2, Plus, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 import { apiJson } from '../lib/api';
+import { AuthorLink } from '../components/UserAvatar';
+import { formatDbDate, formatDbDateTime, formatRelativeTime } from '../lib/dates';
 
 interface Thread {
   id: number;
   title: string;
   author_id: number;
   author_name: string;
+  author_avatar?: string | null;
+  author_role?: string;
+  last_post_at?: string | null;
+  last_post_author_id?: number | null;
+  last_post_author_name?: string | null;
+  last_post_author_avatar?: string | null;
   is_pinned: number;
   is_locked: number;
   is_solved: number;
@@ -44,7 +52,14 @@ const ForumViewPage: React.FC = () => {
   });
 
   if (isLoading) return <div className="animate-pulse space-y-4"><div className="h-12 w-64 bg-white/5 rounded-lg" /><div className="h-96 bg-white/5 rounded-2xl" /></div>;
-  if (isError || !data?.forum) return <div>Forum not found</div>;
+  if (isError || !data?.forum) {
+    return (
+      <div className="cyber-card p-12 text-center space-y-4">
+        <p className="text-zinc-400 font-bold">Forum not found.</p>
+        <Link to="/forums" className="text-neon-cyan hover:underline text-sm">Back to forums</Link>
+      </div>
+    );
+  }
 
   const roles = ['member', 'moderator', 'admin'];
   const userRoleIndex = user ? roles.indexOf(user.role) : -1;
@@ -57,7 +72,7 @@ const ForumViewPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
         <div>
           <nav className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-black text-zinc-600 mb-4">
-            <Link to="/" className="hover:text-neon-cyan transition-colors">Network</Link>
+            <Link to="/forums" className="hover:text-neon-cyan transition-colors">Forums</Link>
             <ChevronRight className="w-3 h-3" />
             <span className="text-neon-cyan">{data.forum.name}</span>
           </nav>
@@ -119,12 +134,15 @@ const ForumViewPage: React.FC = () => {
                     {thread.title}
                   </Link>
                   <div className="flex items-center gap-4 text-[10px] uppercase tracking-widest font-black text-zinc-600 mt-2">
-                    <span className="flex items-center gap-1.5 text-zinc-500 group-hover:text-zinc-400 transition-colors">
-                      <User className="w-3 h-3 text-neon-cyan/50" />
-                      {thread.author_name}
-                    </span>
+                    <AuthorLink
+                      userId={thread.author_id}
+                      name={thread.author_name}
+                      avatar={thread.author_avatar}
+                      size="xs"
+                      nameClassName="text-zinc-400 hover:text-neon-cyan"
+                    />
                     <span className="text-zinc-800">//</span>
-                    <span className="font-mono">{new Date(thread.created_at).toLocaleDateString()}</span>
+                    <span className="font-mono" title={formatDbDateTime(thread.created_at)}>{formatDbDate(thread.created_at)}</span>
                     {thread.is_locked === 1 && <Lock className="w-3 h-3 text-neon-pink" />}
                     {thread.is_hidden === 1 && (
                       <span className="flex items-center gap-1 text-neon-purple neon-glow-purple">
@@ -147,11 +165,24 @@ const ForumViewPage: React.FC = () => {
               </div>
 
               <div className="hidden md:flex md:col-span-2 items-center justify-end text-right">
-                <div className="text-right">
-                  <p className="text-[8px] uppercase tracking-[0.2em] font-black text-zinc-700 mb-1">Last Uplink</p>
-                  <p className="text-zinc-500 font-mono text-[10px] flex items-center justify-end gap-2 group-hover:text-neon-cyan transition-colors">
+                <div className="text-right min-w-0 flex flex-col items-end gap-1">
+                  <p className="text-[8px] uppercase tracking-[0.2em] font-black text-zinc-700">Last Uplink</p>
+                  {thread.last_post_author_id && (
+                    <AuthorLink
+                      userId={thread.last_post_author_id}
+                      name={thread.last_post_author_name}
+                      avatar={thread.last_post_author_avatar}
+                      size="xs"
+                      className="max-w-full"
+                      nameClassName="text-[11px] text-zinc-400 hover:text-neon-cyan"
+                    />
+                  )}
+                  <p
+                    className="text-zinc-500 font-mono text-[10px] flex items-center justify-end gap-2 group-hover:text-neon-cyan transition-colors"
+                    title={formatDbDateTime(thread.last_post_at || thread.updated_at)}
+                  >
                     <Clock className="w-3 h-3 opacity-50" />
-                    {new Date(thread.updated_at).toLocaleDateString()}
+                    {formatRelativeTime(thread.last_post_at || thread.updated_at)}
                   </p>
                 </div>
               </div>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiJson } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { ShoppingBag, Star, Tag, ChevronRight, ShoppingCart, Award, X, Check, AlertCircle, CreditCard } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -26,6 +27,7 @@ interface PaymentProvider {
 }
 
 const StorePage: React.FC = () => {
+  const { user } = useAuth();
   const { data: productsData, isLoading } = useQuery<Product[]>({
     queryKey: ['products'],
     queryFn: () => apiJson<Product[]>('/api/store/products')
@@ -44,6 +46,11 @@ const StorePage: React.FC = () => {
   const products = Array.isArray(productsData) ? productsData : [];
 
   useEffect(() => {
+    // The cart API needs a signed-in user; skip it for guests instead of logging a 401.
+    if (!user) {
+      setCart([]);
+      return;
+    }
     const loadCart = async () => {
       try {
         const cartData = await apiJson<{ items: CartItem[]; total: number; count: number }>('/api/cart');
@@ -54,9 +61,14 @@ const StorePage: React.FC = () => {
     };
 
     loadCart();
-  }, []);
+  }, [user?.id]);
 
   const handleAddToCart = async (product: Product) => {
+    if (!user) {
+      setError('Sign in to add items to your cart.');
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
     try {
       await apiJson('/api/cart', {
         method: 'POST',

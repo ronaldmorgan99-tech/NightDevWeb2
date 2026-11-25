@@ -167,7 +167,7 @@ const MainLayout: React.FC = () => {
   const discordLink = "https://discord.gg/3axtkUBN";
   const youtubeSearchLink = "https://www.youtube.com/results?search_query=NightRespawn";
   const isStudioDiscoverable = isStudioDiscoverableFlag(import.meta.env.VITE_ENABLE_STUDIO);
-  const isForumsLandingPage = location.pathname === '/';
+  const isForumsLandingPage = location.pathname === '/' || location.pathname === '/forums';
 
   const handleBrandMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -183,8 +183,15 @@ const MainLayout: React.FC = () => {
     setBrandTransform('perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)');
   };
 
+  const isNavItemActive = (path: string) => {
+    if (path === '/forums') {
+      return location.pathname === '/' || location.pathname.startsWith('/forums') || location.pathname.startsWith('/threads');
+    }
+    return location.pathname === path || location.pathname.startsWith(`${path}/`);
+  };
+
   const navItems = [
-    { label: 'Forums', path: '/', icon: MessageSquare },
+    { label: 'Forums', path: '/forums', icon: MessageSquare },
     { label: 'News', path: '/news', icon: Newspaper },
     { label: 'Servers', path: '/servers', icon: Server },
     { label: 'Members', path: '/members', icon: Users },
@@ -425,19 +432,19 @@ const MainLayout: React.FC = () => {
                   key={item.path}
                   to={item.path}
                   className={`relative px-6 py-2 text-xs uppercase tracking-[0.2em] font-bold transition-all duration-300 group ${
-                    location.pathname === item.path
+                    isNavItemActive(item.path)
                       ? 'text-neon-cyan'
                       : 'text-zinc-500 hover:text-white'
                   }`}
                 >
                   <span className="relative z-10">{item.label}</span>
-                  {location.pathname === item.path && (
+                  {isNavItemActive(item.path) && (
                     <motion.div 
                       layoutId="nav-glow"
                       className="absolute inset-0 bg-neon-cyan/5 blur-md rounded-lg"
                     />
                   )}
-                  <div className={`absolute bottom-0 left-0 h-[2px] bg-neon-cyan transition-all duration-300 ${location.pathname === item.path ? 'w-full' : 'w-0 group-hover:w-1/2'}`} />
+                  <div className={`absolute bottom-0 left-0 h-[2px] bg-neon-cyan transition-all duration-300 ${isNavItemActive(item.path) ? 'w-full' : 'w-0 group-hover:w-1/2'}`} />
                 </Link>
               ))}
             </nav>
@@ -715,7 +722,7 @@ const MainLayout: React.FC = () => {
                 Quick Actions
               </h3>
               <div className="grid grid-cols-2 gap-2">
-                <button className="p-3 bg-white/5 rounded-xl flex flex-col items-center gap-2 hover:bg-neon-pink/10 transition-all border border-transparent hover:border-neon-pink/30 group">
+                <button onClick={() => navigate('/store')} className="p-3 bg-white/5 rounded-xl flex flex-col items-center gap-2 hover:bg-neon-pink/10 transition-all border border-transparent hover:border-neon-pink/30 group">
                   <ShoppingBag className="w-5 h-5 text-neon-pink group-hover:scale-110 transition-transform" />
                   <span className="text-[8px] uppercase font-bold text-zinc-500 group-hover:text-white">Store</span>
                 </button>
@@ -730,7 +737,7 @@ const MainLayout: React.FC = () => {
                   <Globe className="w-5 h-5 text-neon-green group-hover:scale-110 transition-transform" />
                   <span className="text-[8px] uppercase font-bold text-zinc-500 group-hover:text-white">Vote</span>
                 </button>
-                <button className="p-3 bg-white/5 rounded-xl flex flex-col items-center gap-2 hover:bg-neon-purple/10 transition-all border border-transparent hover:border-neon-purple/30 group">
+                <button onClick={() => navigate('/servers')} className="p-3 bg-white/5 rounded-xl flex flex-col items-center gap-2 hover:bg-neon-purple/10 transition-all border border-transparent hover:border-neon-purple/30 group">
                   <Activity className="w-5 h-5 text-neon-purple group-hover:scale-110 transition-transform" />
                   <span className="text-[8px] uppercase font-bold text-zinc-500 group-hover:text-white">Stats</span>
                 </button>
@@ -824,7 +831,7 @@ const MainLayout: React.FC = () => {
             <div>
               <h4 className="text-sm font-bold uppercase tracking-widest text-zinc-400 mb-6">Community</h4>
               <ul className="space-y-4">
-                <li><Link to="/" className="text-zinc-500 hover:text-white transition-colors">Forums</Link></li>
+                <li><Link to="/forums" className="text-zinc-500 hover:text-white transition-colors">Forums</Link></li>
                 <li><Link to="/members" className="text-zinc-500 hover:text-white transition-colors">Members</Link></li>
                 <li><Link to="/discord" className="text-zinc-500 hover:text-white transition-colors">Discord</Link></li>
                 <li><Link to="/servers" className="text-zinc-500 hover:text-white transition-colors">Servers</Link></li>

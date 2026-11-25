@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Navigate, useParams, useNavigate } from 'react-router';
+import { formatDbDate } from '../lib/dates';
 import { apiJson } from '../lib/api';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Calendar, MessageSquare, Award, ShieldCheck, Clock, MapPin, Camera, Save, X, Settings, Github, Youtube, Twitch, Facebook, Server, TrendingUp, Wallet, Target, Activity, History, ArrowUpRight, ArrowDownLeft, Car, Zap, Trophy, MessageCircle } from 'lucide-react';
@@ -755,11 +756,11 @@ export default function ProfilePage() {
             <div className="flex flex-wrap justify-center md:justify-start gap-6 text-[10px] uppercase tracking-[0.3em] font-black text-zinc-500 mb-6">
               <div className="flex items-center gap-2 group">
                 <Calendar className="w-4 h-4 text-neon-cyan/50 group-hover:text-neon-cyan transition-colors" />
-                <span className="text-zinc-600">Uplinked:</span> <span className="text-zinc-300 font-mono">{new Date(profile.created_at).toLocaleDateString()}</span>
+                <span className="text-zinc-600">Uplinked:</span> <span className="text-zinc-300 font-mono">{formatDbDate(profile.created_at, {}) || '—'}</span>
               </div>
               <div className="flex items-center gap-2 group">
                 <Clock className="w-4 h-4 text-neon-pink/50 group-hover:text-neon-pink transition-colors" />
-                <span className="text-zinc-600">Last Scan:</span> <span className="text-zinc-300 font-mono">{new Date(profile.last_active).toLocaleDateString()}</span>
+                <span className="text-zinc-600">Last Scan:</span> <span className="text-zinc-300 font-mono">{formatDbDate(profile.last_active, {}) || '—'}</span>
               </div>
               <div className="flex items-center gap-2 group">
                 <MapPin className="w-4 h-4 text-neon-green/50 group-hover:text-neon-green transition-colors" />
