@@ -10,15 +10,12 @@ import {
   Send, 
   User, 
   Shield,
-  AlertCircle,
-  CheckCircle2,
-  XCircle,
   Gamepad2,
   LifeBuoy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow } from 'date-fns';
-import { Link } from 'react-router';
+import { Link, useLocation } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 
 interface SupportTicket {
@@ -50,6 +47,8 @@ const XIcon = () => (
 
 const SupportPage: React.FC = () => {
   const { user } = useAuth();
+  const location = useLocation();
+  const isContact = location.pathname.includes('contact');
   const queryClient = useQueryClient();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
@@ -105,45 +104,32 @@ const SupportPage: React.FC = () => {
     }
   };
 
-  if (!user) return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
-      <div className="w-20 h-20 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center mb-6">
-        <Shield className="w-10 h-10 text-zinc-800" />
-      </div>
-      <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter mb-2 text-glow-white">Sign in required</h2>
-      <p className="text-zinc-500 text-xs uppercase tracking-widest font-black max-w-md">
-        Support and contact tickets need an account. Sign in or create one to open a transmission.
-      </p>
-      <div className="flex flex-wrap items-center justify-center gap-4 mt-8">
-        <Link
-          to="/login"
-          className="px-6 py-3 bg-neon-cyan text-cyber-black rounded-xl font-black uppercase tracking-widest text-xs hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(0,243,255,0.3)]"
-        >
-          Sign In
-        </Link>
-        <Link
-          to="/register"
-          className="px-6 py-3 border border-white/15 text-white rounded-xl font-black uppercase tracking-widest text-xs hover:border-neon-cyan/50 hover:text-neon-cyan transition-all"
-        >
-          Create Account
-        </Link>
-      </div>
-    </div>
-  );
-
   return (
     <div className="space-y-8">
-      <div className="flex justify-between items-end">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-6">
         <div>
-          <h1 className="text-5xl font-black text-white italic tracking-tighter uppercase leading-none mb-4">Support <span className="text-neon-cyan neon-glow-cyan">Uplink</span></h1>
-          <p className="text-zinc-500 font-medium uppercase tracking-widest text-xs">Direct Transmission // Technical Assistance</p>
+          <h1 className="text-5xl font-black text-white italic tracking-tighter uppercase leading-none mb-4">
+            {isContact ? 'Contact' : 'Support'} <span className="text-neon-cyan neon-glow-cyan">Uplink</span>
+          </h1>
+          <p className="text-zinc-500 font-medium uppercase tracking-widest text-xs">
+            {isContact ? 'Reach the Network // Questions, Feedback, and Reports' : 'Direct Transmission // Technical Assistance'}
+          </p>
         </div>
-        <button 
-          onClick={() => setIsCreateModalOpen(true)}
-          className="flex items-center gap-2 px-6 py-3 bg-neon-cyan text-cyber-black rounded-xl font-black uppercase tracking-widest text-xs hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(0,243,255,0.3)]"
-        >
-          <Plus className="w-4 h-4" /> New Transmission
-        </button>
+        {user ? (
+          <button 
+            onClick={() => setIsCreateModalOpen(true)}
+            className="flex items-center gap-2 px-6 py-3 bg-neon-cyan text-cyber-black rounded-xl font-black uppercase tracking-widest text-xs hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(0,243,255,0.3)]"
+          >
+            <Plus className="w-4 h-4" /> New Transmission
+          </button>
+        ) : (
+          <Link
+            to="/login"
+            className="flex items-center gap-2 px-6 py-3 bg-neon-cyan text-cyber-black rounded-xl font-black uppercase tracking-widest text-xs hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(0,243,255,0.3)]"
+          >
+            Sign In to Open a Ticket
+          </Link>
+        )}
       </div>
 
       {/* Intelligence & Support Uplinks */}
@@ -217,15 +203,57 @@ const SupportPage: React.FC = () => {
               <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mt-1.5 leading-relaxed">Guides & Documentation</p>
             </div>
           </div>
-          <a 
-            href="/help" 
+          <Link 
+            to="/help" 
             className="w-full py-4 bg-white/5 border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-white hover:border-neon-green/50 hover:bg-neon-green/5 transition-all flex items-center justify-center gap-3"
           >
             Access Archives <ChevronRight className="w-4 h-4" />
-          </a>
+          </Link>
         </motion.div>
       </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {[
+          { q: 'Do I need an account to get help?', a: 'Discord, X, and the knowledge base are open to everyone. Opening or viewing a support ticket requires a signed-in account.' },
+          { q: 'How do I reach the team quickly?', a: 'Join the Discord support terminal for live help, or sign in here to send a ticket we can track.' },
+          { q: 'Where are guides and rules?', a: 'The knowledge base has connection guides, account security, and community rules. Use Access Archives above.' }
+        ].map((item) => (
+          <div key={item.q} className="p-6 cyber-card border-white/5 bg-white/[0.01]">
+            <h3 className="text-sm font-black text-white uppercase italic tracking-tight">{item.q}</h3>
+            <p className="text-[11px] text-zinc-500 leading-relaxed mt-2">{item.a}</p>
+          </div>
+        ))}
+      </div>
+
+      {!user && (
+        <div className="p-8 cyber-card border-neon-cyan/20 bg-gradient-to-br from-neon-cyan/5 to-transparent flex flex-col md:flex-row md:items-center gap-6">
+          <div className="w-16 h-16 rounded-2xl bg-cyber-black border border-neon-cyan/30 flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(0,243,255,0.1)]">
+            <Ticket className="w-7 h-7 text-neon-cyan" />
+          </div>
+          <div className="flex-1 space-y-2">
+            <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter">Sign in to send a message</h2>
+            <p className="text-zinc-500 text-xs uppercase tracking-widest font-black max-w-2xl leading-relaxed">
+              Ticket submissions stay private to your account. Sign in or create one to open a transmission or review existing tickets.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <Link
+              to="/login"
+              className="px-6 py-3 bg-neon-cyan text-cyber-black rounded-xl font-black uppercase tracking-widest text-xs hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(0,243,255,0.3)]"
+            >
+              Sign In
+            </Link>
+            <Link
+              to="/register"
+              className="px-6 py-3 border border-white/15 text-white rounded-xl font-black uppercase tracking-widest text-xs hover:border-neon-cyan/50 hover:text-neon-cyan transition-all"
+            >
+              Create Account
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {user && (
       <div className="grid grid-cols-12 gap-8 min-h-[50vh] lg:h-[calc(100dvh-20rem)] lg:min-h-0">
         {/* Tickets List */}
         <div className={`col-span-12 lg:col-span-4 min-h-0 flex-col gap-4 overflow-y-auto pr-2 custom-scrollbar ${selectedTicketId ? 'hidden lg:flex' : 'flex'}`}>
@@ -368,6 +396,8 @@ const SupportPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      )}
 
       {/* Create Ticket Modal */}
       <AnimatePresence>
