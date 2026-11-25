@@ -172,7 +172,7 @@ function createClient(baseUrl) {
     },
     async register(prefix) {
       await this.refreshCsrf();
-      const username = `${prefix}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+      const username = `${prefix}_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
       const r = await call('/api/auth/register', { method: 'POST', json: { username, email: `${username}@test.local`, password: 'Password123!' } });
       if (r.status >= 300) throw new Error(`Register ${prefix} failed: ${r.status} ${JSON.stringify(r.body)}`);
       await this.refreshCsrf();
