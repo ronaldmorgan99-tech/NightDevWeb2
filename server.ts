@@ -29,6 +29,7 @@ import {
 import { sanitizeUserText } from './src/lib/sanitize';
 import { getConfiguredServers } from './src/lib/configuredServers';
 import { createSteamAuthHandlers } from './src/lib/steamAuth';
+import { userDisplayNameSql } from './src/lib/userDisplay';
 import dotenv from 'dotenv';
 
 // Load environment variables
@@ -1036,7 +1037,7 @@ async function start() {
       await db.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)', [username, email, hashedPassword]);
 
       const user = await db.queryOne<any>(
-        'SELECT id, username, email, role FROM users WHERE username = ?',
+        'SELECT id, username, display_name, email, role, avatar_url FROM users WHERE username = ?',
         [username]
       );
 
@@ -1059,7 +1060,7 @@ async function start() {
 
       res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
       observabilityMetrics.auth.registerSuccess += 1;
-      res.json({ user: { id: user.id, username: user.username, email: user.email, role: user.role } });
+      res.json({ user: { id: user.id, username: user.username, display_name: user.display_name, email: user.email, role: user.role, avatar_url: user.avatar_url } });
     } catch (err: any) {
       observabilityMetrics.auth.registerFailure += 1;
       void captureException(err, { scope: 'auth', flow: 'register' });
@@ -1079,7 +1080,7 @@ async function start() {
       const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
       res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
       observabilityMetrics.auth.loginSuccess += 1;
-      res.json({ user: { id: user.id, username: user.username, email: user.email, role: user.role } });
+      res.json({ user: { id: user.id, username: user.username, display_name: user.display_name, email: user.email, role: user.role, avatar_url: user.avatar_url } });
     } catch (err: any) {
       observabilityMetrics.auth.loginFailure += 1;
       void captureException(err, { scope: 'auth', flow: 'login' });
@@ -1090,7 +1091,7 @@ async function start() {
   app.get('/api/auth/me', authenticate, csrfProtection, async (req: any, res) => {
     observabilityMetrics.auth.meChecks += 1;
     try {
-      const user = await db.queryOne<any>('SELECT id, username, email, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?', [req.user.id]);
+      const user = await db.queryOne<any>('SELECT id, username, display_name, email, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?', [req.user.id]);
       res.json({ user, csrfToken: req.csrfToken() });
     } catch (err: any) {
       void captureException(err, { scope: 'auth', flow: 'me' });
@@ -1191,7 +1192,7 @@ async function start() {
         await db.execute(updateSql, params);
       }
       
-      const user = await db.queryOne<any>('SELECT id, username, email, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?', [req.user.id]);
+      const user = await db.queryOne<any>('SELECT id, username, display_name, email, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?', [req.user.id]);
       res.json({ user });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1206,7 +1207,7 @@ async function start() {
   // Users
   app.get('/api/users/:id', validateParams(idParamSchema), async (req: any, res) => {
     try {
-      const user = await db.queryOne<any>('SELECT id, username, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?', [req.params.id]);
+      const user = await db.queryOne<any>('SELECT id, username, display_name, role, avatar_url, banner_url, bio, steam_url, x_url, facebook_url, github_url, youtube_url, kick_url, twitch_url, discord_url, created_at, last_active FROM users WHERE id = ?', [req.params.id]);
       if (!user) return res.status(404).json({ error: 'User not found' });
       res.json(user);
     } catch (err: any) {
@@ -1244,7 +1245,7 @@ async function start() {
   app.get('/api/leaderboards/wealth', async (req, res) => {
     try {
       const leaderboard = await db.query<any>(`
-        SELECT u.username, u.avatar_url, SUM(gs.total_wealth) as total_wealth
+        SELECT u.username, u.display_name, u.avatar_url, SUM(gs.total_wealth) as total_wealth
         FROM users u
         JOIN game_stats gs ON u.id = gs.user_id
         GROUP BY u.id
@@ -1484,13 +1485,13 @@ async function start() {
       const threads = await db.query<any>(`
         SELECT
           t.*,
-          u.username as author_name,
+          ${userDisplayNameSql('u')} as author_name,
           COUNT(p.id) as post_count
         FROM threads t 
         JOIN users u ON t.author_id = u.id 
         LEFT JOIN posts p ON p.thread_id = t.id
         WHERE t.forum_id = ? 
-        GROUP BY t.id, u.username
+        GROUP BY t.id, u.username, u.display_name
         ORDER BY t.is_pinned DESC, t.created_at DESC
       `, [req.params.id]);
       res.json({ forum, threads });
@@ -1515,7 +1516,7 @@ async function start() {
           t.is_pinned,
           t.views,
           t.created_at,
-          u.username as author_name,
+          ${userDisplayNameSql('u')} as author_name,
           u.avatar_url as author_avatar,
           (SELECT COUNT(*) - 1 FROM posts p WHERE p.thread_id = t.id) as reply_count,
           (SELECT p2.content FROM posts p2 WHERE p2.thread_id = t.id ORDER BY p2.id ASC LIMIT 1) as excerpt
@@ -1559,14 +1560,14 @@ async function start() {
   app.get('/api/threads/:id', validateParams(idParamSchema), async (req: any, res) => {
     try {
       const thread = await db.queryOne<any>(`
-        SELECT t.*, u.username as author_name, f.name as forum_name 
+        SELECT t.*, ${userDisplayNameSql('u')} as author_name, f.name as forum_name 
         FROM threads t 
         JOIN users u ON t.author_id = u.id 
         JOIN forums f ON t.forum_id = f.id 
         WHERE t.id = ?
       `, [req.params.id]);
       const posts = await db.query<any>(`
-        SELECT p.*, u.username as author_name, u.avatar_url as author_avatar, u.role as author_role 
+        SELECT p.*, ${userDisplayNameSql('u')} as author_name, u.avatar_url as author_avatar, u.role as author_role 
         FROM posts p 
         JOIN users u ON p.author_id = u.id 
         WHERE p.thread_id = ? 
@@ -1587,7 +1588,7 @@ async function start() {
           t.title,
           t.views,
           t.created_at as createdAt,
-          u.username as author,
+          ${userDisplayNameSql('u')} as author,
           (SELECT COUNT(*) - 1 FROM posts p WHERE p.thread_id = t.id) as replies
         FROM threads t
         JOIN users u ON u.id = t.author_id
@@ -1830,10 +1831,10 @@ async function start() {
 
       const members = search
         ? await db.query<any>(
-            'SELECT id, username, role, avatar_url, created_at FROM users WHERE username LIKE ? COLLATE NOCASE ORDER BY created_at DESC',
-            [`%${search}%`]
+            'SELECT id, username, display_name, role, avatar_url, created_at FROM users WHERE username LIKE ? COLLATE NOCASE OR display_name LIKE ? COLLATE NOCASE ORDER BY created_at DESC',
+            [`%${search}%`, `%${search}%`]
           )
-        : await db.query<any>('SELECT id, username, role, avatar_url, created_at FROM users ORDER BY created_at DESC');
+        : await db.query<any>('SELECT id, username, display_name, role, avatar_url, created_at FROM users ORDER BY created_at DESC');
 
       res.json(members);
     } catch (err: any) {
@@ -2239,7 +2240,7 @@ async function start() {
   app.get('/api/tickets/:id', authenticate, validateParams(idParamSchema), async (req: any, res) => {
     try {
       const ticket = await db.queryOne<any>(`
-        SELECT t.*, u.username as author_name, u.avatar_url as author_avatar
+        SELECT t.*, ${userDisplayNameSql('u')} as author_name, u.avatar_url as author_avatar
         FROM tickets t
         JOIN users u ON t.user_id = u.id
         WHERE t.id = ? AND t.user_id = ?
@@ -2247,7 +2248,7 @@ async function start() {
       if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
 
       const messages = await db.query<any>(`
-        SELECT tm.*, u.username as author_name, u.avatar_url as author_avatar, u.role as author_role
+        SELECT tm.*, ${userDisplayNameSql('u')} as author_name, u.avatar_url as author_avatar, u.role as author_role
         FROM ticket_messages tm
         JOIN users u ON tm.user_id = u.id
         WHERE tm.ticket_id = ?
@@ -2275,7 +2276,7 @@ async function start() {
   // Admin
   app.get('/api/admin/users', authenticate, isAdmin, async (req, res) => {
     try {
-      const users = await db.query<any>('SELECT id, username, email, role, created_at FROM users');
+      const users = await db.query<any>('SELECT id, username, display_name, email, role, avatar_url, created_at FROM users');
       res.json(users);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -2295,7 +2296,7 @@ async function start() {
   app.get('/api/admin/reports', authenticate, isAdmin, async (req, res) => {
     try {
       const reports = await db.query<any>(`
-        SELECT r.*, u.username as reporter_name 
+        SELECT r.*, ${userDisplayNameSql('u')} as reporter_name 
         FROM reports r 
         JOIN users u ON r.reporter_id = u.id 
         ORDER BY r.created_at DESC
@@ -2339,7 +2340,7 @@ async function start() {
   app.get('/api/admin/audit-log', authenticate, isAdmin, async (req, res) => {
     try {
       const logs = await db.query<any>(`
-        SELECT m.*, u.username as moderator_name 
+        SELECT m.*, ${userDisplayNameSql('u')} as moderator_name 
         FROM moderation_actions m 
         JOIN users u ON m.moderator_id = u.id 
         ORDER BY m.created_at DESC
@@ -2554,7 +2555,7 @@ async function start() {
       const tickets = await db.query<any>(`
         SELECT 
           t.*,
-          u.username as author_name,
+          ${userDisplayNameSql('u')} as author_name,
           u.avatar_url as author_avatar,
           (SELECT COUNT(*) FROM ticket_messages tm WHERE tm.ticket_id = t.id) as message_count
         FROM tickets t
@@ -2570,14 +2571,14 @@ async function start() {
   app.get('/api/admin/tickets/:id', authenticate, isAdmin, validateParams(idParamSchema), async (req: any, res) => {
     try {
       const ticket = await db.queryOne<any>(`
-        SELECT t.*, u.username as author_name, u.avatar_url as author_avatar
+        SELECT t.*, ${userDisplayNameSql('u')} as author_name, u.avatar_url as author_avatar
         FROM tickets t
         JOIN users u ON u.id = t.user_id
         WHERE t.id = ?
       `, [req.params.id]);
       if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
       const messages = await db.query<any>(`
-        SELECT tm.*, u.username as author_name, u.avatar_url as author_avatar, u.role as author_role
+        SELECT tm.*, ${userDisplayNameSql('u')} as author_name, u.avatar_url as author_avatar, u.role as author_role
         FROM ticket_messages tm
         JOIN users u ON u.id = tm.user_id
         WHERE tm.ticket_id = ?
@@ -2616,7 +2617,7 @@ async function start() {
     try {
       const conversations = await db.query<any>(`
         SELECT 
-          u.id, u.username, u.avatar_url,
+          u.id, u.username, u.display_name, u.avatar_url,
           m.content as last_message, m.created_at as last_message_at,
           (SELECT COUNT(*) FROM messages WHERE sender_id = u.id AND receiver_id = ? AND is_read = 0) as unread_count
         FROM users u

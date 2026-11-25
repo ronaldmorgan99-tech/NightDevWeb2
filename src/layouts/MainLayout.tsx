@@ -30,6 +30,7 @@ import {
   Newspaper
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { getUserAvatarInitial, getUserDisplayName } from '../lib/userDisplay';
 
 const GlobeIcon = Globe;
 const RECENT_SEARCHES_STORAGE_KEY = 'nightdev-recent-searches';
@@ -473,9 +474,9 @@ const MainLayout: React.FC = () => {
                   >
                     <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold ring-2 ring-white/10 shadow-[0_0_10px_rgba(0,243,255,0.2)]">
                       {user.avatar_url ? (
-                        <img src={user.avatar_url} alt={user.username} className="w-full h-full rounded-full object-cover" />
+                        <img src={user.avatar_url} alt={getUserDisplayName(user)} className="w-full h-full rounded-full object-cover" />
                       ) : (
-                        user.username.charAt(0).toUpperCase()
+                        getUserAvatarInitial(user)
                       )}
                     </div>
                   </button>
@@ -498,13 +499,13 @@ const MainLayout: React.FC = () => {
                             <div className="flex items-center gap-3 relative z-10">
                               <div className="w-10 h-10 rounded-lg bg-indigo-600 flex items-center justify-center text-sm font-black ring-1 ring-white/20 shadow-[0_0_15px_rgba(79,70,229,0.3)]">
                                 {user.avatar_url ? (
-                                  <img src={user.avatar_url} alt={user.username} className="w-full h-full rounded-lg object-cover" />
+                                  <img src={user.avatar_url} alt={getUserDisplayName(user)} className="w-full h-full rounded-lg object-cover" />
                                 ) : (
-                                  user.username.charAt(0).toUpperCase()
+                                  getUserAvatarInitial(user)
                                 )}
                               </div>
                               <div className="flex flex-col">
-                                <p className="text-xs font-black text-white uppercase tracking-widest italic leading-none">{user.username}</p>
+                                <p className="text-xs font-black text-white uppercase tracking-widest italic leading-none">{getUserDisplayName(user)}</p>
                                 <p className="text-[8px] text-zinc-500 truncate uppercase tracking-[0.2em] font-black mt-1.5">{user.email}</p>
                               </div>
                             </div>

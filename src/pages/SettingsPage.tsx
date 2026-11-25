@@ -20,6 +20,7 @@ import {
   Monitor
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { getUserAvatarInitial, getUserDisplayName } from '../lib/userDisplay';
 
 const SettingsPage: React.FC = () => {
   const { user, updateProfile } = useAuth();
@@ -177,9 +178,9 @@ const SettingsPage: React.FC = () => {
                   <div className="relative group">
                     <div className="w-32 h-32 rounded-3xl bg-cyber-black border-2 border-white/10 flex items-center justify-center text-4xl font-black text-white shadow-2xl overflow-hidden group-hover:border-neon-cyan/50 transition-all">
                       {user?.avatar_url ? (
-                        <img src={user.avatar_url} alt={user.username} className="w-full h-full object-cover" />
+                        <img src={user.avatar_url} alt={getUserDisplayName(user)} className="w-full h-full object-cover" />
                       ) : (
-                        user?.username.charAt(0).toUpperCase()
+                        getUserAvatarInitial(user)
                       )}
                     </div>
                     <button 

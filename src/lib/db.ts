@@ -242,6 +242,28 @@ export async function initDb() {
     }
   }
 
+  // Public display name (Steam persona or other chosen label). Username stays the unique login handle.
+  if (!(db instanceof MySQLWrapper)) {
+    const userColumns = await db.query<any>('PRAGMA table_info(users)');
+    if (!userColumns.some((item) => columnName(item) === 'display_name')) {
+      try {
+        await db.execute('ALTER TABLE users ADD COLUMN display_name TEXT');
+      } catch (error: any) {
+        const message = String(error?.message || error);
+        if (!/duplicate column name/i.test(message)) throw error;
+      }
+    }
+  } else {
+    const existingDisplayName = await db.queryOne<any>(`
+      SELECT COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'display_name'
+    `);
+    if (!existingDisplayName) {
+      await db.execute('ALTER TABLE users ADD COLUMN display_name VARCHAR(64) NULL');
+    }
+  }
+
   // Forum Categories
   await run(`
     CREATE TABLE IF NOT EXISTS forum_categories (
