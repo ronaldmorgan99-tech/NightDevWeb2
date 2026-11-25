@@ -45,7 +45,8 @@ export function getPostMenuItems(ctx: PostMenuContext): PostMenuItemId[] {
   const placeholder = Boolean(ctx.isHiddenPlaceholder);
   const items: PostMenuItemId[] = [];
 
-  if (signedIn && !ctx.isLocked && !placeholder) {
+  // Staff may still reply to locked threads (the server allows it), so they keep Quote.
+  if (signedIn && (!ctx.isLocked || isStaff) && !placeholder) {
     items.push('quote');
   }
 
@@ -65,7 +66,8 @@ export function getPostMenuItems(ctx: PostMenuContext): PostMenuItemId[] {
     items.push('sign-in');
   }
 
-  if (isStaff) {
+  // Authors can delete their own posts (soft delete), except a post a moderator hid.
+  if (isStaff || (isAuthor && !placeholder && !ctx.isHidden)) {
     items.push('delete');
   }
 

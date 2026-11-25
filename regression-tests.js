@@ -107,7 +107,7 @@ function spawnServerWithEnv(extraEnv) {
   const requestedPort = Number(extraEnv.PORT || (4500 + Math.floor(Math.random() * 1000)));
   return new Promise((resolve, reject) => {
     const tsxCli = path.resolve('node_modules/tsx/dist/cli.mjs');
-    const proc = spawn(process.execPath, [tsxCli, 'server.ts'], {
+    const proc = spawn(process.execPath, [tsxCli, extraEnv.SERVER_ENTRY || 'server.ts'], {
       env: {
         ...process.env,
         NODE_ENV: 'development',
@@ -141,6 +141,141 @@ function spawnServerWithEnv(extraEnv) {
       reject(new Error(`Server process exited prematurely with ${code}`));
     });
   });
+}
+
+function createClient(baseUrl) {
+  const jar = new Map();
+  let csrfToken = '';
+  const call = async (path, { method = 'GET', json, headers = {} } = {}) => {
+    const h = new Headers(headers);
+    if (jar.size) h.set('Cookie', [...jar].map(([k, v]) => `${k}=${v}`).join('; '));
+    if (json !== undefined) h.set('Content-Type', 'application/json');
+    if (method !== 'GET' && csrfToken) h.set('X-CSRF-Token', csrfToken);
+    const res = await fetch(`${baseUrl}${path}`, { method, headers: h, body: json === undefined ? undefined : JSON.stringify(json) });
+    const raw = res.headers.getSetCookie?.() || [];
+    for (const item of raw) {
+      const [pair] = item.split(';');
+      const idx = pair.indexOf('=');
+      if (idx > 0) jar.set(pair.slice(0, idx).trim(), pair.slice(idx + 1).trim());
+    }
+    const text = await res.text();
+    let body = null;
+    try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+    return { status: res.status, body };
+  };
+  return {
+    call,
+    async refreshCsrf() {
+      const r = await call('/api/csrf-token');
+      csrfToken = r.body?.csrfToken || '';
+      if (!csrfToken) throw new Error(`No CSRF token from ${baseUrl}: ${r.status} ${JSON.stringify(r.body)}`);
+    },
+    async register(prefix) {
+      await this.refreshCsrf();
+      const username = `${prefix}_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+      const r = await call('/api/auth/register', { method: 'POST', json: { username, email: `${username}@test.local`, password: 'Password123!' } });
+      if (r.status >= 300) throw new Error(`Register ${prefix} failed: ${r.status} ${JSON.stringify(r.body)}`);
+      await this.refreshCsrf();
+      return r.body?.user;
+    },
+    async login(username, password) {
+      await this.refreshCsrf();
+      const r = await call('/api/auth/login', { method: 'POST', json: { username, password } });
+      if (r.status >= 300) throw new Error(`Login ${username} failed: ${r.status} ${JSON.stringify(r.body)}`);
+      await this.refreshCsrf();
+      return r.body?.user;
+    }
+  };
+}
+
+function expectStatus(label, r, expected) {
+  if (r.status !== expected) throw new Error(`${label}: expected ${expected}, got ${r.status} ${JSON.stringify(r.body)}`);
+}
+
+/**
+ * Forum permission parity: the same scenario runs against the Express server (server.ts)
+ * and the Vercel serverless app (api/[...path].ts), which share src/lib/forumPermissions.ts.
+ */
+async function runForumPermissionScenario(label, baseUrl) {
+  console.log(`⏳ [${label}] Forum permissions: author delete, locked threads, edited_at, shared checks...`);
+  const author = createClient(baseUrl);
+  const other = createClient(baseUrl);
+  const admin = createClient(baseUrl);
+  await author.register('fp_author');
+  await other.register('fp_other');
+  await admin.login('admin', 'password');
+
+  let r = await author.call('/api/threads', { method: 'POST', json: { forum_id: 3, title: `Permissions ${label}`, content: 'Opening post' } });
+  expectStatus(`[${label}] author creates thread`, r, 200);
+  const threadId = r.body.id;
+
+  expectStatus(`[${label}] other replies`, await other.call('/api/posts', { method: 'POST', json: { thread_id: threadId, content: 'Reply from other' } }), 200);
+  expectStatus(`[${label}] author replies`, await author.call('/api/posts', { method: 'POST', json: { thread_id: threadId, content: 'Reply from author' } }), 200);
+
+  r = await author.call(`/api/threads/${threadId}`);
+  expectStatus(`[${label}] load thread`, r, 200);
+  const [opening, otherReply, authorReply] = r.body.posts;
+  if (!opening || !otherReply || !authorReply) throw new Error(`[${label}] expected 3 posts, got ${JSON.stringify(r.body.posts)}`);
+  if (!('edited_at' in opening) || opening.edited_at !== null) throw new Error(`[${label}] new posts should carry edited_at: null`);
+
+  // 1. Authors can delete their own posts (soft delete); others cannot.
+  expectStatus(`[${label}] member cannot delete someone else's post`, await other.call(`/api/posts/${authorReply.id}`, { method: 'PATCH', json: { is_deleted: true } }), 403);
+  expectStatus(`[${label}] author deletes own post`, await author.call(`/api/posts/${authorReply.id}`, { method: 'PATCH', json: { is_deleted: true } }), 200);
+  expectStatus(`[${label}] author cannot restore`, await author.call(`/api/posts/${authorReply.id}`, { method: 'PATCH', json: { is_deleted: false } }), 403);
+  r = await other.call(`/api/threads/${threadId}`);
+  if (r.body.posts.some((p) => p.id === authorReply.id)) throw new Error(`[${label}] deleted post still visible`);
+
+  // 3. edited_at set on content edits only, not on hide/unhide.
+  r = await author.call(`/api/posts/${opening.id}`, { method: 'PATCH', json: { content: 'Opening post (edited)' } });
+  expectStatus(`[${label}] author edits own post`, r, 200);
+  if (!r.body?.post?.edited_at) throw new Error(`[${label}] PATCH content should return edited_at, got ${JSON.stringify(r.body)}`);
+  // Legacy numeric flag (1) is accepted, and hiding does not mark the post edited.
+  expectStatus(`[${label}] admin hides other's reply (numeric flag)`, await admin.call(`/api/posts/${otherReply.id}`, { method: 'PATCH', json: { is_hidden: 1 } }), 200);
+  expectStatus(`[${label}] admin unhides other's reply`, await admin.call(`/api/posts/${otherReply.id}`, { method: 'PATCH', json: { is_hidden: false } }), 200);
+  r = await other.call(`/api/threads/${threadId}`);
+  const editedOpening = r.body.posts.find((p) => p.id === opening.id);
+  const unhidden = r.body.posts.find((p) => p.id === otherReply.id);
+  if (!editedOpening?.edited_at) throw new Error(`[${label}] thread payload missing edited_at after edit`);
+  if (unhidden?.edited_at !== null) throw new Error(`[${label}] hide/unhide must not set edited_at (got ${unhidden?.edited_at})`);
+  expectStatus(`[${label}] member cannot hide`, await other.call(`/api/posts/${opening.id}`, { method: 'PATCH', json: { is_hidden: true } }), 403);
+
+  // 4. Shared thread checks: pin/lock/hide staff only; solve author or staff.
+  expectStatus(`[${label}] member cannot pin`, await other.call(`/api/threads/${threadId}`, { method: 'PATCH', json: { is_pinned: true } }), 403);
+  expectStatus(`[${label}] author cannot lock own thread`, await author.call(`/api/threads/${threadId}`, { method: 'PATCH', json: { is_locked: true } }), 403);
+  expectStatus(`[${label}] author marks own thread solved`, await author.call(`/api/threads/${threadId}`, { method: 'PATCH', json: { is_solved: true } }), 200);
+  expectStatus(`[${label}] other cannot mark solved`, await other.call(`/api/threads/${threadId}`, { method: 'PATCH', json: { is_solved: false } }), 403);
+  expectStatus(`[${label}] member reports a post`, await other.call('/api/reports', { method: 'POST', json: { target_type: 'post', target_id: opening.id, reason: 'test report' } }), 201);
+
+  // 2. Locked threads block non-staff replies; staff may still reply.
+  expectStatus(`[${label}] admin locks thread`, await admin.call(`/api/threads/${threadId}`, { method: 'PATCH', json: { is_locked: true } }), 200);
+  r = await other.call('/api/posts', { method: 'POST', json: { thread_id: threadId, content: 'Should be blocked' } });
+  expectStatus(`[${label}] member reply to locked thread`, r, 403);
+  if (!/locked/i.test(r.body?.error || '')) throw new Error(`[${label}] locked reply error should mention the lock: ${JSON.stringify(r.body)}`);
+  expectStatus(`[${label}] author reply to locked thread`, await author.call('/api/posts', { method: 'POST', json: { thread_id: threadId, content: 'Also blocked' } }), 403);
+  expectStatus(`[${label}] staff reply to locked thread`, await admin.call('/api/posts', { method: 'POST', json: { thread_id: threadId, content: 'Staff note on a locked thread' } }), 200);
+
+  expectStatus(`[${label}] member cannot delete another's thread`, await other.call(`/api/threads/${threadId}`, { method: 'DELETE' }), 403);
+  console.log(`✅ [${label}] Forum permission scenario passed`);
+}
+
+async function verifyForumPermissions() {
+  const expressDb = './tmp/test-forum-permissions-express.db';
+  const vercelDb = './tmp/test-forum-permissions-vercel.db';
+  for (const file of [expressDb, vercelDb]) if (fs.existsSync(file)) fs.unlinkSync(file);
+
+  const expressApp = await spawnServerWithEnv({ NODE_ENV: 'development', DATABASE_URL: expressDb });
+  try {
+    await runForumPermissionScenario('express', expressApp.baseUrl);
+  } finally {
+    await stopServer(expressApp.proc);
+  }
+
+  const vercelApp = await spawnServerWithEnv({ NODE_ENV: 'development', DATABASE_URL: vercelDb, SERVER_ENTRY: 'test/fixtures/serve-vercel-api.ts' });
+  try {
+    await runForumPermissionScenario('vercel', vercelApp.baseUrl);
+  } finally {
+    await stopServer(vercelApp.proc);
+  }
 }
 
 async function verifyCookieAndCorsProfiles() {
@@ -719,6 +854,7 @@ async function runTests() {
     console.log('🛑 Server shutdown');
   }
 
+  await verifyForumPermissions();
   await verifyCookieAndCorsProfiles();
   await verifySteamOpenIdLogin();
   console.log('🎉 Regression tests passed');
