@@ -1,6 +1,6 @@
 # NightDevWeb2 Refactor Plan
 
-Last reviewed: 2026-06-25
+Last reviewed: 2026-11-25
 
 A concrete, multi-track architecture refactor plan for the NightDevWeb2 games/forums
 platform. The goal is to move the codebase toward a deployment-portable, scalable
@@ -23,7 +23,7 @@ small PRs per `AGENTS.md`.
     the track's `Last updated`).
   - Cross-link update when a related `docs/ai/BACKLOG.md` risk or item changes status.
 - **Review cadence**: Review weekly alongside `docs/ai/BACKLOG.md`.
-- **Last reviewed**: 2026-06-25
+- **Last reviewed**: 2026-11-25 (track 1 notes updated for shared forumPermissions / liveServers modules; all four tracks remain ⬜ Todo)
 
 ## How Multiple Agents Collaborate
 

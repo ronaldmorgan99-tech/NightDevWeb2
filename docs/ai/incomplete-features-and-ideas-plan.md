@@ -1,7 +1,7 @@
 # NightRespawn (NightDevWeb2) — Incomplete Features Audit + Competitive Research Plan
 
 **Prepared for:** ronald
-**Scope:** (1) Locate incomplete features/tabs across the site, (2) research comparable gaming-community platforms for ideas. **No code was changed.**
+**Scope:** (1) Locate incomplete features/tabs across the site, (2) research comparable gaming-community platforms for ideas. Originally a no-code audit; **status column refreshed 2026-11-25 against main `25ea65c`.**
 **Stack:** React 19 + TS + Vite + Tailwind + TanStack Query (frontend); Node/Express + Socket.IO + SQLite/Turso/MySQL + JWT (backend); Stripe/PayPal SDKs.
 
 ---
@@ -10,28 +10,28 @@
 
 Severity legend: 🔴 user-visible dead-end · 🟡 simulated/partial · 🟢 hidden/gated · ⚪ cleanup
 
-| # | Area | File / location | What's wrong | Sev |
-|---|------|-----------------|--------------|-----|
-| 1 | Messaging | `src/pages/MessagesPage.tsx` ~L569–604 | Voice call, video call, conversation info, and conversation menu buttons are hard-`disabled` with "(coming soon)" labels | 🔴 |
-| 2 | Left sidebar Quick Actions | `src/layouts/MainLayout.tsx` ~L701–719 | **Store**, **Vote**, **Stats** buttons have no `onClick` — clicking does nothing. Only **Discord** works | 🔴 |
-| 3 | Servers page | `src/pages/ServersPage.tsx` ~L83 | "VIEW STATS" button has no handler | 🔴 |
-| 4 | Servers page | `src/pages/ServersPage.tsx` ~L207–217 | "Network Health" per-region (Frankfurt/London/NY/Singapore) is **hardcoded** — always full bar / "OK", not live | 🟡 |
-| 5 | Servers page | `src/pages/ServersPage.tsx` ~L220 | "DOWNLOAD NETWORK TOOL" button likely non-functional (no real asset/handler) | 🔴 |
-| 6 | Admin Settings | `src/pages/admin/AdminSettingsPage.tsx` ~L387–402 | **Economy tab** shows "Sector Under Construction" placeholder — credit/market config not built | 🔴 |
-| 7 | Store checkout | `src/pages/StorePage.tsx` ~L105–131 | Stripe/PayPal checkout is **simulated** — no card-entry UI (Stripe Elements) or PayPal approval redirect; comments literally say "for now, we'll simulate" | 🟡 |
-| 8 | Payments backend | `src/lib/payments.ts` L161, 353, 397 | `MOCK_PAYMENTS=1` returns fake payment intents/orders. Real SDK path exists but needs live keys + webhook validation | 🟡 |
-| 9 | Admin Analytics | analytics stat cards | "+12%" trend delta appears **hardcoded** on every card (the underlying numbers are real, the trend badge is fake) | 🟡 |
-| 10 | Orphaned page | `src/pages/CategoryPage.tsx` | Legacy page, **not routed anywhere**, old indigo theme (not the cyber theme), dead "New Thread" button. Leftover from earlier iteration | ⚪ |
-| 11 | Veo Studio | `/studio` route + `VITE_ENABLE_STUDIO` | AI video generation is feature-gated off by default — finished-ish but hidden behind env flag | 🟢 |
-| 12 | Integrations wiring | `AdminIntegrationsPage.tsx` vs `ServersPage.tsx` | Admin can save `steam_api_key`, `network_servers` JSON, `twitch_client_id`, but the public Servers page still uses **hardcoded** data — config is stored but not consumed | 🟡 |
+| # | Area | File / location | What's wrong | Sev | Status (2026-11-25) |
+|---|------|-----------------|--------------|-----|---------------------|
+| 1 | Messaging | `src/pages/MessagesPage.tsx` | Voice call, video call, conversation info, and conversation menu buttons are hard-`disabled` with "(coming soon)" labels | 🔴 | **Open.** |
+| 2 | Left sidebar Quick Actions | `src/layouts/MainLayout.tsx` ~L752–783 | Originally Store, Vote, and Stats did nothing. | 🔴 | **Partial.** Store navigates to `/store`, Discord opens the invite, Stats navigates to `/servers`. **Vote still has no `onClick` and no vote page.** |
+| 3 | Servers page | `src/pages/ServersPage.tsx` ~L241–244 | "VIEW STATS" button has no handler | 🔴 | **Open.** Still unwired on main `25ea65c`. |
+| 4 | Servers page | `src/pages/ServersPage.tsx` | "Network Health" per-region (Frankfurt/London/NY/Singapore) was hardcoded to "OK" | 🟡 | **Done in [PR #245](https://github.com/ronaldmorgan99-tech/NightDevWeb2/pull/245).** The fake panel was removed and replaced by the Live Server Status panel at the top of `/#/servers`. |
+| 5 | Servers page | `src/pages/ServersPage.tsx` ~L375–378 | "DOWNLOAD NETWORK TOOL" button has no asset or handler | 🔴 | **Open.** Still a plain button with no `onClick`. |
+| 6 | Admin Settings | `src/pages/admin/AdminSettingsPage.tsx` ~L392 | **Economy tab** shows "Sector Under Construction" | 🔴 | **Open.** |
+| 7 | Store checkout | `src/pages/StorePage.tsx` ~L105–131 | Stripe/PayPal checkout is **simulated** — no Stripe Elements or PayPal approval redirect | 🟡 | **Open.** Comments still say "for now, we'll simulate". |
+| 8 | Payments backend | `src/lib/payments.ts` | `MOCK_PAYMENTS=1` returns fake intents/orders. Real SDK path exists. | 🟡 | **Partial.** Webhook signature verification now exists (`verifyStripeWebhookSignature`, `verifyPayPalWebhookSignature`). Checkout UI is still simulated; fraud/chargebacks are not built. |
+| 9 | Admin Analytics | `src/pages/admin/AdminDashboard.tsx` ~L39 | "+12%" trend delta is hardcoded (example: Total Operatives card) | 🟡 | **Open.** |
+| 10 | Orphaned page | `src/pages/CategoryPage.tsx` | Legacy page, not routed, old indigo theme, dead "New Thread" button | ⚪ | **Open.** Still unrouted in `src/App.tsx`. |
+| 11 | Veo Studio | `/studio` route + `VITE_ENABLE_STUDIO` | Feature-gated off by default | 🟢 | **Unchanged.** Flag off renders Coming Soon, no redirect. |
+| 12 | Integrations wiring | `AdminIntegrationsPage.tsx` vs Servers page | Admin can save `steam_api_key`, `network_servers` JSON, `twitch_client_id` | 🟡 | **Partial.** `steam_api_key` (and `STEAM_API_KEY`) is consumed for live NightRespawnPilot status in PR #245. The playtest server itself comes from `NIGHTRESPAWN_PILOT_*` env vars, not `network_servers`. Twitch / `network_servers` JSON are still unused by the public Servers page. |
 
 ### Already documented in your own backlog (`docs/ai/BACKLOG.md`)
-- PayPal webhooks not validated; no fraud detection; subscription edge cases uncovered.
+- Store checkout UI is still simulated; webhook signature checks exist, but fraud detection and subscription edge cases are still uncovered.
 - Real-time scaling risk: Socket.IO + SQLite won't scale horizontally.
 - Media generation = vendor lock-in on Gemini/Veo.
 - Admin catalog input sanitization still pending.
 
-**Quick wins (low effort, high polish):** #2 (wire Store→`/store`, Vote→vote page, Stats→`/servers`), #3 (wire VIEW STATS), #10 (delete orphan page), #9 (remove or compute the fake +12%). **Bigger projects:** #4/#12 (live server data), #6 (admin economy), #7/#8 (real payments).
+**Quick wins still open:** finish #2 (Vote destination), #3 (VIEW STATS), #5 (Download Network Tool), #10 (delete orphan page), #9 (remove or compute the fake +12%). **Bigger projects still open:** #6 (admin economy), #7/#8 (real checkout). **Shipped:** #4 live status (PR #245); part of #2 (Store/Stats wiring); part of #8 (webhook signatures); part of #12 (`steam_api_key` consumed).
 
 ---
 
@@ -41,7 +41,7 @@ Your site is a **Rust-style game-server community** (wipe schedules, raids, kill
 
 ### A. Server browser & live data — *BattleMetrics* (battlemetrics.com)
 The gold standard for game-server tracking. Concrete ideas to steal:
-- **Live player counts** `current/max` per server, updated continuously (yours is static).
+- **Live player counts** `current/max` per server, updated continuously (NightRespawnPilot can be live via Steam when a Web API key is set; without a key the panel shows Unknown).
 - **Wipe schedule front-and-center**: "Last Wipe" + **"Next Wipe" countdown** columns — Rust players pick servers by this. High-value since your whole profile system already revolves around "wipe performance."
 - **Rich filters**: players online, gather rate, group limit, PVE/PVP, map, region/distance, "Last/Next wipe between dates."
 - **Sortable ranked list** with pagination (rank, name, players, wipe, location).
@@ -86,10 +86,10 @@ Your dead **Vote** button (#2) is a whole genre:
 ---
 
 ## Suggested sequencing (if/when you build)
-1. **Cleanup & wiring (days):** #2, #3, #10, #9, hide #1 — removes all visible dead-ends.
-2. **Make it feel live (1–2 wks):** real server player counts + next-wipe countdown (#4/#12), homepage news + wipe countdown.
+1. **Cleanup & wiring (days):** remaining #2 (Vote), #3, #5, #10, #9, hide #1 — removes the visible dead-ends that are still on main.
+2. **Make it feel live (remaining):** next-wipe countdown and richer homepage/news treatment. Real NightRespawnPilot status already shipped in PR #245 (needs a Steam Web API key in production to leave the Unknown state).
 3. **Engagement (1–2 wks):** Vote-for-rewards page (#2), achievements/badges on existing stats.
-4. **Commerce (multi-wk):** real Stripe/PayPal + webhooks (#7/#8), then Admin Economy (#6) and in-game delivery.
-5. **Hard problems:** Socket.IO scaling, fraud/webhook validation, voice/video calls.
+4. **Commerce (multi-wk):** real Stripe/PayPal checkout UI (#7), then Admin Economy (#6) and in-game delivery. Webhook signature checks already exist.
+5. **Hard problems:** Socket.IO scaling, fraud/chargeback handling, voice/video calls. Unify the remaining duplicated API surface (`docs/ai/refactor-plan/01-unify-api.md`), including the register password min-length drift (8 vs 6).
 
-*Nothing in the codebase was modified. Tell me which items to turn into a build plan or PR.*
+*Status updated 2026-11-25 against main `25ea65c`. Competitive research in Part 2 is unchanged.*
