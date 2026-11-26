@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Globe, Zap, Shield, Users, Copy, Check, ExternalLink, Activity, HelpCircle, Radio } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import SynthwaveBackground from '../components/SynthwaveBackground';
 
 type ServerNode = {
   id: number | string;
@@ -272,6 +273,8 @@ export default function ServersPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-12 py-8">
+      {/* Decorative animated background (portalled to <body>, fixed, aria-hidden). */}
+      <SynthwaveBackground />
       <section className="relative p-12 cyber-card border-neon-cyan/20 overflow-hidden text-center">
         <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-neon-cyan/50 to-transparent" />
         <div className="relative z-10">
